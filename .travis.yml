@@ -23,7 +23,7 @@ matrix:
 install:
   - until sudo apt-get install ninja-build; do echo retry; done
   - until sudo apt-get -qq update; do echo retry; done
-  - until sudo apt-get -qq install libboost-dev; do echo retry; done
+  - until sudo apt-get -qq install libboost-dev libboost-test-dev libboost-program-options-dev; do echo retry; done
  
 os:
   - linux
