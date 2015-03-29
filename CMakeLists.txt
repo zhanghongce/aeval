@@ -58,7 +58,7 @@ endif()
 set(CMAKE_FIND_LIBRARY_SUFFIXES ".a" ${CMAKE_FIND_LIBRARY_SUFFIXES})
 
 set (Boost_USE_STATIC_LIBS ON)
-find_package (Boost 1.55 REQUIRED COMPONENTS system unit_test_framework)
+find_package (Boost 1.46 REQUIRED COMPONENTS system unit_test_framework)
 IF (Boost_FOUND)
   include_directories (${Boost_INCLUDE_DIRS})
 endif ()
