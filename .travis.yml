@@ -24,9 +24,7 @@ install:
   - until sudo add-apt-repository --yes ppa:ubuntu-toolchain-r/test; do echo retry; done
   - until sudo apt-get install ninja-build; do echo retry; done
   - until sudo apt-get -qq update; do echo retry; done
-  - until sudo apt-get -qq install libboost-dev libboost-test-dev libboost-program-options-dev; do echo retry; done
-  - until sudo apt-get -qq install libstdc++-4.8-dev; do echo retry; done
-  - sudo apt-get -qq install python python-pip;
+  - until sudo apt-get -qq install libboost-dev libboost-system libboost-test-dev libboost-program-options-dev; do echo retry; done
  
 os:
   - linux
