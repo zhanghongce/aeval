@@ -5,8 +5,8 @@ matrix:
    # DEBUG Build
    # =======================================================
    # D1. clang-mp-4.8     | DEBUG    
-   - CMAKE_CXX_COMPILER=clang-mp-3.4
-     CMAKE_BUILD_TYPE=DEBUG
+   #- CMAKE_CXX_COMPILER=clang-mp-3.4
+   # CMAKE_BUILD_TYPE=DEBUG
    # D2. g++-mp-4.8     | DEBUG    
    - CMAKE_CXX_COMPILER=g++-mp-4.8
      CMAKE_BUILD_TYPE=DEBUG
@@ -14,16 +14,19 @@ matrix:
    # RELEASE Build
    # =======================================================
    # D1. clang-mp-4.8     | RELEASE   
-   - CMAKE_CXX_COMPILER=clang-mp-3.4
-     CMAKE_BUILD_TYPE=RELEASE
+   #- CMAKE_CXX_COMPILER=clang-mp-3.4
+   #  CMAKE_BUILD_TYPE=RELEASE
    # D2. g++-mp-4.8     | RELEASE    
-   - CMAKE_CXX_COMPILER=g++-mp-4.8
-     CMAKE_BUILD_TYPE=RELEASE
+   #- CMAKE_CXX_COMPILER=g++-mp-4.8
+   #  CMAKE_BUILD_TYPE=RELEASE
  
 install:
+  - until sudo add-apt-repository --yes ppa:ubuntu-toolchain-r/test; do echo retry; done
   - until sudo apt-get install ninja-build; do echo retry; done
   - until sudo apt-get -qq update; do echo retry; done
   - until sudo apt-get -qq install libboost-dev libboost-test-dev libboost-program-options-dev; do echo retry; done
+  - until sudo apt-get -qq install libstdc++-4.8-dev; do echo retry; done
+  - sudo apt-get -qq install python python-pip;
  
 os:
   - linux
