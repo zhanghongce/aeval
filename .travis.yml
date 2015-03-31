@@ -19,13 +19,16 @@ matrix:
    # D2. g++-mp-4.8     | RELEASE    
    #- CMAKE_CXX_COMPILER=g++-mp-4.8
    #  CMAKE_BUILD_TYPE=RELEASE
- 
+
+before_install:
+   - until sudo add-apt-get-repository -y ppa:saiarcot895/chromium-beta; do echo retyr; done
+   - until sudo add-apt-repository --yes ppa:kalakris/cmake; do echo retry; done
+   - until sudo add-apt-repository --yes ppa:ubuntu-toolchain-r/test; do echo retry; done
+   - until sudo apt-get -qq update; do echo retry; done             
+
 install:
-  - echo "yes" | sudo add-apt-repository ppa:kalakris/cmake
-  - until sudo apt-get -qq update; do echo retry; done
   - until sudo apt-get install cmake; do echo retry; done
-  - until sudo add-apt-repository --yes ppa:ubuntu-toolchain-r/test; do echo retry; done
-  - until sudo apt-get install ninja; do echo retry; done
+  - until sudo apt-get install ninja-build; do echo retry; done
   - until sudo apt-get -qq install libboost-all-dev libboost-test-dev libboost-program-options-dev; do echo retry; done
  
 os:
