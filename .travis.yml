@@ -45,7 +45,7 @@ after_failure: "cat /home/travis/build/seahorn/seahorn/build/llvm-prefix/src/llv
 
 after_script:
   - /usr/bin/cmake . --build
-  - make
+  - ninja -j 1
   - cd ..
 
 
