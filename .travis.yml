@@ -8,7 +8,7 @@ matrix:
    #- CMAKE_CXX_COMPILER=clang-mp-3.4
    # CMAKE_BUILD_TYPE=DEBUG
    # D2. g++-mp-4.8     | DEBUG    
-   - CMAKE_CXX_COMPILER=g++-mp-4.8
+   - CMAKE_CXX_COMPILER=g++-4.8
      CMAKE_BUILD_TYPE=DEBUG
    # =======================================================
    # RELEASE Build
@@ -21,6 +21,7 @@ matrix:
    #  CMAKE_BUILD_TYPE=RELEASE
  
 install:
+  - sudo apt-get install --only-upgrade cmake
   - until sudo add-apt-repository --yes ppa:ubuntu-toolchain-r/test; do echo retry; done
   - until sudo apt-get install ninja-build; do echo retry; done
   - until sudo apt-get -qq update; do echo retry; done
