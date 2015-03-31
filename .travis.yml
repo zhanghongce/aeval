@@ -21,10 +21,11 @@ matrix:
    #  CMAKE_BUILD_TYPE=RELEASE
  
 install:
-  - sudo apt-get install --only-upgrade cmake
-  - until sudo add-apt-repository --yes ppa:ubuntu-toolchain-r/test; do echo retry; done
-  - until sudo apt-get install ninja-build; do echo retry; done
+  - until sudo add-apt-repository ppa:kalakris/cmake; do echo retry; done
   - until sudo apt-get -qq update; do echo retry; done
+  - until sudo apt-get install cmake; do echo retry; done
+  - until sudo add-apt-repository --yes ppa:ubuntu-toolchain-r/test; do echo retry; done
+  - until sudo apt-get install ninja; do echo retry; done
   - until sudo apt-get -qq install libboost-all-dev libboost-test-dev libboost-program-options-dev; do echo retry; done
  
 os:
