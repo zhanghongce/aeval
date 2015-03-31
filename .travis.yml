@@ -21,7 +21,7 @@ matrix:
    #  CMAKE_BUILD_TYPE=RELEASE
 
 before_install:
-   - until sudo add-apt-get-repository -y ppa:saiarcot895/chromium-beta; do echo retyr; done
+   - until sudo add-apt-repository -y ppa:saiarcot895/chromium-beta; do echo retyr; done
    - until sudo add-apt-repository --yes ppa:kalakris/cmake; do echo retry; done
    - until sudo add-apt-repository --yes ppa:ubuntu-toolchain-r/test; do echo retry; done
    - until sudo apt-get -qq update; do echo retry; done             
