@@ -21,7 +21,7 @@ matrix:
    #  CMAKE_BUILD_TYPE=RELEASE
  
 install:
-  - until sudo add-apt-repository ppa:kalakris/cmake; do echo retry; done
+  - echo "yes" | sudo add-apt-repository ppa:kalakris/cmake
   - until sudo apt-get -qq update; do echo retry; done
   - until sudo apt-get install cmake; do echo retry; done
   - until sudo add-apt-repository --yes ppa:ubuntu-toolchain-r/test; do echo retry; done
