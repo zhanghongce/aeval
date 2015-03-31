@@ -42,6 +42,8 @@ after_script:
   - make
   - cd ..
 
+after_failure: "cat /home/travis/build/seahorn/seahorn/build/llvm-prefix/src/llvm-stamp/llvm-configure-error.log"
+
 notifications:
   email:
     recipients:
