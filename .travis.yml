@@ -44,7 +44,7 @@ script:
   - mkdir -p build
   - cd build
   - GENERATOR=-GNinja;
-  - /usr/bin/cmake -DIGNORE_SORRY=ON  -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} ${GENERATOR} -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}  -DCMAKE_INSTALL_PREFIX=run ../
+  - CXX=g++-4.8  CC=gcc-4.8 /usr/bin/cmake -DIGNORE_SORRY=ON  -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} ${GENERATOR} -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}  -DCMAKE_INSTALL_PREFIX=run ../
   
 after_failure: "cat /home/travis/build/seahorn/seahorn/build/llvm-prefix/src/llvm-stamp/llvm-configure-*.log"
 
