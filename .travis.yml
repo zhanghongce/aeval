@@ -21,7 +21,7 @@ matrix:
    #  CMAKE_BUILD_TYPE=RELEASE
 
 env:
-   - CXX=g++-4.8 
+   - CXX=g++-4.8
    - CC=gcc-4.8
 
 compiler:
