@@ -39,15 +39,8 @@ script:
   - mkdir -p build
   - cd build
   - GENERATOR=-GNinja;
-  - /usr/bin/cmake -DIGNORE_SORRY=ON  -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} ${GENERATOR} -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}  -DCMAKE_INSTALL_PREFIX=run ../
-  - if [[ $CMAKE_BUILD_TYPE == DEBUG || $CMAKE_BUILD_TYPE == RELEASE ]]; then
-       SITE=Ubuntu12.04@Travis;
-       if [[ $CMAKE_BUILD_TYPE == RELEASE ]]; then
-           BUILD_TYPE=Release;
-       else
-           BUILD_TYPE=Debug;
-       fi;
-  
+  - /usr/bin/cmake -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} ${GENERATOR} -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}  -DCMAKE_INSTALL_PREFIX=run ../;
+
 after_failure: "cat /home/travis/build/seahorn/seahorn/build/llvm-prefix/src/llvm-stamp/llvm-configure-*.log"
 
 after_script:
