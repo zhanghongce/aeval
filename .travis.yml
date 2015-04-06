@@ -23,6 +23,10 @@ matrix:
 compiler:
   - g++-4.8
 
+env:
+ - CXX=g++-4.8
+ - CC=gcc-4.8
+
 before_install:
    - until sudo add-apt-repository -y ppa:saiarcot895/chromium-beta; do echo retyr; done
    - until sudo add-apt-repository --yes ppa:kalakris/cmake; do echo retry; done
@@ -39,13 +43,15 @@ script:
   - mkdir -p build
   - cd build
   - GENERATOR=-GNinja;
-  - /usr/bin/cmake -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} ${GENERATOR} -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}  -DCMAKE_PROGRAM_PATH=/usr/bin  -DCMAKE_INSTALL_PREFIX=run ../;
+  - /usr/bin/cmake -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}  -DCMAKE_PROGRAM_PATH=/usr/bin  -DCMAKE_INSTALL_PREFIX=run ../;
 
 after_failure: "cat /home/travis/build/seahorn/seahorn/build/llvm-prefix/src/llvm-stamp/llvm-configure-*.log"
 
 after_script:
+  - echo $CXX
+  - echo $CC
   - CXX=g++-4.8 /usr/bin/cmake --build .
-  - ninja -j 1
+  - make
   - cd ..
 
 
