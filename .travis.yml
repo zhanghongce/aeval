@@ -45,13 +45,13 @@ script:
   - mkdir -p build
   - cd build
   - GENERATOR=-GNinja;
-  - /usr/bin/cmake -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER} -DCONSERVE_MEMORY=${CONSERVE_MEMORY} ${GENERATOR} -DCMAKE_PROGRAM_PATH=/usr/bin  -DCMAKE_INSTALL_PREFIX=run ../;
+  - /usr/bin/cmake -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER} -DCONSERVE_MEMORY=${CONSERVE_MEMORY}  -DCMAKE_PROGRAM_PATH=/usr/bin  -DCMAKE_INSTALL_PREFIX=run ../;
 
 after_failure: "cat /home/travis/build/seahorn/seahorn/build/llvm-prefix/src/llvm-stamp/llvm-build-*.log"
 
 after_script:
   - /usr/bin/cmake --build .
-  - ninja
+  - make
   - cd ..
 
 
