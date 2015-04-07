@@ -11,6 +11,7 @@ env:
    # D2. g++-mp-4.8     | DEBUG    
      - CMAKE_CXX_COMPILER=g++-4.8
        CMAKE_BUILD_TYPE=DEBUG
+       CONSERVE_MEMORY=ON
    # =======================================================
    # RELEASE Build
    # =======================================================
@@ -22,16 +23,17 @@ env:
    #  CMAKE_BUILD_TYPE=RELEASE
 
 before_install:
-   - until sudo add-apt-repository -y ppa:saiarcot895/chromium-beta; do echo retyr; done
+   - until sudo add-apt-repository -y ppa:saiarcot895/chromium-beta; do echo retry; done
    - until sudo add-apt-repository --yes ppa:kalakris/cmake; do echo retry; done
    - until sudo add-apt-repository --yes ppa:ubuntu-toolchain-r/test; do echo retry; done
-   - until sudo apt-get -qq update; do echo retry; done             
+   
 
 install:
   - until sudo apt-get install cmake; do echo retry; done
   - until sudo apt-get -qq install libboost-all-dev libboost-test-dev libboost-program-options-dev; do echo retry; done
   - until sudo apt-get -qq install libstdc++-4.8-dev; do echo retry; done
   - until sudo apt-get -qq install g++-4.8; do echo retry; done
+  - until sudo apt-get -qq update; do echo retry; done             
   - wget http://dl.dropboxusercontent.com/u/203889738/gcc/ninja.tar.gz;
     tar xfz ninja.tar.gz;
     cd ninja;
@@ -43,7 +45,7 @@ script:
   - mkdir -p build
   - cd build
   - GENERATOR=-GNinja;
-  - /usr/bin/cmake -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} ${GENERATOR} -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER} -DCMAKE_PROGRAM_PATH=/usr/bin  -DCMAKE_INSTALL_PREFIX=run ../;
+  - /usr/bin/cmake -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} ${GENERATOR} -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}  -DCONSERVE_MEMORY=${CONSERVE_MEMORY} -DCMAKE_PROGRAM_PATH=/usr/bin  -DCMAKE_INSTALL_PREFIX=run ../;
 
 after_failure: "cat /home/travis/build/seahorn/seahorn/build/llvm-prefix/src/llvm-stamp/llvm-build-*.log"
 
