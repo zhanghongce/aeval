@@ -25,14 +25,13 @@ env:
 before_install:
    - until sudo add-apt-repository -y ppa:saiarcot895/chromium-beta; do echo retry; done
    - until sudo add-apt-repository --yes ppa:kalakris/cmake; do echo retry; done
-   - until sudo add-apt-repository --yes ppa:ubuntu-toolchain-r/test; do echo retry; done
+   
    
 
 install:
+  - until sudo add-apt-repository --yes ppa:ubuntu-toolchain-r/test; do echo retry; done
   - until sudo apt-get install cmake; do echo retry; done
   - until sudo apt-get -qq install libboost-all-dev libboost-test-dev libboost-program-options-dev; do echo retry; done
-  - until sudo apt-get -qq install libstdc++-4.8-dev; do echo retry; done
-  - until sudo apt-get -qq install g++-4.8; do echo retry; done
   - until sudo apt-get -qq update; do echo retry; done             
   - wget http://dl.dropboxusercontent.com/u/203889738/gcc/ninja.tar.gz;
     tar xfz ninja.tar.gz;
@@ -40,6 +39,8 @@ install:
     ./bootstrap.py > /dev/null 2>&1;
     sudo cp -v ninja /usr/bin/;
     cd ..;
+   - until sudo apt-get -qq install libstdc++-4.8-dev; do echo retry; done
+   - until sudo apt-get -qq install g++-4.8; do echo retry; done
  
 script:
   - mkdir -p build
