@@ -31,7 +31,7 @@ install:
   - until sudo apt-get install ninja-build; do echo retry; done
   - until sudo apt-get -qq install libboost-all-dev libboost-test-dev libboost-program-options-dev; do echo retry; done
   - until sudo apt-get -qq install libstdc++-4.8-dev; do echo retry; done
-  - until sudo apt-get -qq install g++-4.8; do echo retry;
+  - until sudo apt-get -qq install g++-4.8; do echo retry; done
  
 script:
   - mkdir -p build
