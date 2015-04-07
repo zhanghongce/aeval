@@ -1,6 +1,7 @@
 language: cpp
 cache: apt
-matrix:
+env:
+  matrix:
    # =======================================================
    # DEBUG Build
    # =======================================================
@@ -8,8 +9,8 @@ matrix:
    #- CMAKE_CXX_COMPILER=clang-mp-3.4
    # CMAKE_BUILD_TYPE=DEBUG
    # D2. g++-mp-4.8     | DEBUG    
-   - CMAKE_CXX_COMPILER=g++-4.8
-     CMAKE_BUILD_TYPE=DEBUG
+     - CMAKE_CXX_COMPILER=g++-4.8
+       CMAKE_BUILD_TYPE=DEBUG
    # =======================================================
    # RELEASE Build
    # =======================================================
@@ -28,22 +29,26 @@ before_install:
 
 install:
   - until sudo apt-get install cmake; do echo retry; done
-  - until sudo apt-get install ninja-build; do echo retry; done
   - until sudo apt-get -qq install libboost-all-dev libboost-test-dev libboost-program-options-dev; do echo retry; done
   - until sudo apt-get -qq install libstdc++-4.8-dev; do echo retry; done
   - until sudo apt-get -qq install g++-4.8; do echo retry; done
+  - wget http://dl.dropboxusercontent.com/u/203889738/gcc/ninja.tar.gz;
+    tar xfz ninja.tar.gz;
+    cd ninja;
+    ./bootstrap.py > /dev/null 2>&1;
+    sudo cp -v ninja /usr/bin/;
+    cd ..;
  
 script:
   - mkdir -p build
   - cd build
   - GENERATOR=-GNinja;
-  - CXX=g++-4.8 /usr/bin/cmake -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER} -DCMAKE_PROGRAM_PATH=/usr/bin  -DCMAKE_INSTALL_PREFIX=run ../;
+  -  /usr/bin/cmake  -DIGNORE_SORRY=ON -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} ${GENERATOR} -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER} -DCMAKE_PROGRAM_PATH=/usr/bin  -DCMAKE_INSTALL_PREFIX=run ../;
 
-after_failure: "cat /home/travis/build/seahorn/seahorn/build/llvm-prefix/src/llvm-stamp/llvm-configure-*.log"
 
 after_script:
-  - CXX=g++-4.8 /usr/bin/cmake --build .
-  - make
+  - /usr/bin/cmake --build .
+  - ninja
   - cd ..
 
 
