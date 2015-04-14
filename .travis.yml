@@ -37,6 +37,7 @@ install:
     ./bootstrap.py > /dev/null 2>&1;
     sudo cp -v ninja /usr/bin/;
     cd ..;
+  - ninja --version
   - until sudo apt-get -qq update; do echo retry; done 
   - until sudo apt-get -qq install libstdc++-4.8-dev; do echo retry; done
   - if [[ $CMAKE_CXX_COMPILER == g++-4.8 ]]; then until sudo apt-get -qq install g++-4.8; do echo retry; done fi
@@ -50,7 +51,7 @@ script:
 after_failure: "cat /home/travis/build/seahorn/seahorn/build/llvm-prefix/src/llvm-stamp/llvm-build-*.log"
 
 after_script:
-  - /usr/bin/cmake --build .
+  - /usr/bin/cmake --build . > ./build.log 2>&1
   - make
   - cd ..
 
