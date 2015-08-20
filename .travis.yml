@@ -41,6 +41,8 @@ install:
   - until sudo apt-get -qq update; do echo retry; done 
   - until sudo apt-get -qq install libstdc++-4.8-dev; do echo retry; done
   - if [[ $CMAKE_CXX_COMPILER == g++-4.8 ]]; then until sudo apt-get -qq install g++-4.8; do echo retry; done fi
+  - wget -O llvm-prefix.tar https://www.dropbox.com/s/bz2rz9u3u0bgepf/llvm-prefix.tar?dl=1 ;
+  - tar xf llvm-prefix.tar;
  
 script:
   - mkdir -p build
