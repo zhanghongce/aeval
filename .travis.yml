@@ -41,18 +41,21 @@ install:
   - until sudo apt-get -qq update; do echo retry; done 
   - until sudo apt-get -qq install libstdc++-4.8-dev; do echo retry; done
   - if [[ $CMAKE_CXX_COMPILER == g++-4.8 ]]; then until sudo apt-get -qq install g++-4.8; do echo retry; done fi
-  - wget -O llvm-prefix.tar https://www.dropbox.com/s/bz2rz9u3u0bgepf/llvm-prefix.tar?dl=1 ;
-  - tar xf llvm-prefix.tar;
+  - wget -O llvm-z3.tar.gz https://www.dropbox.com/s/750hyl47vnkxwa8/llvm-z3.tar.gz?dl=1;
+  - tar xf llvm-z3.tar.gz;
  
 script:
   - mkdir -p build
   - cd build
+  - mv ../llvm-z3 run
   - GENERATOR=-GNinja;
-  - /usr/bin/cmake -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER} -DCONSERVE_MEMORY=${CONSERVE_MEMORY}  -DCMAKE_PROGRAM_PATH=/usr/bin  -DCMAKE_INSTALL_PREFIX=run ../;
+  - /usr/bin/cmake -DZ3_ROOT=run -DLLVM_ROOT=run -LLVM_DIR=run/share/llvm/cmake -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER} -DCONSERVE_MEMORY=${CONSERVE_MEMORY}  -DCMAKE_PROGRAM_PATH=/usr/bin  -DCMAKE_INSTALL_PREFIX=run ../;
+- /usr/bin/cmake -DZ3_ROOT=run -DLLVM_ROOT=run -LLVM_DIR=run/share/llvm/cmake -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER} -DCONSERVE_MEMORY=${CONSERVE_MEMORY}  -DCMAKE_PROGRAM_PATH=/usr/bin  -DCMAKE_INSTALL_PREFIX=run ../;
 
 after_failure: "cat /home/travis/build/seahorn/seahorn/build/llvm-prefix/src/llvm-stamp/llvm-build-*.log"
 
 after_script:
+  - /usr/bin/cmake --build . > ./build.log 2>&1
   - /usr/bin/cmake --build . > ./build.log 2>&1
   - make
   - cd ..
