@@ -50,7 +50,7 @@ script:
   - mv ../llvm-z3 run
   - GENERATOR=-GNinja;
   - /usr/bin/cmake -DZ3_ROOT=run -DLLVM_ROOT=run -LLVM_DIR=run/share/llvm/cmake -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER} -DCONSERVE_MEMORY=${CONSERVE_MEMORY}  -DCMAKE_PROGRAM_PATH=/usr/bin  -DCMAKE_INSTALL_PREFIX=run ../;
-- /usr/bin/cmake -DZ3_ROOT=run -DLLVM_ROOT=run -LLVM_DIR=run/share/llvm/cmake -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER} -DCONSERVE_MEMORY=${CONSERVE_MEMORY}  -DCMAKE_PROGRAM_PATH=/usr/bin  -DCMAKE_INSTALL_PREFIX=run ../;
+  - /usr/bin/cmake -DZ3_ROOT=run -DLLVM_ROOT=run -LLVM_DIR=run/share/llvm/cmake -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER} -DCONSERVE_MEMORY=${CONSERVE_MEMORY}  -DCMAKE_PROGRAM_PATH=/usr/bin  -DCMAKE_INSTALL_PREFIX=run ../;
 
 after_failure: "cat /home/travis/build/seahorn/seahorn/build/llvm-prefix/src/llvm-stamp/llvm-build-*.log"
 
