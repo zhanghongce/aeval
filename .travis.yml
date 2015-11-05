@@ -49,14 +49,16 @@ install:
   - (cd $BOOST_ROOT; ./bootstrap.sh --with-libraries=date_time,filesystem,system,iostreams,regex,python,test)
   - (cd $BOOST_ROOT; ./b2 threading=multi --prefix=$BOOST_ROOT -d0 install)
   - cd ..
-  - wget --no-verbose --output-document=llvm-z3.tar.gz https://www.dropbox.com/s/750hyl47vnkxwa8/llvm-z3.tar.gz?dl=1;
-  - tar xvf llvm-z3.tar.gz;
-  - ls llvm-z3
+  - export LZ="$TRAVIX_BUILD_DIR/../lz"
+  - mkdir -p $LZ
+  - wget --output-document=llvm-z3.tar.gz https://www.dropbox.com/s/750hyl47vnkxwa8/llvm-z3.tar.gz?dl=1;
+  - tar xvf llvm-z3.tar.gz --strip-components=1 -C $LZ;
+  - ls $LZ
 
 script:
   - mkdir -p build
   - cd build
-  - mv ../llvm-z3 run
+  - cp -r $LZ/* run
   - GENERATOR=-GNinja;
   - /usr/bin/cmake -DBOOST_ROOT=$BOOST_ROOT -DZ3_ROOT=run -DLLVM_ROOT=run -LLVM_DIR=run/share/llvm/cmake -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER} -DCONSERVE_MEMORY=${CONSERVE_MEMORY}  -DCMAKE_PROGRAM_PATH=/usr/bin  -DCMAKE_INSTALL_PREFIX=run ../;
   - /usr/bin/cmake -DZ3_ROOT=run -DLLVM_ROOT=run -LLVM_DIR=run/share/llvm/cmake -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER} -DCONSERVE_MEMORY=${CONSERVE_MEMORY}  -DCMAKE_PROGRAM_PATH=/usr/bin  -DCMAKE_INSTALL_PREFIX=run ../;
