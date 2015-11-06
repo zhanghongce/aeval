@@ -132,7 +132,7 @@ ExternalProject_Add (llvm
 find_package (LLVM 3.6.0 CONFIG NO_DEFAULT_PATH)
 if (NOT LLVM_FOUND)
   ExternalProject_Get_Property (llvm INSTALL_DIR)
-  set (LLVM_ROOT ${INSTALL_DIR})
+  set (LLVM_ROOT ${INSTALL_DIR} CACHE PATH "Forced location llvm" FORCE)
   set (LLVM_DIR ${LLVM_ROOT}/share/llvm/cmake CACHE PATH
     "Forced location of LLVM cmake config" FORCE)
   message (WARNING "No llvm found. Run \n\tcmake --build . && cmake ${CMAKE_SOURCE_DIR}")
