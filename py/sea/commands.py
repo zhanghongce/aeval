@@ -680,13 +680,22 @@ class SeaInc(sea.LimitedCmd):
                     action='store_true', default=False)
         ap.add_argument ('--verbose', help='Verbose', action='store_true',
                     default=False, dest="verbose")
+        ap.add_argument ('--save', help='Save results file', action='store_true',
+                        default=False, dest="save")
+        ap.add_argument ('--timeout', help='Timeout per function',
+                        type=float, default=20.00, dest="timeout")
+        ap.add_argument ('--func', help='Number of functions',
+                        type=int, default=-1, dest="func")
         return ap
 
     def run(self, args, extra):
         try:
-            from inc.inc import Inc
-            tt = Inc(args)
-            tt.solve(extra[len(extra)-1])
+            # from inc.inc import Inc
+            # tt = Inc(args)
+            # tt.solve(extra[len(extra)-1])
+            from inc.par_inc import JobsSpanner
+            jb = JobsSpanner(args)
+            jb.spanner(extra[len(extra)-1])
         except Exception as e:
             raise IOError(str(e))
 

@@ -31,226 +31,14 @@ class bcolors:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
 
-def isexec (fpath):
-    if fpath == None: return False
-    return os.path.isfile(fpath) and os.access(fpath, os.X_OK)
-
-def which(program):
-    fpath, fname = os.path.split(program)
-    if fpath:
-        if isexec (program):
-            return program
-    else:
-        for path in os.environ["PATH"].split(os.pathsep):
-            exe_file = os.path.join(path, program)
-            if isexec (exe_file):
-                return exe_file
-    return None
-
-def kill (proc):
-    try:
-        proc.terminate ()
-        proc.kill ()
-        proc.wait ()
-        global running_process
-        running_process = None
-    except OSError:
-        pass
-
-def createWorkDir (dname = None, save = False):
-    if dname is None:
-        workdir = tempfile.mkdtemp (prefix='seahorn-')
-    else:
-        workdir = dname
-
-    if verbose:
-        print "Working directory", workdir
-
-    if not save:
-        atexit.register (shutil.rmtree, path=workdir)
-    return workdir
-
-
-def getOpt ():
-    opt = None
-    if 'OPT' in os.environ:
-        opt = os.environ ['OPT']
-    if not isexec (opt):
-        opt = os.path.join (root, 'bin/seaopt')
-    if not isexec (opt):
-        opt = os.path.join (root, "bin/opt")
-    if not isexec (opt): opt = which ('opt')
-    if not isexec (opt):
-        raise IOError ("Cannot find opt. Set OPT variable")
-    return opt
-
-def getSeahorn ():
-    seahorn = None
-    if 'SEAHORN' in os.environ: seahorn = os.environ ['SEAHORN']
-    if not isexec (seahorn):
-        seahorn = os.path.join (root, "bin/seahorn")
-    if not isexec (seahorn): seahorn = which ('seahorn')
-    if not isexec (seahorn):
-        raise IOError ("Cannot find seahorn. Set SEAHORN variable.")
-    return seahorn
-
-def getSeaPP ():
-    seapp = None
-    if 'SEAPP' in os.environ:
-        seapp = os.environ ['SEAPP']
-    if not isexec (seapp):
-        seapp = os.path.join (root, "bin/seapp")
-    if not isexec (seapp): seapp = which ('seapp')
-    if not isexec (seapp):
-        raise IOError ("Cannot find seahorn pre-processor. Set SEAPP variable")
-    return seapp
-
-def getClang ():
-    names = ['clang-mp-3.6', 'clang-3.6', 'clang', 'clang-mp-3.5', 'clang-mp-3.4']
-
-    for n in names:
-        clang = which (n)
-        if clang is not None:
-            return clang
-    raise IOError ('Cannot find clang (required)')
-
-### Passes
-def defBCName (name, wd=None):
-    base = os.path.basename (name)
-    if wd == None: wd = os.path.dirname  (name)
-    fname = os.path.splitext (base)[0] + '.bc'
-    return os.path.join (wd, fname)
-def defPPName (name, wd=None):
-    base = os.path.basename (name)
-    if wd == None: wd = os.path.dirname  (name)
-    fname = os.path.splitext (base)[0] + '.pp.bc'
-    return os.path.join (wd, fname)
-def defMSName (name, wd=None):
-    base = os.path.basename (name)
-    if wd == None: wd = os.path.dirname  (name)
-    fname = os.path.splitext (base)[0] + 'ms.pp.bc'
-    return os.path.join (wd, fname)
-def defLlName (name, wd=None):
-    base = os.path.basename (name)
-    if wd == None: wd = os.path.dirname  (name)
-    fname = os.path.splitext (base)[0] + '.ll'
-    return os.path.join (wd, fname)
-def defOPTName (name, optLevel=3, wd=None):
-    base = os.path.basename (name)
-    if wd == None: wd = os.path.dirname  (name)
-    fname = os.path.splitext (base)[0] + '.o{}.bc'.format (optLevel)
-    return os.path.join (wd, fname)
-def defSMTName (name, wd=None):
-    base = os.path.basename (name)
-    if wd == None: wd = os.path.dirname  (name)
-    fname = os.path.splitext (base)[0] + '.smt2'
-    return os.path.join (wd, fname)
-
-# Run Clang
-def clang (in_name, out_name, arch=32, extra_args=[]):
-    if out_name == '' or out_name == None:
-        out_name = defBCName (in_name)
-
-    clang_args = [getClang (), '-emit-llvm', '-o', out_name, '-c', in_name ]
-    clang_args.extend (extra_args)
-
-    if verbose: print ' '.join (clang_args)
-    subprocess.check_call (clang_args)
-
-# Run seapp
-def seapp (in_name, out_name, arch, args, extra_args=[]):
-    if out_name == '' or out_name == None:
-        out_name = defPPName (in_name)
-
-    seapp_args = [getSeaPP (), '-o', out_name, in_name ]
-    seapp_args.extend (extra_args)
-
-    if args.entry_point is not None:
-      seapp_args.extend ([''.join (['--entry-point=\"',args.entry_point,'\"'])])
-
-    if verbose: print ' '.join (seapp_args)
-    subprocess.check_call (seapp_args)
-
-# Run Mixed Semantics
-def mixSem (in_name, out_name, args, extra_args=[]):
-    # we do not use args but we could make option --ms-reduce-main
-    if out_name == '' or out_name == None:
-        out_name = defMSName (in_name)
-
-    ms_args = [getSeaPP (), '--horn-mixed-sem', '--ms-reduce-main', '-o', out_name, in_name ]
-    ms_args.extend (extra_args)
-
-    if verbose: print ' '.join (ms_args)
-    subprocess.check_call (ms_args)
-
-# Run Opt
-def llvmOpt (in_name, out_name, opt_level=3, time_passes=False, cpu=-1):
-    if out_name == '' or out_name is None:
-        out_name = defOPTName (in_name, opt_level)
-    import resource as r
-    def set_limits ():
-        if cpu > 0: r.setrlimit (r.RLIMIT_CPU, [cpu, cpu])
-
-    opt = getOpt ()
-    opt_args = [opt, '-f', '-funit-at-a-time']
-    if opt_level > 0 and opt_level <= 3:
-        opt_args.append ('-O{}'.format (opt_level))
-    opt_args.extend (['-o', out_name ])
-
-    if time_passes: opt_args.append ('-time-passes')
-
-    if verbose: print ' '.join (opt_args)
-
-    opt = subprocess.Popen (opt_args, stdin=open (in_name),
-                     stdout=subprocess.PIPE, preexec_fn=set_limits)
-    output = opt.communicate () [0]
-
-    if opt.returncode != 0:
-        raise subprocess.CalledProcessError (opt.returncode, opt_args)
-
-# Run SeaHorn
-def seahorn (in_name, out_name, opts, cex = None, cpu = -1, mem = -1):
-    def set_limits ():
-        if mem > 0:
-            mem_bytes = mem * 1024 * 1024
-            resource.setrlimit (resource.RLIMIT_AS, [mem_bytes, mem_bytes])
-
-        out_name = defBCName (in_name)
-
-    seahorn_cmd = [ getSeahorn(), in_name,
-                    '-horn-step=feasiblesmall',
-                    '-o', out_name,
-                    '-oll', defLlName (out_name) ]
-    seahorn_cmd.extend (opts)
-    #if cex is not None: seahorn_cmd.append ('--horn-svcomp-cex={}'.format (cex))
-    if verbose: print ' '.join (seahorn_cmd)
-
-    p = subprocess.Popen (seahorn_cmd, preexec_fn=set_limits)
-
-    global running_process
-    running_process = p
-
-    timer = threading.Timer (cpu, kill, [p])
-    if cpu > 0: timer.start ()
-
-    try:
-        (pid, returnvalue, ru_child) = os.wait4 (p.pid, 0)
-        running_process = None
-    finally:
-        ## kill the timer if the process has terminated already
-        if timer.isAlive (): timer.cancel ()
-
-    ## if seahorn did not terminate properly, propagate this error code
-    if returnvalue != 0: sys.exit (returnvalue)
-
 
 
 out_message = ("""
 FUNCTION NAME = %s
 RESULT = %s
 SET OF INVARIANTS = %s
-FEASIBLE FLAGS  = %s
-INFEASIBLE FLAGS = %s
+CONSISTENT FLAGS  = %s
+INCONSISTENT FLAGS = %s
 ROUNDS = %s
 QUERY TIME = %s
 """)
@@ -304,7 +92,7 @@ class Feasibility(object):
             return out
         else:
             function_name = str(query.decl()).split("@")[0]
-            out = out_message % (function_name, "FEASIBLE", "", "Trivial", "")
+            out = out_message % (function_name, "FEASIBLE", "", "Trivial", "", "", "")
             out = bcolors.OKGREEN + out + bcolors.ENDC
             return out
 
@@ -588,7 +376,7 @@ class JobsSpanner(object):
                     with open (f_name, "w") as f:
                         f.write(all_results)
                 else:
-                    print "\n\t ========= OVERALL FEASIBILITY RESULTS ========"
+                    print "\n\t ========= SUMMARY SEAHORN INCONSISTENCY CHECKS   ========"
                     print all_results
             except Exception as e:
                 self.log.exception(str(e))
