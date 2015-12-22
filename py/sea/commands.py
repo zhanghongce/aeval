@@ -147,6 +147,9 @@ class Seapp(sea.LimitedCmd):
         ap.add_argument ('--strip-extern', help='Replace external function calls ' +
                          'by non-determinism', default=False, action='store_true',
                          dest='strip_external')
+        ap.add_argument ('--slice-function', dest='slice_function', 
+                         help='Slice program onto this function',
+                         default=None, metavar='FUNCTION')
         add_in_out_args (ap)
         _add_S_arg (ap)
         return ap
@@ -179,7 +182,10 @@ class Seapp(sea.LimitedCmd):
             argv.append ('--null-check')
 
         if args.entry is not None:
-            argv.append ('--entry-point=\"{0}\"'.format (args.entry))
+            argv.append ('--entry-point={0}'.format (args.entry))
+
+        if args.slice_function is not None:
+            argv.append ('--slice-functions={0}'.format (args.slice_function))
 
         if args.kill_vaarg:
             argv.append('--kill-vaarg=true')

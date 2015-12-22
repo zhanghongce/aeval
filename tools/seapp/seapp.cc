@@ -33,6 +33,7 @@
 #include "seahorn/Transforms/Scalar/PromoteVerifierCalls.hh"
 #include "seahorn/Transforms/Utils/RemoveUnreachableBlocksPass.hh"
 #include "seahorn/Transforms/Utils/DummyMainFunction.hh"
+#include "seahorn/Transforms/Utils/SliceFunctions.hh"
 #include "seahorn/Transforms/Scalar/LowerGvInitializers.hh"
 
 #include "seahorn/Analysis/CanAccessMemory.hh"
@@ -200,6 +201,8 @@ int main(int argc, char **argv) {
     dl = module->getDataLayout ();
   }
   if (dl) pass_manager.add (new llvm::DataLayoutPass ());
+
+  pass_manager.add (new seahorn::SliceFunctions ());
 
   // -- Create a main function if we do not have one.
   pass_manager.add (new seahorn::DummyMainFunction ());
