@@ -29,6 +29,7 @@ before_install:
    - sudo apt-add-repository --yes ppa:smspillaz/cmake-2.8.12
    - sudo apt-get --yes update
    - sudo apt-get install --yes cmake cmake-data
+   - sudo apt-get install --yes libgmp-dev
    
 install:  
   - until sudo apt-get -qq install libboost-all-dev libboost-test-dev libboost-program-options-dev; do echo retry; done            
@@ -68,10 +69,7 @@ script:
   - /usr/bin/cmake --version
   
 
-after_failure: "cat /home/travis/build/seahorn/seahorn/build/llvm-prefix/src/llvm-stamp/llvm-build-*.log"
-
 after_script:
-  - /usr/bin/cmake --build . > ./build.log 2>&1
   - /usr/bin/cmake --build . > ./build.log 2>&1
   - make
   - cd ..
