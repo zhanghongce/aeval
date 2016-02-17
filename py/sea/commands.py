@@ -128,8 +128,12 @@ class Seapp(sea.LimitedCmd):
                          default=False, action='store_true')
         ap.add_argument ('--entry', dest='entry', help='Entry point if main does not exist',
                          default=None, metavar='FUNCTION')
-        ap.add_argument ('--do-bounds-check', dest='boc', help='Insert buffer overflow checks',
-                         default=False, action='store_true')
+        ap.add_argument ('--abc', 
+                         dest='abc', help='Insert array bounds checks',
+                         type=int, default=0, metavar='ENCODING')
+        ap.add_argument ('--abc-dsa-node', dest='abc_dsa', 
+                         help='Insert array bounds checks only if a pointer belongs to the DSA node',
+                         type=int, default=0, metavar='ID')
         ap.add_argument ('--overflow-check', dest='ioc', help='Insert signed integer overflow checks',
                          default=False, action='store_true')
         ap.add_argument ('--null-check', dest='ndc', help='Insert null dereference checks',
@@ -178,8 +182,9 @@ class Seapp(sea.LimitedCmd):
         if args.enable_ext_funcs:
             argv.append ('--externalize-addr-taken-funcs')
 
-        if args.boc:
-            argv.append ('--bounds-check')
+        if args.abc:
+            argv.append ('--abc={id}'.format(id=args.abc))
+            argv.append ('--abc-dsa-node={n}'.format (n=args.abc_dsa))
         if args.ioc:
             argv.append ('--overflow-check')
         if args.ndc:

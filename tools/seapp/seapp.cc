@@ -78,10 +78,11 @@ static llvm::cl::opt<bool>
 CutLoops ("horn-cut-loops", llvm::cl::desc ("Cut all natural loops"),
            llvm::cl::init (false));
 
-static llvm::cl::opt<bool>
-BoundsChecks ("bounds-check", 
+// The number refers to the encoding id. If zero no bounds check.
+static llvm::cl::opt<unsigned>
+ArrayBoundsChecks ("abc", 
      llvm::cl::desc ("Insert array bounds checks"), 
-     llvm::cl::init (false));
+     llvm::cl::init (0)); /* 0 no checks*/
 
 static llvm::cl::opt<bool>
 OverflowChecks ("overflow-check", 
@@ -297,14 +298,19 @@ int main(int argc, char **argv) {
   pass_manager.add (new seahorn::LowerGvInitializers ());
   pass_manager.add(llvm::createUnifyFunctionExitNodesPass ());
 
-  if (BoundsChecks)
+  if (ArrayBoundsChecks > 0)
   { 
     pass_manager.add (new seahorn::LowerCstExprPass ());
     pass_manager.add (new seahorn::CanAccessMemory ());
-    pass_manager.add (new seahorn::BufferBoundsCheck ());
-    // -- Turn undef into nondet (undef might be created by
-    //    BufferBoundsCheck)
-    pass_manager.add (seahorn::createNondetInitPass ());
+    switch (ArrayBoundsChecks) {
+      case 1: 
+        pass_manager.add (new seahorn::ABC1 ());
+        // -- Turn undef into nondet (undef might be created by ABC1)
+        pass_manager.add (seahorn::createNondetInitPass ());
+        break;
+      default:
+        pass_manager.add (new seahorn::ABC2 ());
+    }      
   }
 
   if (OverflowChecks)
