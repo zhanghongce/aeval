@@ -89,3 +89,4 @@ class Tool(benchexec.tools.template.BaseTool):
             status = 'FAILURE'
 
         return status
+
