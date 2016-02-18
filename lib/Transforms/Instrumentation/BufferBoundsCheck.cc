@@ -886,12 +886,14 @@ namespace seahorn {
       m_B.SetInsertPoint (bb->getTerminator ());
       CallInst *ci_nondet = m_B.CreateCall (m_nondetFn);
       update_callgraph (insertPt->getParent()->getParent(), ci_nondet);
+      Value *vtracked_ptr = m_B.CreateLoad (m_tracked_ptr);
       Value* condA = m_B.CreateICmpSGE (ci_nondet, 
                                         abc_helpers::createIntCst (ctx, 0));
-      Value* condB = m_B.CreateICmpSGT(m_B.CreateLoad (m_tracked_ptr), 
+      Value* condB = m_B.CreateICmpSGT(vtracked_ptr, 
                                        abc_helpers::createNullCst (ctx));
-      Value* condC = m_B.CreateICmpEQ (m_B.CreateBitOrPointerCast (rhs, abc_helpers::voidPtr (ctx)),
-                                       m_B.CreateLoad (m_tracked_ptr));
+      Value* condC = m_B.CreateICmpEQ
+        (m_B.CreateBitOrPointerCast (rhs, abc_helpers::voidPtr (ctx)),
+         vtracked_ptr);
       Value* cond = m_B.CreateAnd (condA, m_B.CreateAnd (condB, condC));
       bb->getTerminator ()->eraseFromParent ();      
       BasicBlock* bb1 = BasicBlock::Create(ctx, "update_ptr_" + lhs->getName ()  + "_bb", F);
