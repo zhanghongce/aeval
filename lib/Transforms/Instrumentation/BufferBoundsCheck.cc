@@ -942,22 +942,25 @@ namespace seahorn {
       m_B.CreateAlignedStore (p1, m_tracked_base, 
                               m_dl->getABITypeAlignment (m_tracked_base->getType ()));
 
-      // p2 = nd ();
+      // m_tracked_ptr = 0
       m_tracked_ptr  = abc_helpers::createGlobalPtr (M, "tracked_ptr");
-      CallInst* p2 = m_B.CreateCall (m_nondetPtrFn, "nd");
-      update_callgraph (main, p2);
-      // assume (p2 == 0);
-      Value * cond2 = 
-          m_B.CreateICmpEQ(p2, 
-                           m_B.CreateBitOrPointerCast (abc_helpers::createNullCst (ctx), 
-                                                       p2->getType ()));
-      CallInst* c_assume2 = m_B.CreateCall (m_assumeFn, cond2);
-      update_callgraph (main, c_assume2);
-      // m_tracked_ptr  = p2
-      m_B.CreateAlignedStore (p2, m_tracked_ptr, 
+      m_B.CreateAlignedStore (abc_helpers::createNullCst (ctx), 
+                              m_tracked_ptr,
                               m_dl->getABITypeAlignment (m_tracked_ptr->getType ()));
-      // m_tracked_size = 0;
+
+      // x = nd ();
+      // assume (x > 0);
+      // m_tracked_size = x;
       m_tracked_size = abc_helpers::createGlobalInt (M, 0, "tracked_size");
+      CallInst *x = m_B.CreateCall (m_nondetFn);
+      update_callgraph (main, x);
+      CallInst* c_assume3 = m_B.CreateCall (m_assumeFn, 
+                                            m_B.CreateICmpSGT(x, abc_helpers::createIntCst(ctx, 0)));
+      update_callgraph (main, c_assume3);
+      m_B.CreateAlignedStore (x,
+                              m_tracked_size, 
+                              m_dl->getABITypeAlignment (m_tracked_size->getType ()));
+
       // m_tracked_offset = 0;
       m_tracked_offset = abc_helpers::createGlobalInt (M, 0, "tracked_offset");
 
