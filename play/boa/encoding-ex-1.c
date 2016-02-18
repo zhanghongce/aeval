@@ -47,7 +47,7 @@ int main(void)
   if (base == addr)
   {
     ptr = base;
-    size = 4*N;
+    assume(size == 4*N);
   }
   else
     assume (base + size < addr);
