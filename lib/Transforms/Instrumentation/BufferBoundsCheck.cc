@@ -875,7 +875,22 @@ namespace seahorn {
              tracked_ptr = lhs;
              tracked_offset += n;
           }
+
+          TODO:
+            bool f = nd () tracked_ptr && rhs == tracked_ptr ? lhs: tracked_ptr;
+            tracked_ptr = (f ? lhs: rhs);
+            tracked_offset += (f ? n: 0);
       */
+
+      // We do not need to instrument the gep instruction if all uses
+      // are load and store instructions since when checking those
+      // uses the offset can be extracted directly from the base
+      // pointer of the instruction.
+      if (std::all_of (gep->uses().begin (), gep->uses().end (), 
+                       [](Use& u) { 
+                         return (isa<LoadInst>(u.get()) || 
+                                 isa<StoreInst>(u.get()));}))
+        return;
 
       LLVMContext& ctx = m_B.getContext ();
       BasicBlock* bb = insertPt->getParent ();
@@ -885,15 +900,14 @@ namespace seahorn {
       /// if (nd () && tracked_ptr && rhs == tracked_ptr)
       m_B.SetInsertPoint (bb->getTerminator ());
       CallInst *ci_nondet = m_B.CreateCall (m_nondetFn);
+      Value *vtracked_ptr = abc_helpers::createLoad(m_B, m_tracked_ptr, m_dl);
       update_callgraph (insertPt->getParent()->getParent(), ci_nondet);
-      Value *vtracked_ptr = m_B.CreateLoad (m_tracked_ptr);
       Value* condA = m_B.CreateICmpSGE (ci_nondet, 
                                         abc_helpers::createIntCst (ctx, 0));
-      Value* condB = m_B.CreateICmpSGT(vtracked_ptr, 
+      Value* condB = m_B.CreateICmpSGT(vtracked_ptr,
                                        abc_helpers::createNullCst (ctx));
-      Value* condC = m_B.CreateICmpEQ
-        (m_B.CreateBitOrPointerCast (rhs, abc_helpers::voidPtr (ctx)),
-         vtracked_ptr);
+      Value* condC = m_B.CreateICmpEQ (m_B.CreateBitOrPointerCast (rhs, abc_helpers::voidPtr (ctx)),
+                                       vtracked_ptr);
       Value* cond = m_B.CreateAnd (condA, m_B.CreateAnd (condB, condC));
       bb->getTerminator ()->eraseFromParent ();      
       BasicBlock* bb1 = BasicBlock::Create(ctx, "update_ptr_" + lhs->getName ()  + "_bb", F);
@@ -901,16 +915,15 @@ namespace seahorn {
 
       m_B.SetInsertPoint (bb1);
       /// tracked_ptr = lhs;
-      m_B.CreateAlignedStore (m_B.CreateBitOrPointerCast (lhs, abc_helpers::voidPtr (ctx)),
-                              m_tracked_ptr, 
-                              m_dl->getABITypeAlignment (m_tracked_ptr->getType ()));
+      abc_helpers::createStore (m_B, m_B.CreateBitOrPointerCast (lhs, abc_helpers::voidPtr (ctx)),
+                                m_tracked_ptr, m_dl);
       /// tracked_offset += n;
       Value* gep_offset = doGep (gep);    
-      m_B.CreateAlignedStore (abc_helpers::createAdd(m_B, 
-                                                     gep_offset, 
-                                                     m_B.CreateLoad (m_tracked_offset)),
-                              m_tracked_offset,
-                              m_dl->getABITypeAlignment (m_tracked_offset->getType ()));
+      abc_helpers::createStore (m_B, 
+                                abc_helpers::createAdd(m_B, 
+                                                       gep_offset, 
+                                                       abc_helpers::createLoad(m_B, m_tracked_offset, m_dl)),
+                                m_tracked_offset, m_dl);
 
       BranchInst::Create (cont, bb1);
     }
@@ -942,8 +955,7 @@ namespace seahorn {
                                             m_B.CreateBitOrPointerCast (abc_helpers::createNullCst (ctx), 
                                                                         p1->getType ())));
       update_callgraph (main, c_assume1);
-      m_B.CreateAlignedStore (p1, m_tracked_base, 
-                              m_dl->getABITypeAlignment (m_tracked_base->getType ()));
+      abc_helpers::createStore (m_B, p1, m_tracked_base, m_dl);
 
       // x = nd ();
       // assume (x > 0);
@@ -955,15 +967,10 @@ namespace seahorn {
           m_B.CreateCall (m_assumeFn, 
                           m_B.CreateICmpSGT(x, abc_helpers::createIntCst(ctx, 0)));
       update_callgraph (main, c_assume2);
-      m_B.CreateAlignedStore (x, m_tracked_size, 
-                              m_dl->getABITypeAlignment (m_tracked_size->getType ()));
-
+      abc_helpers::createStore (m_B, x, m_tracked_size, m_dl);
       // m_tracked_ptr = 0
       m_tracked_ptr  = abc_helpers::createGlobalPtr (M, "tracked_ptr");
-      m_B.CreateAlignedStore (abc_helpers::createNullCst (ctx), 
-                              m_tracked_ptr,
-                              m_dl->getABITypeAlignment (m_tracked_ptr->getType ()));
-
+      abc_helpers::createStore (m_B, abc_helpers::createNullCst (ctx), m_tracked_ptr, m_dl);
 
       // m_tracked_offset = 0;
       m_tracked_offset = abc_helpers::createGlobalInt (M, 0, "tracked_offset");
@@ -998,7 +1005,7 @@ namespace seahorn {
       /*
            if (!tracked_ptr && p == tracked_base)
               tracked_ptr  = tracked_base
-              tracked_size = n
+              assume (tracked_size == n)
               tracked_offset = 0
            else { 
               assume (tracked_base + m_tracked_size < p); 
@@ -1015,38 +1022,37 @@ namespace seahorn {
           BasicBlock::Create(ctx, "not_allocated_" + Ptr->getName () + "_bb", F);
 
       m_B.SetInsertPoint (bb->getTerminator ());
+      Value* vtracked_size = abc_helpers::createLoad(m_B, m_tracked_size, m_dl);
+      Value* vtracked_base = abc_helpers::createLoad(m_B, m_tracked_base, m_dl);
       Value* PtrX = m_B.CreateBitOrPointerCast (Ptr, abc_helpers::voidPtr (ctx));
-      Value* cond = m_B.CreateAnd (m_B.CreateIsNull(m_B.CreateLoad (m_tracked_ptr)),
-                                   m_B.CreateICmpEQ (PtrX, m_B.CreateLoad (m_tracked_base)));
+      Value* cond = m_B.CreateAnd (m_B.CreateIsNull(abc_helpers::createLoad(m_B, m_tracked_ptr, m_dl)),
+                                   m_B.CreateICmpEQ (PtrX, vtracked_base));
 
       bb->getTerminator ()->eraseFromParent ();      
       BranchInst::Create (alloca_then_bb, alloca_else_bb, cond, bb);      
 
       m_B.SetInsertPoint (alloca_then_bb);
       /// tracked_ptr = tracked_base
-      m_B.CreateAlignedStore (m_B.CreateLoad (m_tracked_base),
-                              m_tracked_ptr,
-                              m_dl->getABITypeAlignment (m_tracked_ptr->getType ()));
-      /// tracked_size = n
-      m_B.CreateAlignedStore (m_B.CreateSExtOrTrunc (Size, abc_helpers::createIntTy (ctx)), 
-                              m_tracked_size, 
-                              m_dl->getABITypeAlignment (m_tracked_size->getType ()));
+      abc_helpers::createStore (m_B, vtracked_base, m_tracked_ptr, m_dl);
+      /// assume (tracked_size == n);
+      CallInst* assume1 = m_B.CreateCall (m_assumeFn, 
+                  m_B.CreateICmpEQ(vtracked_size,
+                                   m_B.CreateSExtOrTrunc (Size, 
+                                                          abc_helpers::createIntTy (ctx))));
+      
       /// tracked_offset = 0
-      m_B.CreateAlignedStore (abc_helpers::createIntCst (ctx, 0), 
-                              m_tracked_offset, 
-                              m_dl->getABITypeAlignment (m_tracked_offset->getType ()));
+      abc_helpers::createStore (m_B, abc_helpers::createIntCst (ctx, 0), 
+                                m_tracked_offset, m_dl);
 
       BranchInst::Create (cont, alloca_then_bb);
 
       // assume (tracked_base + tracked_size < p); 
       m_B.SetInsertPoint (alloca_else_bb);
-      CallInst* ci = m_B.CreateCall (m_assumeFn, 
-                                     m_B.CreateICmpSLT(
-                                         m_B.CreateGEP(m_B.CreateLoad (m_tracked_base), 
-                                                       m_B.CreateLoad (m_tracked_size)),
-                                         PtrX));
+      CallInst* assume2 = m_B.CreateCall (m_assumeFn, 
+                                          m_B.CreateICmpSLT(m_B.CreateGEP(vtracked_base, vtracked_size),
+                                                            PtrX));
 
-      update_callgraph (insertPt->getParent()->getParent(), ci);
+      update_callgraph (insertPt->getParent()->getParent(), assume2);
       BranchInst::Create (cont, alloca_else_bb);
       
     }
@@ -1059,18 +1065,18 @@ namespace seahorn {
           if N is null then the check corresponds to a store or
           load. In that case, the added code is:
 
-             if (tracked_ptr && p == tracked_ptr) {
-               assert (tracked_offset + align < tracked_size);
-               assert (tracked_offset >= 0);
-             }
-
+          if (tracked_ptr && p == tracked_ptr) {
+              assert (tracked_offset + align < tracked_size);
+              assert (tracked_offset >= 0);
+          }
+           
           otherwise, the check corresponds to a memory intrinsic
           (memcpy, memmove, or memset). The code differs slightly:
 
-             if (tracked_ptr && p == tracked_ptr) {
-               assert (tracked_offset + n < tracked_size);
-               assert (tracked_offset >= 0);
-             }
+          if (tracked_ptr && p == tracked_ptr) {
+              assert (tracked_offset + n < tracked_size);
+              assert (tracked_offset >= 0);
+          }
       */
 
       LLVMContext& ctx = m_B.getContext ();
@@ -1099,22 +1105,68 @@ namespace seahorn {
       m_B.SetInsertPoint (bb->getTerminator ());
 
       // if (m_tracked_ptr && ptr == m_tracked_ptr)
-      Value* condA = m_B.CreateICmpSGT(m_B.CreateLoad (m_tracked_ptr), 
+      Value* vtracked_ptr = abc_helpers::createLoad(m_B, m_tracked_ptr, m_dl);
+      Value* vtracked_base = abc_helpers::createLoad(m_B, m_tracked_base, m_dl);
+
+      Value* condA = m_B.CreateICmpSGT(vtracked_ptr, 
                                        abc_helpers::createNullCst (ctx));
-      Value* condB = m_B.CreateICmpEQ (
-          m_B.CreateBitOrPointerCast (Ptr, abc_helpers::voidPtr (ctx)), 
-          m_B.CreateLoad (m_tracked_ptr));
+      Value* condB = m_B.CreateICmpEQ (vtracked_ptr,
+                                       m_B.CreateBitOrPointerCast (Ptr, abc_helpers::voidPtr (ctx)));
       Value* cond = m_B.CreateAnd (condA, condB);
       bb->getTerminator ()->eraseFromParent ();      
       BranchInst::Create (abc_under_bb, cont, cond, bb);      
       m_B.SetInsertPoint (abc_under_bb);
 
-      Value* offset = 
-          m_B.CreateAlignedLoad (m_tracked_offset, 
-                                 m_dl->getABITypeAlignment(m_tracked_offset->getType ()));
-      Value* size = 
-          m_B.CreateAlignedLoad (m_tracked_size,
-                                 m_dl->getABITypeAlignment(m_tracked_size->getType ()));      
+      // In general, we can use tracked_offset and
+      // tracked_size. However, in some cases (e.g., if the load/store
+      // uses a gep instruction) we try to extract directly the offset
+      // and size.
+
+      Value* addr = nullptr;
+      if (GetElementPtrInst * gep = dyn_cast<GetElementPtrInst> (Ptr))
+        addr = gep->getPointerOperand ();
+      if (!addr && isa<GlobalVariable>(Ptr))
+        addr = Ptr;
+      if (!addr && isa<AllocaInst>(Ptr))
+        addr = Ptr;
+      // TODO: malloc's and bitcast's
+
+      Value* addrEqualToBase = nullptr;
+      if (addr)
+          addrEqualToBase = m_B.CreateICmpEQ (vtracked_base, 
+                            m_B.CreateBitOrPointerCast (addr, abc_helpers::voidPtr (ctx)));
+
+      Value* size = nullptr;
+      if (addr) {
+        uint64_t vsize;
+        if (getObjectSize(addr, vsize, m_dl, m_tli, true)) {
+          size = m_B.CreateSelect (addrEqualToBase,
+                                   abc_helpers::createIntCst (m_B.getContext (), vsize), 
+                                   abc_helpers::createLoad(m_B, m_tracked_size, m_dl));
+        }
+      }
+
+      Value* offset = nullptr;
+      if (addr) {
+        Value* o = nullptr;
+        if (GetElementPtrInst * gep = dyn_cast<GetElementPtrInst> (Ptr))
+          o = doGep (gep);
+        else
+          o = abc_helpers::createIntCst (m_B.getContext (), 0); 
+        
+        offset = m_B.CreateSelect (addrEqualToBase, o, 
+                                   abc_helpers::createLoad(m_B, m_tracked_offset, m_dl));
+      }
+
+      // if no optimization possible then use tracked_offset and
+      // tracked_size
+      if (!offset) {
+        offset = abc_helpers::createLoad(m_B, m_tracked_offset, m_dl);
+      }
+
+      if (!size) { 
+        size = abc_helpers::createLoad(m_B, m_tracked_size, m_dl); 
+      }
 
       /////
       // underflow check: m_tracked_offset >= 0
@@ -1384,7 +1436,8 @@ namespace seahorn {
            else 
              untracked_dsa_checks++; 
         } else if (MemTransferInst *MTI = dyn_cast<MemTransferInst>(I)) {
-          if (ShouldBeTrackedPtr (MTI->getDest (), F) || ShouldBeTrackedPtr (MTI->getSource (),F))
+          if (ShouldBeTrackedPtr (MTI->getDest (), F) || 
+              ShouldBeTrackedPtr (MTI->getSource (),F))
             Worklist.push_back (I);
           else 
             untracked_dsa_checks+=2; 
@@ -1447,6 +1500,7 @@ namespace seahorn {
     AU.addRequired<llvm::DataLayoutPass>();
     AU.addRequired<llvm::TargetLibraryInfo>();
     AU.addRequired<llvm::UnifyFunctionExitNodes> ();
+    AU.addRequired<llvm::CallGraphWrapperPass>();
   } 
 
   char ABC2::ID = 0;

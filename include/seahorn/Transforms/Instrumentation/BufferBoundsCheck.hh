@@ -84,7 +84,8 @@ namespace seahorn
       // }
       if (const GetElementPtrInst * GEP = dyn_cast<GetElementPtrInst> (Ptr)) {
         
-        if (!(isa<AllocaInst>(GEP->getPointerOperand()) || isa<GlobalVariable>(Ptr)))
+        if (!(isa<AllocaInst>(GEP->getPointerOperand()) || 
+              isa<GlobalVariable>(GEP->getPointerOperand())))
           return false;
 
         // figure out statically the offset of the pointer
@@ -159,7 +160,19 @@ namespace seahorn
                            ConstantInt::get (IntTy, RHS), 
                            Name);
     }
+
+    inline Value* createLoad(IRBuilder<> B, Value *Ptr, 
+                             const DataLayout* dl) {
+      return B.CreateAlignedLoad (Ptr, 
+                                  dl->getABITypeAlignment (Ptr->getType ()));
+    }
   
+    inline Value* createStore(IRBuilder<> B, Value* Val, Value *Ptr, 
+                              const DataLayout* dl) {
+      return B.CreateAlignedStore (Val, Ptr, 
+                                   dl->getABITypeAlignment (Ptr->getType ()));
+    }
+                               
     // Helper to create a integer constant
     inline Value* createIntCst (LLVMContext &ctx, uint64_t val) {
       return ConstantInt::get (createIntTy (ctx), val);
