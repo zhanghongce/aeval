@@ -47,7 +47,7 @@ int main(void)
   if (base == addr)
   {
     ptr = base;
-    size = 4*N;
+    assume(size == 4*N);
   }
   else
     assume (base + size < addr);
@@ -64,10 +64,26 @@ int main(void)
         offset += 4*i;
       }
     }
-    if (ptr == p)
+    
+    
+    int o;
+#ifdef USE_BASE_OFF
+    o = addr==base ? 4*i : offset;
+#else
+    o = offset;
+#endif
+    
+    int sz;
+#ifdef USE_BASE_SZ
+    sz = addr==base ? 4*N : size;
+#else
+    sz = size;
+#endif    
+    
+    if (addr == base || ptr == p)
     {
-      assert (offset >= 0);
-      assert (offset + 4 <= size);
+      assert (o >= 0);
+      assert (o + 4 <= sz);
     }
   }
   
