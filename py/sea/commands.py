@@ -131,6 +131,9 @@ class Seapp(sea.LimitedCmd):
         ap.add_argument ('--abc', 
                          dest='abc', help='Insert array bounds checks',
                          type=int, default=0, metavar='ENCODING')
+        ap.add_argument ('--abc-disable-underflow', dest='abc_no_under',
+                         help='Insert only overflow bounds checks',
+                         default=False, action='store_true')
         ap.add_argument ('--abc-dsa-node', dest='abc_dsa', 
                          help='Insert array bounds checks only if a pointer belongs to the DSA node',
                          type=int, default=0, metavar='ID')
@@ -185,6 +188,8 @@ class Seapp(sea.LimitedCmd):
         if args.abc:
             argv.append ('--abc={id}'.format(id=args.abc))
             argv.append ('--abc-dsa-node={n}'.format (n=args.abc_dsa))
+            if args.abc_no_under:
+                argv.append ('--abc-disable-underflow')            
         if args.ioc:
             argv.append ('--overflow-check')
         if args.ndc:

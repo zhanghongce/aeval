@@ -16,8 +16,8 @@ namespace seahorn
    public:
     static char ID;
     DSACount () : llvm::ModulePass (ID){ }
+
     virtual bool runOnModule (llvm::Module &M) { return false;}
-    virtual bool runOnFunction (Function &F) { return false; }
     virtual void getAnalysisUsage (llvm::AnalysisUsage &AU) const{ AU.setPreservesAll ();}
     virtual const char* getPassName () const {return "DSACount";}
     void write (llvm::raw_ostream& o);
@@ -101,8 +101,11 @@ namespace seahorn
     static char ID;
     
     DSACount ();
+
     unsigned getId (const DSNode* n) const;
+    bool isAccessed (const DSNode* n) const;
     DataStructures * getDSA () { return m_dsa; }
+
     virtual bool runOnModule (llvm::Module &M);
     virtual void getAnalysisUsage (llvm::AnalysisUsage &AU) const;
     virtual const char* getPassName () const {return "DSACount";}

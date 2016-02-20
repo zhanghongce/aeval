@@ -30,6 +30,12 @@ namespace seahorn
      return it->second.m_id;
   }
 
+  bool DSACount::isAccessed (const DSNode* n) const {
+     auto it = m_nodes.find (n);
+     assert (it != m_nodes.end ());
+     return it->second.m_accesses > 0;
+  }
+
   // Print statistics 
   void DSACount::write (llvm::raw_ostream& o) {
     
