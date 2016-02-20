@@ -1253,7 +1253,6 @@ namespace seahorn {
 
        BranchInst::Create (then, err_bb, cond, cur);            
 
-       m_checks_added++;
        return err_bb;
      }
 
@@ -1299,7 +1298,6 @@ namespace seahorn {
                                                     abc_helpers::createIntCst (ctx, addr_sz));
       Assert (m_B.CreateICmpSLE (voffset_sz, vsize),
               bb2, bb1, insertPt, "overflow_error_bb");
-      
 
       if (DisableUnderflow)  {
         BranchInst::Create (cont, bb2);
@@ -1336,6 +1334,7 @@ namespace seahorn {
         Assert (m_B.CreateICmpSGE (abc_helpers::createAdd (m_B, voffset, vtracked_offset), 
                                    abc_helpers::createIntCst (ctx, 0)), 
                 cont, abc_under_bb2, insertPt, "underflow_error_bb");
+
       }
      }
       
@@ -1585,6 +1584,8 @@ namespace seahorn {
         }
         else 
           doPtrCheck (ptr, nullptr, I);
+        // add one for overflow and another one for underflow
+        m_checks_added+=(DisableUnderflow ? 1 : 2);
       }
       else
         m_trivial_checks++;
@@ -1609,6 +1610,7 @@ namespace seahorn {
         }
         else 
           doPtrCheck (ptr, nullptr, I);
+        m_checks_added+=(DisableUnderflow ? 1 : 2);
       }
       else 
         m_trivial_checks++;
@@ -1618,13 +1620,19 @@ namespace seahorn {
       m_mem_accesses+=2;
 
       doPtrCheck (MTI->getDest (), MTI->getLength (), MTI);
+      m_checks_added+=(DisableUnderflow ? 1 : 2);
+
       doPtrCheck (MTI->getSource (), MTI->getLength (), MTI);
+      m_checks_added+=(DisableUnderflow ? 1 : 2);
     }
 
     void ABC2::ABCInst::visit (MemSetInst *MSI) {
       m_mem_accesses++;
 
       doPtrCheck (MSI->getDest (), MSI->getLength (), MSI);
+      m_checks_added++; 
+      if (!DisableUnderflow) 
+        m_checks_added++; 
     }
 
     void ABC2::ABCInst::visit (AllocaInst *I) {
