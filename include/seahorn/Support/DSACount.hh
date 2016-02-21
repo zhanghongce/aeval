@@ -41,20 +41,16 @@ namespace seahorn
     typedef std::set <const Value*> ValueSet;
 
     struct WrapperDSNode {
-      unsigned m_id;
       const DSNode* m_n;
+      unsigned m_id;
+      std::string m_rep_name;
       unsigned m_accesses;
 
-      WrapperDSNode (unsigned id, const DSNode* n): 
-          m_id (id), m_n (n), m_accesses (0) { }
+      WrapperDSNode (const DSNode* n): 
+          m_n (n), m_id (0), m_accesses (0) { }
 
       bool operator==(const WrapperDSNode& o) const {
          return m_n == o.m_n;
-      }
-
-      // Sort by id!
-      bool operator<(const WrapperDSNode& o) const {
-        return m_id < o.m_id;
       }
     };
 
@@ -62,17 +58,12 @@ namespace seahorn
     DSGraph* m_gDsg;
     DenseMap<const DSNode*, WrapperDSNode> m_nodes;
     DenseMap<const DSNode*, ValueSet> m_referrers_map;
-    unsigned m_id;
 
-    unsigned add_node (const DSNode* n) {
+    void add_node (const DSNode* n) {
       auto it = m_nodes.find (n);
       if (it == m_nodes.end ()) {
-        unsigned id = m_id++;
-        m_nodes.insert (std::make_pair(n, WrapperDSNode (id, n)));
-        return id;
+        m_nodes.insert (std::make_pair(n, WrapperDSNode (n)));
       }
-      else 
-        return it->second.m_id;
     }
 
     void insert_referrers_map (const DSNode* n, const Value* v) {

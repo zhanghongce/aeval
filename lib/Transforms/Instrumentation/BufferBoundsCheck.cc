@@ -746,10 +746,8 @@ namespace seahorn
   {
     if (M.begin () == M.end ()) return false;
       
-    // Print statistics about DSA nodes
+    // Gather some statistics about DSA nodes
     DSACount* m_dsa_count = &getAnalysis<DSACount> ();    
-    if (m_dsa_count)
-      m_dsa_count->write (errs ());
 
     LLVMContext &ctx = M.getContext ();
     m_Int64Ty = Type::getInt64Ty (ctx);
@@ -1193,8 +1191,9 @@ namespace seahorn {
       m_B.SetInsertPoint (bb->getTerminator ());
       Value* vtracked_size = abc_helpers::createLoad(m_B, m_tracked_size, m_dl);
       Value* vtracked_base = abc_helpers::createLoad(m_B, m_tracked_base, m_dl);
+      Value* vtracked_ptr = abc_helpers::createLoad(m_B, m_tracked_ptr, m_dl);
       Value* PtrX = m_B.CreateBitOrPointerCast (Ptr, abc_helpers::voidPtr (ctx));
-      Value* cond = m_B.CreateAnd (m_B.CreateIsNull(abc_helpers::createLoad(m_B, m_tracked_ptr, m_dl)),
+      Value* cond = m_B.CreateAnd (m_B.CreateIsNull(vtracked_ptr),
                                    m_B.CreateICmpEQ (PtrX, vtracked_base));
 
       bb->getTerminator ()->eraseFromParent ();      
@@ -1263,7 +1262,7 @@ namespace seahorn {
          object pointed by b
 
          for overflow:
-           assert (o + use_sz <= s);
+           assert (o + addr_sz <= s);
          for underflow:
            if (b == tracked_base) {
               assert (o >= 0);
@@ -1295,7 +1294,7 @@ namespace seahorn {
       Value* vsize = abc_helpers::createIntCst (ctx, size);
       Value* voffset = computeGepOffset (gep);
       Value* voffset_sz = abc_helpers::createAdd (m_B, voffset,
-                                                    abc_helpers::createIntCst (ctx, addr_sz));
+                                                  abc_helpers::createIntCst (ctx, addr_sz));
       Assert (m_B.CreateICmpSLE (voffset_sz, vsize),
               bb2, bb1, insertPt, "overflow_error_bb");
 
@@ -1683,11 +1682,9 @@ namespace seahorn {
         return false;
       }
       
-      // Print statistics about DSA nodes
+      // Gather some statistics about DSA nodes
       DSACount* m_dsa_count = &getAnalysis<DSACount> ();    
-      if (m_dsa_count)
-        m_dsa_count->write (errs ());
-      
+
       LLVMContext &ctx = M.getContext ();
       
       AttrBuilder AB;

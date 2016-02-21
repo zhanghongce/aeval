@@ -21,7 +21,7 @@ namespace seahorn
   
   DSACount::DSACount () : 
       llvm::ModulePass (ID), 
-      m_dsa (nullptr), m_gDsg (nullptr), m_id (1) { }
+      m_dsa (nullptr), m_gDsg (nullptr) { }
 
     
   unsigned DSACount::getId (const DSNode* n) const {
@@ -38,45 +38,51 @@ namespace seahorn
 
   // Print statistics 
   void DSACount::write (llvm::raw_ostream& o) {
+
+      o << " ========== DSACount  ==========\n";
     
       std::vector<WrapperDSNode> nodes_vector;
       nodes_vector.reserve (m_nodes.size ());
-      for (auto &kv: m_nodes) { nodes_vector.push_back (kv.second); }
-      std::sort (nodes_vector.begin (), nodes_vector.end ());
-
-      errs () << " ========== DSACount  ==========\n";
-
-      unsigned num_accessed_nodes = 0;
-      for (auto &n: nodes_vector) {
-        if (n.m_accesses > 0)
-          num_accessed_nodes++;
+      for (auto &kv: m_nodes) { 
+        if (kv.second.m_accesses > 0)
+          nodes_vector.push_back (kv.second); 
       }
-      errs () << nodes_vector.size () << " Total number of DS nodes\n";     
-      errs () << num_accessed_nodes   << " Total number of read/written DS nodes\n";     
+      
+      o << nodes_vector.size ()  
+        << " Total number of read/written DS nodes\n";     
+
+      std::sort (nodes_vector.begin (), nodes_vector.end (),
+                 [](WrapperDSNode n1, WrapperDSNode n2){
+                   return (n1.m_id < n2.m_id);
+                 });
       
       for (auto &n: nodes_vector) {
         if (n.m_accesses > DSNodeThreshold) {
-          errs () << "  Node " << n.m_id << ": "  
-                  << n.m_accesses << " memory accesses\n";
-          LOG("dsa-count", n.m_n->dump ();); 
+          if (!has_referrers (n.m_n)) continue;
+          const ValueSet& referrers = get_referrers (n.m_n);
+          o << "  [Node Id " << n.m_id  << "] ";
+
+          if (n.m_rep_name != "") {
+            if (n.m_n->getUniqueScalar ()) {
+              o << " singleton={" << n.m_rep_name << "}";
+            } else {
+              o << " non-singleton={" << n.m_rep_name << ",...}";
+            }
+          }
+
+          o << "  with " << n.m_accesses << " memory accesses \n";
+
+          LOG("dsa-count", /*n.m_n->dump ();*/ 
+              o << "\tReferrers={";
+              for (auto const& r : referrers) {
+                if (r->hasName ())
+                  o << r->getName ();
+                else 
+                  o << *r; 
+                o << ";";
+              }
+              o << "}\n";);
         }
-        // if (n.m_n->getNumReferrers() > DSNodeThreshold) {
-        //   if (!has_referrers (n.m_n)) continue;
-        //   const ValueSet& referrers = get_referrers (n.m_n);
-        //   LOG("dsa-count",
-        //         errs () << "Node " << n.m_id << ": "  
-        //                 << referrers.size () << " referrers\n";);
-        //   LOG("dsa-count", n.m_n->dump (); 
-        //        errs () << "\tReferrers={";
-        //          for (auto const& r : referrers) {
-        //             if (r->hasName ())
-        //               errs () << r->getName ();
-        //             else 
-        //               errs () << *r; 
-        //             errs () << ";";
-        //          }
-        //          errs () << "}\n";);
-        // }
       }
   }        
 
@@ -86,9 +92,7 @@ namespace seahorn
       m_dsa = &getAnalysis<SteensgaardDataStructures> ();
       m_gDsg = m_dsa->getGlobalsGraph ();
 
-      // Assign a numeric id to each DSNode and gather the number of
-      // referrers
-
+      // Collect all referrers per DSNode
       DSScalarMap &SM = m_gDsg->getScalarMap ();
       for (const Value*v : boost::make_iterator_range (SM.global_begin (), 
                                                        SM.global_end ())){
@@ -171,7 +175,67 @@ namespace seahorn
           }   
         }
       }
-      
+
+      // figure out deterministically a representative name for each
+      // DSNode
+      for (auto &p: m_nodes) {
+        WrapperDSNode& n = p.second;
+        if (!has_referrers (n.m_n) || n.m_accesses == 0) continue;
+
+        // we collect all referrers and sort by their names in order
+        // to make sure that the representative is always
+        // chosen deterministically.
+        const ValueSet& referrers = get_referrers (n.m_n);
+        std::vector<std::string> named_referrers;
+        named_referrers.reserve (referrers.size ());
+        for (auto &r: referrers) {
+          if (r->hasName ()) {
+            named_referrers.push_back (r->getName().str());
+          } 
+        }
+
+        // if no named value we create a name from the unnamed values.
+        if (named_referrers.empty ()) {
+          std::string str("");
+          raw_string_ostream str_os (str);
+          for (auto &r: referrers) {
+            if (!r->hasName ()) {
+              // build a name from the unnamed value
+              r->print (str_os); 
+              std::string inst_name (str_os.str ());
+              named_referrers.push_back (inst_name);
+            }
+          }
+        }
+
+        std::sort (named_referrers.begin (), named_referrers.end (),
+                   [](std::string s1, std::string s2){
+                     return (s1 < s2);
+                   });
+
+        if (!named_referrers.empty ()) // should not be empty
+          n.m_rep_name = named_referrers [0];
+        
+      }
+
+      // Try to assign deterministically a numeric id to each node
+      std::vector<WrapperDSNode*> nodes_vector;
+      nodes_vector.reserve (m_nodes.size ());
+      for (auto &kv: m_nodes) { 
+        if (kv.second.m_accesses > 0)
+          nodes_vector.push_back (&(kv.second)); 
+      }
+      std::sort (nodes_vector.begin (), nodes_vector.end (),
+                 [](WrapperDSNode* n1, WrapperDSNode* n2){
+                   return ((n1->m_rep_name < n2->m_rep_name) ||
+                           ((n1->m_rep_name == n2->m_rep_name) &&
+                            (n1->m_accesses < n2->m_accesses)));
+                 });
+      unsigned id = 1;
+      for (auto n: nodes_vector) n->m_id = id++;
+
+      write(errs ());
+
       return false;
   }
 
