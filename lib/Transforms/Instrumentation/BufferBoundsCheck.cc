@@ -1669,6 +1669,13 @@ namespace seahorn {
           return;
         }
       }
+      else if (isOperatorNewLikeFn (I, m_tli)) {
+        if (I->getNumArgOperands () == 1) {
+          Value *size = I->getArgOperand(0); // bytes
+          doAllocaSite (I, size, abc_helpers::getNextInst (I)); 
+          return;
+        }
+      }
       errs () << "Warning: missing alloca site: " << *I << "\n";
     }
 
