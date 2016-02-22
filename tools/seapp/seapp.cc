@@ -282,6 +282,9 @@ int main(int argc, char **argv) {
     // cleanup after lowering invoke's
     pass_manager.add (llvm::createCFGSimplificationPass ());  
   }
+
+  // lower arithmetic with overflow intrinsics
+  pass_manager.add(seahorn::createLowerArithWithOverflowIntrinsicsPass ());
   
   if (InlineAll)
   {
