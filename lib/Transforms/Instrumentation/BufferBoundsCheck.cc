@@ -1909,11 +1909,35 @@ namespace seahorn {
                                   NULL));
       abc_assert_valid_offset->addFnAttr(Attribute::AlwaysInline);
 
-      // FIXME: remove only sea_abc_xxx functions
-      GlobalVariable* LlvmUsed = M.getNamedGlobal ("llvm.used");
-      if (LlvmUsed)
-        LlvmUsed->eraseFromParent ();
-      
+      std::vector<StringRef> sea_funcs = 
+          { "sea_abc_assert_valid_ptr", "sea_abc_assert_valid_offset", 
+            "sea_abc_log_ptr", "sea_abc_alloc", "sea_abc_init" };
+     
+      GlobalVariable *LLVMUsed = M.getGlobalVariable("llvm.used");
+      std::vector<Constant*> MergedVars;
+      if (LLVMUsed) {
+        // Collect the existing members of llvm.used except sea
+        // functions
+        ConstantArray *Inits = cast<ConstantArray>(LLVMUsed->getInitializer());
+        for (unsigned I = 0, E = Inits->getNumOperands(); I != E; ++I) {
+          Value* V = Inits->getOperand(I)->stripPointerCasts();
+          if (std::find (sea_funcs.begin (), sea_funcs.end (),
+                         V->getName ()) == sea_funcs.end ()) {
+            MergedVars.push_back(Inits->getOperand(I));
+          }
+        }
+        LLVMUsed->eraseFromParent();
+      }
+
+      // Recreate llvm.used.
+      if (!MergedVars.empty ()) {
+        ArrayType *ATy = ArrayType::get(abc::voidPtr (ctx), MergedVars.size());
+        LLVMUsed = new llvm::GlobalVariable(
+            M, ATy, false, llvm::GlobalValue::AppendingLinkage,
+            llvm::ConstantArray::get(ATy, MergedVars), "llvm.used");
+        LLVMUsed->setSection("llvm.metadata");
+      }
+
       IRBuilder<> B (ctx);
       
       CallGraphWrapperPass *cgwp = getAnalysisIfAvailable<CallGraphWrapperPass> ();
@@ -2025,7 +2049,7 @@ namespace seahorn {
                                                                 abc::voidPtr (ctx)),
                                       offset));
                 }
-              }
+              } 
             }
             else 
               untracked_dsa_checks++;
@@ -2067,7 +2091,7 @@ namespace seahorn {
                                                                 abc::voidPtr (ctx)),
                                       offset));
                 }
-              }
+              } 
             }
             else 
               untracked_dsa_checks++; 
