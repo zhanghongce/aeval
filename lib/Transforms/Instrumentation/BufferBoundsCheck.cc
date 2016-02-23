@@ -1942,8 +1942,7 @@ namespace seahorn {
       
       CallGraphWrapperPass *cgwp = getAnalysisIfAvailable<CallGraphWrapperPass> ();
       CallGraph* cg = cgwp ? &cgwp->getCallGraph () : nullptr;
-      if (cg)
-      {
+      if (cg) {
         cg->getOrInsertFunction (abc_init);
         cg->getOrInsertFunction (abc_alloc);
         cg->getOrInsertFunction (abc_log_ptr);
@@ -2019,7 +2018,7 @@ namespace seahorn {
               mem_accesses++;
               if (abc::IsTrivialCheck (dl, tli, ptr)) {
                 trivial_checks++;
-              } else if (GetElementPtrInst* gep = dyn_cast<GetElementPtrInst> (ptr)) {
+              } else {
 
                 int addr_sz = abc::getAddrSize (dl, *I);
                 if (addr_sz < 0) {
@@ -2030,26 +2029,32 @@ namespace seahorn {
  
                 checks_added++;
                 B.SetInsertPoint (LI);
-                Value* offset = instrumented_gep [gep];
-                if (!offset) 
-                  offset = abc::computeGepOffset (dl, B, gep);                  
-                offset = abc::createAdd (B, offset, 
-                                         abc::createIntCst (ctx, addr_sz));
-                
-                uint64_t size; //bytes
-                if (getObjectSize(gep->getPointerOperand (), size, dl, tli, true)) {
+
+                if (GetElementPtrInst* gep = dyn_cast<GetElementPtrInst> (ptr)) {
+                  Value* offset = instrumented_gep [gep];
+                  if (!offset) 
+                    offset = abc::computeGepOffset (dl, B, gep);                  
+                  offset = abc::createAdd (B, offset, 
+                                           abc::createIntCst (ctx, addr_sz));
+                  Value* base = gep->getPointerOperand ();
+                  uint64_t size; //bytes
+                  if (getObjectSize(base, size, dl, tli, true)) {
+                    abc::update_cg (cg, &F, 
+                         B.CreateCall2 (abc_assert_valid_offset, 
+                                        offset, abc::createIntCst (ctx, size)));
+                  }
+                  else {
+                    base = B.CreateBitOrPointerCast (base, abc::voidPtr (ctx));
+                    abc::update_cg (cg, &F, 
+                         B.CreateCall2 (abc_assert_valid_ptr, base, offset));
+                  }
+                } else { // ptr is not a gep
+                  Value* base = B.CreateBitOrPointerCast (ptr, abc::voidPtr (ctx));
                   abc::update_cg (cg, &F, 
-                       B.CreateCall2 (abc_assert_valid_offset, 
-                                      offset, abc::createIntCst (ctx, size)));
+                       B.CreateCall2 (abc_assert_valid_ptr, base,
+                                      abc::createIntCst (ctx, addr_sz)));
                 }
-                else {
-                  abc::update_cg (cg, &F, 
-                       B.CreateCall2 (abc_assert_valid_ptr, 
-                                      B.CreateBitOrPointerCast (gep->getPointerOperand (),
-                                                                abc::voidPtr (ctx)),
-                                      offset));
-                }
-              } 
+              }
             }
             else 
               untracked_dsa_checks++;
@@ -2059,39 +2064,42 @@ namespace seahorn {
               mem_accesses++;
               if (abc::IsTrivialCheck (dl, tli, ptr)) {
                 trivial_checks++;
-              } else if (GetElementPtrInst* gep = dyn_cast<GetElementPtrInst> (ptr)) {
-
+              } else {
                 int addr_sz = abc::getAddrSize (dl, *I);
                 if (addr_sz < 0) {
                   errs () << "Error: cannot find size of the accessed address for " 
                           << *I << "\n";
                   continue;
                 }
-
                 checks_added++;
                 B.SetInsertPoint (SI);
-                Value* offset = instrumented_gep [gep];
-                if (!offset) 
-                  offset = abc::computeGepOffset (dl, B, gep);                  
 
-                offset = abc::createAdd (B, offset, 
-                                         abc::createIntCst (ctx, addr_sz));
+                if (GetElementPtrInst* gep = dyn_cast<GetElementPtrInst> (ptr)) {
+                  Value* offset = instrumented_gep [gep];
+                  if (!offset) 
+                    offset = abc::computeGepOffset (dl, B, gep);                  
 
-                uint64_t size; //bytes
-                if (getObjectSize(gep->getPointerOperand (), size, dl, tli, true)) {
+                  offset = abc::createAdd (B, offset, 
+                                           abc::createIntCst (ctx, addr_sz));
+                  Value* base = gep->getPointerOperand ();
+                  uint64_t size; //bytes
+                  if (getObjectSize(base, size, dl, tli, true)) {
+                    abc::update_cg (cg, &F, 
+                         B.CreateCall2 (abc_assert_valid_offset, offset, 
+                                        abc::createIntCst (ctx, size)));
+                  }
+                  else {
+                    base = B.CreateBitOrPointerCast (base, abc::voidPtr (ctx));
+                    abc::update_cg (cg, &F, 
+                         B.CreateCall2 (abc_assert_valid_ptr, base, offset));
+                  }
+                } else { // ptr is not a gep
+                  Value* base = B.CreateBitOrPointerCast (ptr, abc::voidPtr (ctx));
                   abc::update_cg (cg, &F, 
-                       B.CreateCall2 (abc_assert_valid_offset, 
-                                      offset, 
-                                      abc::createIntCst (ctx, size)));
+                       B.CreateCall2 (abc_assert_valid_ptr, base,
+                                      abc::createIntCst (ctx, addr_sz)));
                 }
-                else {
-                  abc::update_cg (cg, &F, 
-                       B.CreateCall2 (abc_assert_valid_ptr, 
-                                      B.CreateBitOrPointerCast (gep->getPointerOperand (),
-                                                                abc::voidPtr (ctx)),
-                                      offset));
-                }
-              } 
+              }
             }
             else 
               untracked_dsa_checks++; 
@@ -2099,8 +2107,17 @@ namespace seahorn {
             if (abc::ShouldBeTrackedPtr (MTI->getDest (), F, dsa_count) || 
                 abc::ShouldBeTrackedPtr (MTI->getSource (),F, dsa_count)) {
               mem_accesses+=2;
-              // checks_added+=2;
-              // TODO
+              checks_added+=2; 
+              Value *base1 = 
+                  B.CreateBitOrPointerCast (MTI->getDest(), abc::voidPtr(ctx));
+              Value *base2 = 
+                  B.CreateBitOrPointerCast (MTI->getSource(), abc::voidPtr(ctx));
+              Value *len = 
+                  B.CreateSExtOrTrunc (MTI->getLength(), abc::createIntTy(ctx));
+              abc::update_cg (cg, &F, 
+                              B.CreateCall2 (abc_assert_valid_ptr, base1, len));
+              abc::update_cg (cg, &F, 
+                              B.CreateCall2 (abc_assert_valid_ptr, base2, len));
             }
             else 
               untracked_dsa_checks+=2; 
@@ -2108,8 +2125,13 @@ namespace seahorn {
             Value* ptr = MSI->getDest ();
             if (abc::ShouldBeTrackedPtr (ptr, F, dsa_count))  {
               mem_accesses++;
-              // checks_added++;
-              //TODO
+              checks_added++; 
+              Value *base = 
+                  B.CreateBitOrPointerCast (MSI->getDest(), abc::voidPtr(ctx));
+              Value *len = 
+                  B.CreateSExtOrTrunc (MSI->getLength(), abc::createIntTy(ctx));
+              abc::update_cg (cg, &F, 
+                              B.CreateCall2 (abc_assert_valid_ptr, base, len));
             }
             else 
               untracked_dsa_checks++; 
