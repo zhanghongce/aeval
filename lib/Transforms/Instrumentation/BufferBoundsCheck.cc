@@ -1968,16 +1968,26 @@ namespace seahorn {
           Instruction *I = &*i;
           
           if (GetElementPtrInst* GEP  = dyn_cast<GetElementPtrInst> (I)) {
-            Value *ptr = GEP->getPointerOperand ();            
-            if (abc::ShouldBeTrackedPtr (ptr, F, dsa_count)) {
+            Value *base = GEP->getPointerOperand ();            
+            if (abc::ShouldBeTrackedPtr (base, F, dsa_count)) {
+
+              // only instrument indirect gep
+              if (std::all_of (GEP->uses().begin (), GEP->uses().end (), 
+                                [](Use& u) { 
+                                  return (isa<LoadInst>(u.getUser()) || 
+                                          isa<StoreInst>(u.getUser()));})) {
+                continue; 
+              }
+
+
               B.SetInsertPoint (abc::getNextInst (I));
               Value* offset = abc::computeGepOffset (dl, B, GEP);                  
+              instrumented_gep [GEP] = offset;
               abc::update_cg (cg, &F, 
                    B.CreateCall2 (abc_log_ptr, 
-                                  B.CreateBitOrPointerCast (ptr,
+                                  B.CreateBitOrPointerCast (base,
                                                             abc::voidPtr (ctx)),
                                   offset));
-              instrumented_gep [GEP] = offset;
             }
           } else if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
             Value* ptr = LI->getPointerOperand ();
@@ -1986,22 +1996,22 @@ namespace seahorn {
               if (abc::IsTrivialCheck (dl, tli, ptr)) {
                 trivial_checks++;
               } else if (GetElementPtrInst* gep = dyn_cast<GetElementPtrInst> (ptr)) {
+
+                int addr_sz = abc::getAddrSize (dl, *I);
+                if (addr_sz < 0) {
+                  errs () << "Error: cannot find size of the accessed address for " 
+                          << *I << "\n";
+                  continue;
+                }
+ 
                 checks_added++;
                 B.SetInsertPoint (LI);
                 Value* offset = instrumented_gep [gep];
                 if (!offset) 
                   offset = abc::computeGepOffset (dl, B, gep);                  
-
-                int addr_sz = abc::getAddrSize (dl, *I);
-                if (addr_sz >= 0)
-                  offset = abc::createAdd (B, offset, 
-                                           abc::createIntCst (ctx, addr_sz));
-                else {
-                  errs () << "Error: cannot find size of the accessed address for " 
-                          << *I << "\n";
-                  continue;
-                }
-
+                offset = abc::createAdd (B, offset, 
+                                         abc::createIntCst (ctx, addr_sz));
+                
                 uint64_t size; //bytes
                 if (getObjectSize(gep->getPointerOperand (), size, dl, tli, true)) {
                   abc::update_cg (cg, &F, 
@@ -2026,21 +2036,22 @@ namespace seahorn {
               if (abc::IsTrivialCheck (dl, tli, ptr)) {
                 trivial_checks++;
               } else if (GetElementPtrInst* gep = dyn_cast<GetElementPtrInst> (ptr)) {
-                B.SetInsertPoint (SI);
-                checks_added++;
-                Value* offset = instrumented_gep [gep];
-                if (!offset) 
-                  offset = abc::computeGepOffset (dl, B, gep);                  
 
                 int addr_sz = abc::getAddrSize (dl, *I);
-                if (addr_sz >= 0) 
-                  offset = abc::createAdd (B, offset, 
-                                           abc::createIntCst (ctx, addr_sz));
-                else {
+                if (addr_sz < 0) {
                   errs () << "Error: cannot find size of the accessed address for " 
                           << *I << "\n";
                   continue;
                 }
+
+                checks_added++;
+                B.SetInsertPoint (SI);
+                Value* offset = instrumented_gep [gep];
+                if (!offset) 
+                  offset = abc::computeGepOffset (dl, B, gep);                  
+
+                offset = abc::createAdd (B, offset, 
+                                         abc::createIntCst (ctx, addr_sz));
 
                 uint64_t size; //bytes
                 if (getObjectSize(gep->getPointerOperand (), size, dl, tli, true)) {
