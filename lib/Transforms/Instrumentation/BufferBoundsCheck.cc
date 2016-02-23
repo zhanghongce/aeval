@@ -1355,10 +1355,10 @@ namespace seahorn {
       BasicBlock *cont = bb->splitBasicBlock(insertPt);
       m_B.SetInsertPoint (bb->getTerminator ());
 
-      BasicBlock* bb1 = BasicBlock::Create(ctx, "check_gep_base", F);
-      BasicBlock* bb1_then = BasicBlock::Create(ctx, "check_gep_base", F);
-      BasicBlock* bb1_else = BasicBlock::Create(ctx, "check_gep_base", F);
-      BasicBlock* bb2 = BasicBlock::Create(ctx, "check_gep_base", F);
+      BasicBlock* bb1 = BasicBlock::Create(ctx, "check_gep_base_if", F);
+      BasicBlock* bb1_then = BasicBlock::Create(ctx, "check_gep_base_base", F);
+      BasicBlock* bb1_else = BasicBlock::Create(ctx, "check_gep_base_else", F);
+      BasicBlock* bb2 = BasicBlock::Create(ctx, "check_gep_base_ptr", F);
       bb->getTerminator ()->eraseFromParent ();      
       BranchInst::Create (bb1, bb);      
       Value* base = gep->getPointerOperand ();
