@@ -34,9 +34,10 @@ int main(void)
 #endif  
   
   i = 0;
+  assert (i + 4 <= e)
   do
   {
-    if (i < k) assert (i < e);
+    if (i < k) assert (i+STEP <= e);
     i += STEP;
   } while (i != e);
   
