@@ -24,7 +24,7 @@ DisableUnderflow("abc-disable-underflow",
 namespace seahorn {
 
    // common helpers to all ABC encodings
-   namespace abc_helpers {
+   namespace abc {
 
     using namespace llvm;
 
@@ -166,6 +166,40 @@ namespace seahorn {
       return GV;
     }
 
+    //! extract offset from gep
+    inline Value* computeGepOffset(const DataLayout* dl, IRBuilder<> B, 
+                                   GetElementPtrInst *gep) {
+      SmallVector<Value*, 4> ps;
+      SmallVector<Type*, 4> ts;
+      gep_type_iterator typeIt = gep_type_begin (*gep);
+      for (unsigned i = 1; i < gep->getNumOperands (); ++i, ++typeIt) {
+        ps.push_back (gep->getOperand (i));
+        ts.push_back (*typeIt);
+      }
+      
+      Value* base = abc::createIntCst (B.getContext (), 0);
+      Value* curVal = base;
+      
+      for (unsigned i = 0; i < ps.size (); ++i) {
+        if (const StructType *st = dyn_cast<StructType> (ts [i])) {
+          if (const ConstantInt *ci = dyn_cast<ConstantInt> (ps [i])) {
+            unsigned off = abc::fieldOffset (dl, st, ci->getZExtValue ());
+            curVal = abc::createAdd(B, curVal, 
+                                    abc::createIntCst (B.getContext (), off));
+          }
+          else assert (false);
+        }
+        else if (SequentialType *seqt = dyn_cast<SequentialType> (ts [i]))
+        { // arrays, pointers, and vectors
+          unsigned sz = abc::storageSize (dl, seqt->getElementType ());
+          Value *lhs = curVal;
+          Value *rhs = abc::createMul (B, ps[i], sz);
+          curVal = abc::createAdd (B, lhs, rhs); 
+        }
+      } 
+      return curVal;
+    }
+
     // Whether a pointer should be tracked based on DSA (if available)
     bool ShouldBeTrackedPtr (Value* ptr, Function& F, DSACount* m_dsa_count) {
      #ifndef HAVE_DSA
@@ -193,6 +227,14 @@ namespace seahorn {
      }
      #endif 
    }
+
+   inline void update_cg(CallGraph* cg, Function* caller, CallInst* callee) {
+     if (cg) {
+       (*cg)[caller]->addCalledFunction (CallSite (callee),
+                                         (*cg)[callee->getCalledFunction ()]);
+     }
+   }
+
   } // end namespace
 } // end namespace
 
@@ -226,8 +268,8 @@ namespace seahorn
     for (size_t idx = 0 ; idx < m_orig_arg_size [F] ; ++AI, idx++) {
       const Value* formalPar = &*AI;
       if (formalPar == Arg) {
-        Value* shadowOffset = abc_helpers::getArgument (F, shadow_idx);
-        Value* shadowSize   = abc_helpers::getArgument (F, shadow_idx+1);
+        Value* shadowOffset = abc::getArgument (F, shadow_idx);
+        Value* shadowSize   = abc::getArgument (F, shadow_idx+1);
         assert (shadowOffset && shadowSize);
         return ValuePair (shadowOffset, shadowSize);
       }
@@ -339,7 +381,7 @@ namespace seahorn
     // placeholders for the variables that will feed the shadow
     // variables for the return instruction of the function
     if (IsShadowableType (RetTy)) {
-      ReturnInst* ret = abc_helpers::getReturnInst (NF);   
+      ReturnInst* ret = abc::getReturnInst (NF);   
       B.SetInsertPoint (ret);
 
       // StoreInst* SI_Off = 
@@ -463,18 +505,18 @@ namespace seahorn
     for (unsigned i = 0; i < ps.size (); ++i) {
       if (const StructType *st = dyn_cast<const StructType> (ts [i])) {
         if (const ConstantInt *ci = dyn_cast<const ConstantInt> (ps [i])) {
-          unsigned off = abc_helpers::fieldOffset (m_dl, st, ci->getZExtValue ());
-          curVal = abc_helpers::createAdd (B, curVal, 
-                                           ConstantInt::get (m_Int64Ty, off));
+          unsigned off = abc::fieldOffset (m_dl, st, ci->getZExtValue ());
+          curVal = abc::createAdd (B, curVal, 
+                                   ConstantInt::get (m_Int64Ty, off));
         }
         else assert (false);
       }
       else if (const SequentialType *seqt = dyn_cast<const SequentialType> (ts [i])) {
         // arrays, pointers, and vectors
-        unsigned sz = abc_helpers::storageSize (m_dl, seqt->getElementType ());
+        unsigned sz = abc::storageSize (m_dl, seqt->getElementType ());
         Value *LHS = curVal;
-        Value *RHS = abc_helpers::createMul(B, const_cast<Value*> (ps[i]), sz);
-        curVal = abc_helpers::createAdd(B, LHS, RHS); 
+        Value *RHS = abc::createMul(B, const_cast<Value*> (ps[i]), sz);
+        curVal = abc::createAdd(B, LHS, RHS); 
       }
     } 
     m_offsets [gep] = curVal;                                   
@@ -586,13 +628,13 @@ namespace seahorn
       if (const AllocaInst *AI = dyn_cast<AllocaInst> (ptr))  {
         Value *nElems = const_cast<Value*> (AI->getArraySize ()); // number of elements
         const Type* ty = AI->getAllocatedType (); // size of the allocated type
-        unsigned ty_size = abc_helpers::storageSize (m_dl, ty);
+        unsigned ty_size = abc::storageSize (m_dl, ty);
         Value* size = nullptr;
         B.SetInsertPoint (insertPoint);
         if (ty_size == 1) 
           size = nElems;
         else 
-          size = abc_helpers::createMul (B, nElems, ty_size, "alloca_size");
+          size = abc::createMul (B, nElems, ty_size, "alloca_size");
         m_offsets [ptr] = ConstantInt::get (m_Int64Ty, 0);
         m_sizes [ptr] = B.CreateSExtOrTrunc (size, m_Int64Ty);
         return;
@@ -720,15 +762,15 @@ namespace seahorn
 
     Value *range = nullptr;
     if (len) {
-      range = abc_helpers::createAdd (B, ptrOffset, len);
+      range = abc::createAdd (B, ptrOffset, len);
     } else {
-      int addr_sz = abc_helpers::getAddrSize (m_dl, inst);
+      int addr_sz = abc::getAddrSize (m_dl, inst);
       if (addr_sz < 0) { // This should not happen ...
         errs () << "Error: cannot find size of the accessed address for " << inst << "\n";
         return true;
       }
-      range = abc_helpers::createAdd (B, ptrOffset, 
-                                      ConstantInt::get (m_Int64Ty, addr_sz));
+      range = abc::createAdd (B, ptrOffset, 
+                              ConstantInt::get (m_Int64Ty, addr_sz));
     }
     
     Value* Cond_O = B.CreateICmpSLE (range, ptrSize, "buffer_over");
@@ -772,8 +814,8 @@ namespace seahorn
         funcsToInstrument.push_back (&F);
     }
     // Insert shadow global variables for function return values 
-    m_ret_offset = abc_helpers::createGlobalInt (M, 0, "ret.offset");
-    m_ret_size = abc_helpers::createGlobalInt (M, 0, "ret.size");
+    m_ret_offset = abc::createGlobalInt (M, 0, "ret.offset");
+    m_ret_size = abc::createGlobalInt (M, 0, "ret.size");
     for (auto F: funcsToInstrument) {
        addFunShadowParams (F, ctx);
     }
@@ -800,7 +842,7 @@ namespace seahorn
           Value* ptr = LI->getPointerOperand ();
           if (ptr == m_ret_offset || ptr == m_ret_size) continue;
             
-          if (abc_helpers::ShouldBeTrackedPtr (ptr, F, m_dsa_count))
+          if (abc::ShouldBeTrackedPtr (ptr, F, m_dsa_count))
             WorkList.push_back (I);
           else
             untracked_dsa_checks++; 
@@ -809,20 +851,20 @@ namespace seahorn
           Value* ptr = SI->getPointerOperand ();
           if (ptr == m_ret_offset || ptr == m_ret_size) continue;
 
-          if (abc_helpers::ShouldBeTrackedPtr (ptr, F, m_dsa_count))
+          if (abc::ShouldBeTrackedPtr (ptr, F, m_dsa_count))
             WorkList.push_back (I);
           else
             untracked_dsa_checks++; 
           
         } else if (MemTransferInst *MTI = dyn_cast<MemTransferInst>(I)) {
-          if (abc_helpers::ShouldBeTrackedPtr (MTI->getDest (), F, m_dsa_count) || 
-              abc_helpers::ShouldBeTrackedPtr (MTI->getSource (), F, m_dsa_count))
+          if (abc::ShouldBeTrackedPtr (MTI->getDest (), F, m_dsa_count) || 
+              abc::ShouldBeTrackedPtr (MTI->getSource (), F, m_dsa_count))
             WorkList.push_back (I);
           else
             untracked_dsa_checks+=2;
         } else if (MemSetInst *MSI = dyn_cast<MemSetInst>(I)) {
           Value* ptr = MSI->getDest ();
-          if (abc_helpers::ShouldBeTrackedPtr (ptr, F, m_dsa_count))
+          if (abc::ShouldBeTrackedPtr (ptr, F, m_dsa_count))
             WorkList.push_back (I);            
           else
             untracked_dsa_checks++; 
@@ -918,7 +960,7 @@ namespace seahorn
         if (Ptr == m_ret_size || Ptr == m_ret_offset) continue;
         
         m_mem_accesses++;
-        if (!abc_helpers::IsTrivialCheck (m_dl, m_tli, Ptr))  {
+        if (!abc::IsTrivialCheck (m_dl, m_tli, Ptr))  {
           instrumentCheck (*F, B, *inst, *Ptr, nullptr);           
         } else 
           m_trivial_checks++;
@@ -928,7 +970,7 @@ namespace seahorn
         if (Ptr == m_ret_size || Ptr == m_ret_offset) continue;
 
         m_mem_accesses++;
-        if (!abc_helpers::IsTrivialCheck (m_dl, m_tli, Ptr)) {
+        if (!abc::IsTrivialCheck (m_dl, m_tli, Ptr)) {
           instrumentCheck (*F, B, *inst, *Ptr, nullptr);           
         } else 
           m_trivial_checks++;
@@ -977,62 +1019,21 @@ namespace seahorn
 namespace seahorn {
     using namespace llvm;
 
-    void ABC2::ABCInst::update_callgraph(Function* caller, 
-                                         CallInst* callee) {
-      if (m_cg) {
-        (*m_cg)[caller]->addCalledFunction (CallSite (callee),
-                                            (*m_cg)[callee->getCalledFunction ()]);
-      }
-    }
-
     void ABC2::ABCInst::Assume (Value* cond, Function* F) {
       CallInst* CI = m_B.CreateCall (m_assumeFn, cond);
-      update_callgraph (F, CI);
+      abc::update_cg (m_cg, F, CI);
     }
 
     CallInst* ABC2::ABCInst::NonDet (Function* F) {
       CallInst *CI = m_B.CreateCall (m_nondetFn, "nd");
-      update_callgraph (F, CI);
+      abc::update_cg (m_cg, F, CI);
       return CI;
     }
     
     CallInst* ABC2::ABCInst::NonDetPtr (Function* F) {
       CallInst* CI = m_B.CreateCall (m_nondetPtrFn, "nd_ptr");
-      update_callgraph (F, CI);
+      abc::update_cg (m_cg, F, CI);
       return CI;
-    }
-
-    //! extract offset from gep
-    Value* ABC2::ABCInst::computeGepOffset(GetElementPtrInst *gep) {
-      SmallVector<Value*, 4> ps;
-      SmallVector<Type*, 4> ts;
-      gep_type_iterator typeIt = gep_type_begin (*gep);
-      for (unsigned i = 1; i < gep->getNumOperands (); ++i, ++typeIt) {
-        ps.push_back (gep->getOperand (i));
-        ts.push_back (*typeIt);
-      }
-      
-      Value* base = abc_helpers::createIntCst (m_B.getContext (), 0);
-      Value* curVal = base;
-      
-      for (unsigned i = 0; i < ps.size (); ++i) {
-        if (const StructType *st = dyn_cast<StructType> (ts [i])) {
-          if (const ConstantInt *ci = dyn_cast<ConstantInt> (ps [i])) {
-            unsigned off = abc_helpers::fieldOffset (m_dl, st, ci->getZExtValue ());
-            curVal = abc_helpers::createAdd(m_B, curVal, 
-                                            abc_helpers::createIntCst (m_B.getContext (), off));
-          }
-          else assert (false);
-        }
-        else if (SequentialType *seqt = dyn_cast<SequentialType> (ts [i]))
-        { // arrays, pointers, and vectors
-          unsigned sz = abc_helpers::storageSize (m_dl, seqt->getElementType ());
-          Value *lhs = curVal;
-          Value *rhs = abc_helpers::createMul (m_B, ps[i], sz);
-          curVal = abc_helpers::createAdd (m_B, lhs, rhs); 
-        }
-      } 
-      return curVal;
     }
 
     //! Instrument pointer arithmetic
@@ -1061,11 +1062,11 @@ namespace seahorn {
       m_B.SetInsertPoint (bb->getTerminator ());
       
       CallInst *nd = NonDet (insertPt->getParent()->getParent());
-      Value *vtracked_ptr = abc_helpers::createLoad(m_B, m_tracked_ptr, m_dl);
-      Value* condA = m_B.CreateICmpSGE (nd, abc_helpers::createIntCst (ctx, 0));
+      Value *vtracked_ptr = abc::createLoad(m_B, m_tracked_ptr, m_dl);
+      Value* condA = m_B.CreateICmpSGE (nd, abc::createIntCst (ctx, 0));
       Value* condB = m_B.CreateICmpSGT(vtracked_ptr,
-                                       abc_helpers::createNullCst (ctx));
-      Value* condC = m_B.CreateICmpEQ (m_B.CreateBitOrPointerCast (rhs, abc_helpers::voidPtr (ctx)),
+                                       abc::createNullCst (ctx));
+      Value* condC = m_B.CreateICmpEQ (m_B.CreateBitOrPointerCast (rhs, abc::voidPtr (ctx)),
                                        vtracked_ptr);
       Value* cond = m_B.CreateAnd (condA, m_B.CreateAnd (condB, condC));
       bb->getTerminator ()->eraseFromParent ();      
@@ -1074,7 +1075,7 @@ namespace seahorn {
 
       m_B.SetInsertPoint (bb1);
       /// tracked_ptr = lhs;
-      //abc_helpers::createStore (m_B, m_B.CreateBitOrPointerCast (lhs, abc_helpers::voidPtr (ctx)),
+      //abc::createStore (m_B, m_B.CreateBitOrPointerCast (lhs, abc::voidPtr (ctx)),
       //                          m_tracked_ptr, m_dl);
       //// This code is equivalent to "tracked_ptr = lhs" but
       //// it will not force tracked_ptr and lhs to be in the
@@ -1082,18 +1083,18 @@ namespace seahorn {
       ///      tracked_ptr = nd ();
       ///      assume (tracked_ptr == lhs)
       CallInst* nd_ptr = NonDetPtr (insertPt->getParent()->getParent());
-      abc_helpers::createStore (m_B, nd_ptr, m_tracked_ptr, m_dl);      
+      abc::createStore (m_B, nd_ptr, m_tracked_ptr, m_dl);      
       Assume (m_B.CreateICmpEQ(nd_ptr, 
-                               m_B.CreateBitOrPointerCast (lhs, abc_helpers::voidPtr (ctx))),
+                               m_B.CreateBitOrPointerCast (lhs, abc::voidPtr (ctx))),
               insertPt->getParent()->getParent());
 
       /// tracked_offset += n;
-      Value* gep_offset = computeGepOffset (gep);    
-      abc_helpers::createStore (m_B, 
-                                abc_helpers::createAdd(m_B, 
-                                                       gep_offset, 
-                                                       abc_helpers::createLoad(m_B, m_tracked_offset, m_dl)),
-                                m_tracked_offset, m_dl);
+      Value* gep_offset = abc::computeGepOffset (m_dl, m_B, gep);    
+      abc::createStore (m_B, 
+                        abc::createAdd(m_B, 
+                                       gep_offset, 
+                                       abc::createLoad(m_B, m_tracked_offset, m_dl)),
+                        m_tracked_offset, m_dl);
 
       BranchInst::Create (cont, bb1);
     }
@@ -1116,44 +1117,47 @@ namespace seahorn {
       // p1 = nd ();
       // assume (p1 > 0);
       // m_tracked_base  = p1
-      m_tracked_base = abc_helpers::createGlobalPtr (M, "tracked_base");
+      m_tracked_base = abc::createGlobalPtr (M, "tracked_base");
       CallInst* p1 = NonDetPtr (main);
       Assume (m_B.CreateICmpSGT(p1, 
-                                m_B.CreateBitOrPointerCast (abc_helpers::createNullCst (ctx), 
+                                m_B.CreateBitOrPointerCast (abc::createNullCst (ctx), 
                                                             p1->getType ())), main);
-      abc_helpers::createStore (m_B, p1, m_tracked_base, m_dl);
+      abc::createStore (m_B, p1, m_tracked_base, m_dl);
 
       // x = nd ();
       // assume (x > 0);
       // m_tracked_size = x;
-      m_tracked_size = abc_helpers::createGlobalInt (M, 0, "tracked_size");      
+      m_tracked_size = abc::createGlobalInt (M, 0, "tracked_size");      
       CallInst *x = NonDet (main);
-      Assume (m_B.CreateICmpSGT(x, abc_helpers::createIntCst(ctx, 0)), main);
-      abc_helpers::createStore (m_B, x, m_tracked_size, m_dl);
+      Assume (m_B.CreateICmpSGT(x, abc::createIntCst(ctx, 0)), main);
+      abc::createStore (m_B, x, m_tracked_size, m_dl);
 
       // m_tracked_ptr = 0
-      m_tracked_ptr  = abc_helpers::createGlobalPtr (M, "tracked_ptr");
-      abc_helpers::createStore (m_B, abc_helpers::createNullCst (ctx), m_tracked_ptr, m_dl);
+      m_tracked_ptr  = abc::createGlobalPtr (M, "tracked_ptr");
+      abc::createStore (m_B, abc::createNullCst (ctx), m_tracked_ptr, m_dl);
 
       // m_tracked_offset = 0;
-      m_tracked_offset = abc_helpers::createGlobalInt (M, 0, "tracked_offset");
+      m_tracked_offset = abc::createGlobalInt (M, 0, "tracked_offset");
 
       Instruction * insertPt = m_B.GetInsertPoint ();
       /// Allocation of global variables
       for (auto &GV: M.globals ()) {
 
-        // skip global variables that we just introduced
-        if (&GV == m_tracked_base || &GV == m_tracked_ptr ||
-            &GV == m_tracked_offset || &GV == m_tracked_size)
+        if (abc::IsTrivialCheck (m_dl, m_tli, &GV))
           continue;
 
-        if (!abc_helpers::ShouldBeTrackedPtr (&GV, *main, m_dsa_count))
+        // // skip global variables that we just introduced
+        // if (&GV == m_tracked_base || &GV == m_tracked_ptr ||
+        //     &GV == m_tracked_offset || &GV == m_tracked_size)
+        //   continue;
+
+        if (!abc::ShouldBeTrackedPtr (&GV, *main, m_dsa_count))
           continue;
 
         uint64_t size;
         if (getObjectSize(&GV, size, m_dl, m_tli, true)) {
           doAllocaSite (&GV,
-                        abc_helpers::createIntCst (m_B.getContext (), size), 
+                        abc::createIntCst (m_B.getContext (), size), 
                         insertPt);
         }
         else {
@@ -1189,10 +1193,10 @@ namespace seahorn {
           BasicBlock::Create(ctx, "not_allocated_" + Ptr->getName () + "_bb", F);
 
       m_B.SetInsertPoint (bb->getTerminator ());
-      Value* vtracked_size = abc_helpers::createLoad(m_B, m_tracked_size, m_dl);
-      Value* vtracked_base = abc_helpers::createLoad(m_B, m_tracked_base, m_dl);
-      Value* vtracked_ptr = abc_helpers::createLoad(m_B, m_tracked_ptr, m_dl);
-      Value* PtrX = m_B.CreateBitOrPointerCast (Ptr, abc_helpers::voidPtr (ctx));
+      Value* vtracked_size = abc::createLoad(m_B, m_tracked_size, m_dl);
+      Value* vtracked_base = abc::createLoad(m_B, m_tracked_base, m_dl);
+      Value* vtracked_ptr = abc::createLoad(m_B, m_tracked_ptr, m_dl);
+      Value* PtrX = m_B.CreateBitOrPointerCast (Ptr, abc::voidPtr (ctx));
       Value* cond = m_B.CreateAnd (m_B.CreateIsNull(vtracked_ptr),
                                    m_B.CreateICmpEQ (PtrX, vtracked_base));
 
@@ -1201,7 +1205,7 @@ namespace seahorn {
 
       m_B.SetInsertPoint (alloca_then_bb);
       //// tracked_ptr = tracked_base
-      // abc_helpers::createStore (m_B, vtracked_base, m_tracked_ptr, m_dl);
+      // abc::createStore (m_B, vtracked_base, m_tracked_ptr, m_dl);
       
       //// This code is equivalent to "tracked_ptr = tracked_base" but
       //// it will not force tracked_ptr and tracked_base to be in the
@@ -1209,19 +1213,18 @@ namespace seahorn {
       ///      tracked_ptr = nd ();
       ///      assume (tracked_ptr == tracked_base)
       CallInst* nd_ptr = NonDetPtr (insertPt->getParent()->getParent());
-      abc_helpers::createStore (m_B, nd_ptr, m_tracked_ptr, m_dl);      
+      abc::createStore (m_B, nd_ptr, m_tracked_ptr, m_dl);      
       Assume (m_B.CreateICmpEQ(nd_ptr, vtracked_base),
               insertPt->getParent()->getParent());
       
       /// assume (tracked_size == n);
       Assume (m_B.CreateICmpEQ(vtracked_size,
                                m_B.CreateSExtOrTrunc (Size, 
-                                                      abc_helpers::createIntTy (ctx))),
+                                                      abc::createIntTy (ctx))),
               insertPt->getParent()->getParent());
 
       /// tracked_offset = 0
-      abc_helpers::createStore (m_B, abc_helpers::createIntCst (ctx, 0), 
-                                m_tracked_offset, m_dl);
+      abc::createStore (m_B, abc::createIntCst (ctx, 0), m_tracked_offset, m_dl);
 
       BranchInst::Create (cont, alloca_then_bb);
 
@@ -1246,7 +1249,7 @@ namespace seahorn {
 
        m_B.SetInsertPoint (err_bb);
        CallInst* ci = m_B.CreateCall (m_errorFn);
-       update_callgraph (cur->getParent (), ci);
+       abc::update_cg (m_cg, cur->getParent (), ci);
        ci->setDebugLoc (instToBeChecked->getDebugLoc ());
        m_B.CreateUnreachable ();
 
@@ -1271,7 +1274,7 @@ namespace seahorn {
               assert (tracked_offset + o >= 0);
            }
       */
-      int addr_sz = abc_helpers::getAddrSize (m_dl, *insertPt);
+      int addr_sz = abc::getAddrSize (m_dl, *insertPt);
       if (addr_sz < 0) { // this should not happen
         errs () << "Error: cannot find size of the accessed address for " 
                 << *insertPt << "\n";
@@ -1291,10 +1294,10 @@ namespace seahorn {
 
       // assert (offset + addr_sz <= size);     
       m_B.SetInsertPoint (bb1);                                  
-      Value* vsize = abc_helpers::createIntCst (ctx, size);
-      Value* voffset = computeGepOffset (gep);
-      Value* voffset_sz = abc_helpers::createAdd (m_B, voffset,
-                                                  abc_helpers::createIntCst (ctx, addr_sz));
+      Value* vsize = abc::createIntCst (ctx, size);
+      Value* voffset = abc::computeGepOffset (m_dl, m_B, gep);
+      Value* voffset_sz = abc::createAdd (m_B, voffset,
+                                          abc::createIntCst (ctx, addr_sz));
       Assert (m_B.CreateICmpSLE (voffset_sz, vsize),
               bb2, bb1, insertPt, "overflow_error_bb");
 
@@ -1307,8 +1310,8 @@ namespace seahorn {
         BasicBlock* bb3 = BasicBlock::Create(ctx, "under_check_bb", F);
         m_B.SetInsertPoint (bb2); 
         Value* base = gep->getPointerOperand ();
-        Value* vtracked_base = abc_helpers::createLoad(m_B, m_tracked_base, m_dl);      
-        Value* vbase = m_B.CreateBitOrPointerCast (base, abc_helpers::voidPtr (ctx));
+        Value* vtracked_base = abc::createLoad(m_B, m_tracked_base, m_dl);      
+        Value* vbase = m_B.CreateBitOrPointerCast (base, abc::voidPtr (ctx));
         BranchInst::Create (bb2_then, bb2_else, 
                             m_B.CreateICmpEQ (vtracked_base, vbase), bb2);            
         
@@ -1317,21 +1320,21 @@ namespace seahorn {
         BranchInst::Create (abc_under_bb1, bb2_then);      
         // assert (offset >= 0);
         m_B.SetInsertPoint (abc_under_bb1);
-        Assert (m_B.CreateICmpSGE (voffset, abc_helpers::createIntCst (ctx, 0)), 
+        Assert (m_B.CreateICmpSGE (voffset, abc::createIntCst (ctx, 0)), 
                 cont, abc_under_bb1, insertPt, "underflow_error_bb");
         
         m_B.SetInsertPoint (bb2_else); 
-        Value* vtracked_ptr = abc_helpers::createLoad(m_B, m_tracked_ptr, m_dl);      
+        Value* vtracked_ptr = abc::createLoad(m_B, m_tracked_ptr, m_dl);      
         BranchInst::Create (bb3, cont, 
                             m_B.CreateICmpEQ (vtracked_ptr, vbase), bb2_else);            
         
         m_B.SetInsertPoint (bb3); 
-        Value* vtracked_offset = abc_helpers::createLoad(m_B, m_tracked_offset, m_dl);      
+        Value* vtracked_offset = abc::createLoad(m_B, m_tracked_offset, m_dl);      
         BranchInst::Create (abc_under_bb2, bb3);      
         // assert (tracked_offset + offset >= 0);
         m_B.SetInsertPoint (abc_under_bb2);
-        Assert (m_B.CreateICmpSGE (abc_helpers::createAdd (m_B, voffset, vtracked_offset), 
-                                   abc_helpers::createIntCst (ctx, 0)), 
+        Assert (m_B.CreateICmpSGE (abc::createAdd (m_B, voffset, vtracked_offset), 
+                                   abc::createIntCst (ctx, 0)), 
                 cont, abc_under_bb2, insertPt, "underflow_error_bb");
 
       }
@@ -1339,7 +1342,7 @@ namespace seahorn {
       
      void ABC2::ABCInst::doGepPtrCheck (GetElementPtrInst* gep, Instruction* insertPt) {
 
-      int addr_sz = abc_helpers::getAddrSize (m_dl, *insertPt);
+      int addr_sz = abc::getAddrSize (m_dl, *insertPt);
       if (addr_sz < 0) { // this should not happen
         errs () << "Error: cannot find size of the accessed address for " 
                 << *insertPt << "\n";
@@ -1378,10 +1381,10 @@ namespace seahorn {
        */
 
       m_B.SetInsertPoint (bb1); 
-      Value* vtracked_base = abc_helpers::createLoad(m_B, m_tracked_base, m_dl);      
-      Value* vtracked_size = abc_helpers::createLoad(m_B, m_tracked_size, m_dl);      
-      Value* vbase = m_B.CreateBitOrPointerCast (base, abc_helpers::voidPtr (ctx));
-      Value* voffset = computeGepOffset (gep);
+      Value* vtracked_base = abc::createLoad(m_B, m_tracked_base, m_dl);      
+      Value* vtracked_size = abc::createLoad(m_B, m_tracked_size, m_dl);      
+      Value* vbase = m_B.CreateBitOrPointerCast (base, abc::voidPtr (ctx));
+      Value* voffset = abc::computeGepOffset (m_dl, m_B, gep);
       BranchInst::Create (bb1_then, bb1_else, 
                           m_B.CreateICmpEQ (vtracked_base, vbase), bb1);            
 
@@ -1395,44 +1398,44 @@ namespace seahorn {
         BranchInst::Create (abc_over_bb1, abc_under_bb1);
       } else {
         m_B.SetInsertPoint (abc_under_bb1);
-        Assert (m_B.CreateICmpSGE (voffset, abc_helpers::createIntCst (ctx, 0)), 
+        Assert (m_B.CreateICmpSGE (voffset, abc::createIntCst (ctx, 0)), 
                 abc_over_bb1, abc_under_bb1, insertPt, "underflow_error_bb");
       }
 
       // assert (offset + addr_sz <= tracked_size);
       m_B.SetInsertPoint (abc_over_bb1);
       Value* over_cond1 = m_B.CreateICmpSLE (
-          abc_helpers::createAdd (m_B, voffset, 
-                                  abc_helpers::createIntCst (ctx, addr_sz)),  vtracked_size);
+          abc::createAdd (m_B, voffset, 
+                          abc::createIntCst (ctx, addr_sz)),  vtracked_size);
           
       Assert (over_cond1, cont, abc_over_bb1, insertPt, "overflow_error_bb");
 
       m_B.SetInsertPoint (bb1_else); 
-      Value* vtracked_ptr = abc_helpers::createLoad(m_B, m_tracked_ptr, m_dl);      
+      Value* vtracked_ptr = abc::createLoad(m_B, m_tracked_ptr, m_dl);      
       BranchInst::Create (bb2, cont, 
                           m_B.CreateICmpEQ (vtracked_ptr, vbase), bb1_else);            
 
       m_B.SetInsertPoint (bb2); 
-      Value* vtracked_offset = abc_helpers::createLoad(m_B, m_tracked_offset, m_dl);      
+      Value* vtracked_offset = abc::createLoad(m_B, m_tracked_offset, m_dl);      
       BasicBlock* abc_under_bb2 = BasicBlock::Create(ctx, "under_check_bb", F);
       BasicBlock* abc_over_bb2 = BasicBlock::Create(ctx, "over_check_bb", F);
       BranchInst::Create (abc_under_bb2, bb2); 
      
       // assert (tracked_offset + offset >= 0);
       m_B.SetInsertPoint (abc_under_bb2);
-      voffset = abc_helpers::createAdd (m_B, voffset, vtracked_offset);
+      voffset = abc::createAdd (m_B, voffset, vtracked_offset);
 
       if (DisableUnderflow)  {
         BranchInst::Create(abc_over_bb2, abc_under_bb2);
       } else {
         Assert (m_B.CreateICmpSGE (voffset, 
-                                   abc_helpers::createIntCst (ctx, 0)), 
+                                   abc::createIntCst (ctx, 0)), 
                 abc_over_bb2, abc_under_bb2, insertPt, "underflow_error_bb");
       }
 
       // assert (tracked_offset + offset + addr_sz <= tracked_size);
       m_B.SetInsertPoint (abc_over_bb2);
-      voffset = abc_helpers::createAdd (m_B, voffset, abc_helpers::createIntCst (ctx, addr_sz));
+      voffset = abc::createAdd (m_B, voffset, abc::createIntCst (ctx, addr_sz));
       Assert (m_B.CreateICmpSLE (voffset, vtracked_size),
               cont, abc_over_bb2, insertPt, "overflow_error_bb");
      }
@@ -1472,18 +1475,18 @@ namespace seahorn {
       m_B.SetInsertPoint (bb->getTerminator ());
 
       // if (m_tracked_ptr && ptr == m_tracked_ptr)
-      Value* vtracked_ptr = abc_helpers::createLoad(m_B, m_tracked_ptr, m_dl);
+      Value* vtracked_ptr = abc::createLoad(m_B, m_tracked_ptr, m_dl);
       Value* condA = m_B.CreateICmpSGT(vtracked_ptr, 
-                                       abc_helpers::createNullCst (ctx));
+                                       abc::createNullCst (ctx));
       Value* condB = m_B.CreateICmpEQ (vtracked_ptr,
-                                       m_B.CreateBitOrPointerCast (Ptr, abc_helpers::voidPtr (ctx)));
+                                       m_B.CreateBitOrPointerCast (Ptr, abc::voidPtr (ctx)));
       Value* cond = m_B.CreateAnd (condA, condB);
       bb->getTerminator ()->eraseFromParent ();      
       BranchInst::Create (abc_under_bb, cont, cond, bb);      
       m_B.SetInsertPoint (abc_under_bb);
 
-      Value* offset = abc_helpers::createLoad(m_B, m_tracked_offset, m_dl);
-      Value* size = abc_helpers::createLoad(m_B, m_tracked_size, m_dl); 
+      Value* offset = abc::createLoad(m_B, m_tracked_offset, m_dl);
+      Value* size = abc::createLoad(m_B, m_tracked_size, m_dl); 
 
       /////
       // underflow check
@@ -1495,7 +1498,7 @@ namespace seahorn {
         // abc_under_bb:
         //    if (m_tracked_offset >= 0) goto abc_over_bb else goto err_under_bb
         
-        Assert (m_B.CreateICmpSGE (offset, abc_helpers::createIntCst (ctx, 0)), 
+        Assert (m_B.CreateICmpSGE (offset, abc::createIntCst (ctx, 0)), 
                 abc_over_bb, abc_under_bb, insertPt, "underflow_error_bb");
       }
 
@@ -1520,17 +1523,17 @@ namespace seahorn {
       //        goto err_over_bb
       if (N) {
         // both offset and N are in bytes
-        offset = abc_helpers::createAdd (m_B, offset, N);
+        offset = abc::createAdd (m_B, offset, N);
       } else {
-        int addr_sz = abc_helpers::getAddrSize (m_dl, *insertPt);
+        int addr_sz = abc::getAddrSize (m_dl, *insertPt);
         if (addr_sz < 0) { // this should not happen
           errs () << "Error: cannot find size of the accessed address for " 
                   << *insertPt << "\n";
           return;
         }
         // both offset and addr_sz are in bytes
-        offset = abc_helpers::createAdd (m_B, offset, 
-                                         abc_helpers::createIntCst (ctx, addr_sz));
+        offset = abc::createAdd (m_B, offset, 
+                                 abc::createIntCst (ctx, addr_sz));
       }
 
       Assert (m_B.CreateICmpSLE (offset, size), cont, abc_over_bb, 
@@ -1558,9 +1561,9 @@ namespace seahorn {
                   
     void ABC2::ABCInst::visit (GetElementPtrInst *I) {
       Value *lhs = I;
-      if (!abc_helpers::IsTrivialCheck (m_dl, m_tli, lhs)) {
+      if (!abc::IsTrivialCheck (m_dl, m_tli, lhs)) {
         Value *rhs = I->getPointerOperand ();            
-        doPtrArith (lhs, rhs, I, abc_helpers::getNextInst (I));
+        doPtrArith (lhs, rhs, I, abc::getNextInst (I));
       }
     }
 
@@ -1573,7 +1576,7 @@ namespace seahorn {
         return;
 
       m_mem_accesses++;
-      if (!abc_helpers::IsTrivialCheck (m_dl, m_tli, ptr)) {
+      if (!abc::IsTrivialCheck (m_dl, m_tli, ptr)) {
         if (GetElementPtrInst* gep = dyn_cast<GetElementPtrInst> (ptr)) {
           uint64_t size; //bytes
           if (getObjectSize(gep->getPointerOperand (), size, m_dl, m_tli, true))
@@ -1599,7 +1602,7 @@ namespace seahorn {
         return;
 
       m_mem_accesses++;
-      if (!abc_helpers::IsTrivialCheck (m_dl, m_tli, ptr)) {
+      if (!abc::IsTrivialCheck (m_dl, m_tli, ptr)) {
         if (GetElementPtrInst* gep = dyn_cast<GetElementPtrInst> (ptr)) {
           uint64_t size; // bytes
           if (getObjectSize(gep->getPointerOperand (), size, m_dl, m_tli, true))
@@ -1641,42 +1644,35 @@ namespace seahorn {
       uint64_t size; //bytes
       if (getObjectSize(I, size, m_dl, m_tli, true)) {
         doAllocaSite (I, 
-                      abc_helpers::createIntCst (m_B.getContext (), size), 
-                      abc_helpers::getNextInst (I)); 
+                      abc::createIntCst (m_B.getContext (), size), 
+                      abc::getNextInst (I)); 
         return;
       } else {
         Value *nElems = I->getArraySize (); // number of elements
         Type* ty = I->getAllocatedType (); // size of the allocated type
-        unsigned ty_size = abc_helpers::storageSize (m_dl, ty); // bytes
+        unsigned ty_size = abc::storageSize (m_dl, ty); // bytes
         Value* size = nullptr;
         if (ty_size == 1) 
           size = nElems;
         else {
           m_B.SetInsertPoint (I);
-          size = abc_helpers::createMul (m_B, nElems, ty_size, "alloca_size");
+          size = abc::createMul (m_B, nElems, ty_size, "alloca_size");
         }
-        doAllocaSite (I, size, abc_helpers::getNextInst (I)); 
+        doAllocaSite (I, size, abc::getNextInst (I)); 
         return;
       }
       errs () << "Warning: missing alloca site: " << *I << "\n";
     }
 
     void ABC2::ABCInst::visit (CallInst *I) {
-      if (isMallocLikeFn (I, m_tli)) {
+      if (isMallocLikeFn(I, m_tli, true) || isOperatorNewLikeFn(I, m_tli, true)){
         if (I->getNumArgOperands () == 1) {
           Value *size = I->getArgOperand(0); // bytes
-          doAllocaSite (I, size, abc_helpers::getNextInst (I)); 
+          doAllocaSite (I, size, abc::getNextInst (I)); 
           return;
         }
       }
-      else if (isOperatorNewLikeFn (I, m_tli)) {
-        if (I->getNumArgOperands () == 1) {
-          Value *size = I->getArgOperand(0); // bytes
-          doAllocaSite (I, size, abc_helpers::getNextInst (I)); 
-          return;
-        }
-      }
-      errs () << "Warning: missing alloca site: " << *I << "\n";
+      errs () << "Warning: missing " << *I << "\n";
     }
 
     bool ABC2::runOnModule (llvm::Module &M)
@@ -1723,7 +1719,7 @@ namespace seahorn {
                                   Type::getVoidTy (ctx),
                                   Type::getInt1Ty (ctx),
                                   NULL));
-      
+
       IRBuilder<> B (ctx);
       
       CallGraphWrapperPass *cgwp = getAnalysisIfAvailable<CallGraphWrapperPass> ();
@@ -1748,7 +1744,7 @@ namespace seahorn {
           
           if (GetElementPtrInst* GEP  = dyn_cast<GetElementPtrInst> (I)) {
             Value *ptr = GEP->getPointerOperand ();            
-            if (abc_helpers::ShouldBeTrackedPtr (ptr, F, m_dsa_count)) {
+            if (abc::ShouldBeTrackedPtr (ptr, F, m_dsa_count)) {
               if (!std::all_of (GEP->uses().begin (), GEP->uses().end (), 
                                 [](Use& u) { 
                                   return (isa<LoadInst>(u.getUser()) || 
@@ -1759,36 +1755,37 @@ namespace seahorn {
             }
           } else if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
             Value* ptr = LI->getPointerOperand ();
-            if (abc_helpers::ShouldBeTrackedPtr (ptr, F, m_dsa_count)) 
+            if (abc::ShouldBeTrackedPtr (ptr, F, m_dsa_count)) 
               Worklist.push_back (I);
             else 
               untracked_dsa_checks++;
           } else if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
             Value* ptr = SI->getPointerOperand ();
-            if (abc_helpers::ShouldBeTrackedPtr (ptr, F, m_dsa_count)) 
+            if (abc::ShouldBeTrackedPtr (ptr, F, m_dsa_count)) 
              Worklist.push_back (I);
             else 
               untracked_dsa_checks++; 
           } else if (MemTransferInst *MTI = dyn_cast<MemTransferInst>(I)) {
-            if (abc_helpers::ShouldBeTrackedPtr (MTI->getDest (), F, m_dsa_count) || 
-                abc_helpers::ShouldBeTrackedPtr (MTI->getSource (),F, m_dsa_count))
+            if (abc::ShouldBeTrackedPtr (MTI->getDest (), F, m_dsa_count) || 
+                abc::ShouldBeTrackedPtr (MTI->getSource (),F, m_dsa_count))
               Worklist.push_back (I);
             else 
               untracked_dsa_checks+=2; 
           } else if (MemSetInst *MSI = dyn_cast<MemSetInst>(I)) {
             Value* ptr = MSI->getDest ();
-            if (abc_helpers::ShouldBeTrackedPtr (ptr, F, m_dsa_count)) 
+            if (abc::ShouldBeTrackedPtr (ptr, F, m_dsa_count)) 
               Worklist.push_back (I);
             else 
               untracked_dsa_checks++; 
           } else if (AllocaInst *AI = dyn_cast<AllocaInst>(I)) {
             Value* ptr = AI;
-            if (abc_helpers::ShouldBeTrackedPtr (ptr, F, m_dsa_count)) 
+            if (abc::ShouldBeTrackedPtr (ptr, F, m_dsa_count)) 
               Worklist.push_back (I);
-          } else if (CallInst *CI = extractMallocCall (I, tli)) {
-            Value* ptr = CI;
-            if (abc_helpers::ShouldBeTrackedPtr (ptr, F, m_dsa_count))
-              Worklist.push_back (CI);
+          } else if (isAllocationFn(I, tli, true)) {
+            // new, malloc, calloc, realloc, and strdup.
+            if (abc::ShouldBeTrackedPtr (I, F, m_dsa_count))
+              if (CallInst* CI = dyn_cast<CallInst> (I))
+                Worklist.push_back (CI);
           }
         }
       } 
@@ -1844,6 +1841,314 @@ namespace seahorn {
 
     static llvm::RegisterPass<ABC2> 
     Y ("abc-2", "Insert array buffer checks");
+
+} // end namespace seahorn
+
+
+namespace seahorn {
+    using namespace llvm;
+
+    bool ABC3::runOnModule (llvm::Module &M)
+    {
+      if (M.begin () == M.end ()) return false;
+      
+      Function* main = M.getFunction ("main");
+      if (!main) {
+        errs () << "Main not found: no buffer overflow checks added\n";
+        return false;
+      }
+      
+      // Gather some statistics about DSA nodes
+      DSACount* dsa_count = &getAnalysis<DSACount> ();    
+
+      LLVMContext &ctx = M.getContext ();
+      
+      AttrBuilder AB;
+      AttributeSet as = AttributeSet::get (ctx, AttributeSet::FunctionIndex, AB); 
+
+      Function* abc_init = dyn_cast<Function>
+          (M.getOrInsertFunction ("sea_abc_init",
+                                  as,
+                                  Type::getVoidTy (ctx),
+                                  NULL));
+      abc_init->addFnAttr(Attribute::AlwaysInline);
+
+      Function* abc_alloc = dyn_cast<Function>
+          (M.getOrInsertFunction ("sea_abc_alloc",
+                                  as,
+                                  Type::getVoidTy (ctx),
+                                  Type::getInt8Ty (ctx)->getPointerTo (), 
+                                  Type::getInt64Ty (ctx), 
+                                  NULL));
+      abc_alloc->addFnAttr(Attribute::AlwaysInline);
+
+      Function* abc_log_ptr = dyn_cast<Function>
+          (M.getOrInsertFunction ("sea_abc_log_ptr",
+                                  as,
+                                  Type::getVoidTy (ctx),
+                                  Type::getInt8Ty (ctx)->getPointerTo (), 
+                                  Type::getInt64Ty (ctx), 
+                                  NULL));
+      abc_log_ptr->addFnAttr(Attribute::AlwaysInline);
+      
+      Function* abc_assert_valid_ptr = dyn_cast<Function>
+          (M.getOrInsertFunction ("sea_abc_assert_valid_ptr",
+                                  as,
+                                  Type::getVoidTy (ctx),
+                                  Type::getInt8Ty (ctx)->getPointerTo (), 
+                                  Type::getInt64Ty (ctx), 
+                                  NULL));
+      abc_assert_valid_ptr->addFnAttr(Attribute::AlwaysInline);
+
+      Function* abc_assert_valid_offset = dyn_cast<Function>
+          (M.getOrInsertFunction ("sea_abc_assert_valid_offset",
+                                  as,
+                                  Type::getVoidTy (ctx),
+                                  Type::getInt64Ty (ctx), 
+                                  Type::getInt64Ty (ctx), 
+                                  NULL));
+      abc_assert_valid_offset->addFnAttr(Attribute::AlwaysInline);
+
+      // FIXME: remove only sea_abc_xxx functions
+      GlobalVariable* LlvmUsed = M.getNamedGlobal ("llvm.used");
+      if (LlvmUsed)
+        LlvmUsed->eraseFromParent ();
+      
+      IRBuilder<> B (ctx);
+      
+      CallGraphWrapperPass *cgwp = getAnalysisIfAvailable<CallGraphWrapperPass> ();
+      CallGraph* cg = cgwp ? &cgwp->getCallGraph () : nullptr;
+      if (cg)
+      {
+        cg->getOrInsertFunction (abc_init);
+        cg->getOrInsertFunction (abc_alloc);
+        cg->getOrInsertFunction (abc_log_ptr);
+        cg->getOrInsertFunction (abc_assert_valid_ptr);
+        cg->getOrInsertFunction (abc_assert_valid_offset);
+      }
+      
+      unsigned untracked_dsa_checks = 0;
+      unsigned checks_added = 0;
+      unsigned trivial_checks = 0;
+      unsigned mem_accesses = 0;
+      const TargetLibraryInfo * tli = &getAnalysis<TargetLibraryInfo>();
+      const DataLayout* dl = &getAnalysis<DataLayoutPass>().getDataLayout ();
+      DenseMap<GetElementPtrInst*, Value*> instrumented_gep;
+      
+      // do initialization
+      B.SetInsertPoint (main->getEntryBlock ().getFirstInsertionPt ());
+      abc::update_cg (cg, main, B.CreateCall (abc_init));
+
+      // allocation of global variables
+      for (auto &GV: M.globals ()) {
+
+        if (abc::IsTrivialCheck (dl, tli, &GV))
+          continue;
+
+        if (!abc::ShouldBeTrackedPtr (&GV, *main, dsa_count))
+          continue;
+
+        uint64_t size;
+        if (getObjectSize(&GV, size, dl, tli, true)) {
+          abc::update_cg (cg, main,
+               B.CreateCall2 (abc_alloc, 
+                              B.CreateBitOrPointerCast (&GV,abc::voidPtr (ctx)),
+                              abc::createIntCst (ctx, size)));
+        }
+        else {// this should not happen ...
+          errs () << "Warning: cannot infer statically the size of global " 
+                  << GV << "\n";
+        }
+      }
+      
+      for (Function &F : M) {
+        if (F.isDeclaration ()) continue;
+        
+        for (inst_iterator i = inst_begin(F), e = inst_end(F); i != e; ++i)  {
+          Instruction *I = &*i;
+          
+          if (GetElementPtrInst* GEP  = dyn_cast<GetElementPtrInst> (I)) {
+            Value *ptr = GEP->getPointerOperand ();            
+            if (abc::ShouldBeTrackedPtr (ptr, F, dsa_count)) {
+              B.SetInsertPoint (abc::getNextInst (I));
+              Value* offset = abc::computeGepOffset (dl, B, GEP);                  
+              abc::update_cg (cg, &F, 
+                   B.CreateCall2 (abc_log_ptr, 
+                                  B.CreateBitOrPointerCast (ptr,
+                                                            abc::voidPtr (ctx)),
+                                  offset));
+              instrumented_gep [GEP] = offset;
+            }
+          } else if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
+            Value* ptr = LI->getPointerOperand ();
+            if (abc::ShouldBeTrackedPtr (ptr, F, dsa_count)) { 
+              mem_accesses++;
+              if (abc::IsTrivialCheck (dl, tli, ptr)) {
+                trivial_checks++;
+              } else if (GetElementPtrInst* gep = dyn_cast<GetElementPtrInst> (ptr)) {
+                checks_added++;
+                B.SetInsertPoint (LI);
+                Value* offset = instrumented_gep [gep];
+                if (!offset) 
+                  offset = abc::computeGepOffset (dl, B, gep);                  
+
+                int addr_sz = abc::getAddrSize (dl, *I);
+                if (addr_sz >= 0)
+                  offset = abc::createAdd (B, offset, 
+                                           abc::createIntCst (ctx, addr_sz));
+                else {
+                  errs () << "Error: cannot find size of the accessed address for " 
+                          << *I << "\n";
+                  continue;
+                }
+
+                uint64_t size; //bytes
+                if (getObjectSize(gep->getPointerOperand (), size, dl, tli, true)) {
+                  abc::update_cg (cg, &F, 
+                       B.CreateCall2 (abc_assert_valid_offset, 
+                                      offset, abc::createIntCst (ctx, size)));
+                }
+                else {
+                  abc::update_cg (cg, &F, 
+                       B.CreateCall2 (abc_assert_valid_ptr, 
+                                      B.CreateBitOrPointerCast (gep->getPointerOperand (),
+                                                                abc::voidPtr (ctx)),
+                                      offset));
+                }
+              }
+            }
+            else 
+              untracked_dsa_checks++;
+          } else if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
+            Value* ptr = SI->getPointerOperand ();
+            if (abc::ShouldBeTrackedPtr (ptr, F, dsa_count))  {
+              mem_accesses++;
+              if (abc::IsTrivialCheck (dl, tli, ptr)) {
+                trivial_checks++;
+              } else if (GetElementPtrInst* gep = dyn_cast<GetElementPtrInst> (ptr)) {
+                B.SetInsertPoint (SI);
+                checks_added++;
+                Value* offset = instrumented_gep [gep];
+                if (!offset) 
+                  offset = abc::computeGepOffset (dl, B, gep);                  
+
+                int addr_sz = abc::getAddrSize (dl, *I);
+                if (addr_sz >= 0) 
+                  offset = abc::createAdd (B, offset, 
+                                           abc::createIntCst (ctx, addr_sz));
+                else {
+                  errs () << "Error: cannot find size of the accessed address for " 
+                          << *I << "\n";
+                  continue;
+                }
+
+                uint64_t size; //bytes
+                if (getObjectSize(gep->getPointerOperand (), size, dl, tli, true)) {
+                  abc::update_cg (cg, &F, 
+                       B.CreateCall2 (abc_assert_valid_offset, 
+                                      offset, 
+                                      abc::createIntCst (ctx, size)));
+                }
+                else {
+                  abc::update_cg (cg, &F, 
+                       B.CreateCall2 (abc_assert_valid_ptr, 
+                                      B.CreateBitOrPointerCast (gep->getPointerOperand (),
+                                                                abc::voidPtr (ctx)),
+                                      offset));
+                }
+              }
+            }
+            else 
+              untracked_dsa_checks++; 
+          } else if (MemTransferInst *MTI = dyn_cast<MemTransferInst>(I)) {
+            if (abc::ShouldBeTrackedPtr (MTI->getDest (), F, dsa_count) || 
+                abc::ShouldBeTrackedPtr (MTI->getSource (),F, dsa_count)) {
+              mem_accesses+=2;
+              // checks_added+=2;
+              // TODO
+            }
+            else 
+              untracked_dsa_checks+=2; 
+          } else if (MemSetInst *MSI = dyn_cast<MemSetInst>(I)) {
+            Value* ptr = MSI->getDest ();
+            if (abc::ShouldBeTrackedPtr (ptr, F, dsa_count))  {
+              mem_accesses++;
+              // checks_added++;
+              //TODO
+            }
+            else 
+              untracked_dsa_checks++; 
+          } else if (AllocaInst *AI = dyn_cast<AllocaInst>(I)) {
+            Value* ptr = AI;
+            if (abc::ShouldBeTrackedPtr (ptr, F, dsa_count))  {
+              B.SetInsertPoint (abc::getNextInst (I));
+              Value* vsize = nullptr;
+              uint64_t size; //bytes
+              if (getObjectSize(I, size, dl, tli, true)) {
+                vsize = abc::createIntCst (ctx, size);
+              } else {
+                Value *nElems = AI->getArraySize (); // number of elements
+                Type* ty = AI->getAllocatedType (); // size of the allocated type
+                unsigned ty_size = abc::storageSize (dl, ty); // bytes
+                if (ty_size == 1) 
+                  vsize = nElems;
+                else {
+                  //B.SetInsertPoint (AI);
+                  vsize = abc::createMul (B, nElems, ty_size, "alloca_size");
+                }
+              }
+              assert (vsize);
+              abc::update_cg (cg, &F, 
+                   B.CreateCall2 (abc_alloc, 
+                                  B.CreateBitOrPointerCast (ptr, abc::voidPtr (ctx)),
+                                  B.CreateSExtOrTrunc (vsize,Type::getInt64Ty (ctx))));
+            }
+          } else if (isMallocLikeFn(I, tli, true) || isOperatorNewLikeFn(I, tli, true)){
+            if (abc::ShouldBeTrackedPtr (I, F, dsa_count)) {
+              if (CallInst* CI = dyn_cast<CallInst> (I)) {
+                B.SetInsertPoint (abc::getNextInst (I));
+                Value* ptr = CI;
+                Value *size = CI->getArgOperand(0); // bytes
+                abc::update_cg (cg, &F,
+                     B.CreateCall2 (abc_alloc, 
+                                   B.CreateBitOrPointerCast (ptr, abc::voidPtr (ctx)),
+                                   B.CreateSExtOrTrunc (size,Type::getInt64Ty (ctx))));
+              }
+            }
+          }
+        }
+      } 
+            
+      errs () << " ========== ABC  ==========\n";
+      errs () << "-- " << mem_accesses - trivial_checks
+              << " Total number of non-trivial memory reads/writes\n"
+              << "-- " << trivial_checks
+              << " Total number of trivially safe memory reads/writes (not instrumented)\n"
+              << "-- " << checks_added 
+              << " Total number of added buffer overflow/underflow checks\n"; 
+      
+      if (TrackedDSNode != 0) {
+        errs () << "-- " << untracked_dsa_checks 
+                << " Total number of skipped checks because untracked DSA node\n";
+      }
+      
+      return true;
+    }
+
+    void ABC3::getAnalysisUsage (llvm::AnalysisUsage &AU) const
+    {
+     AU.setPreservesAll ();
+     AU.addRequired<seahorn::DSACount>();
+     AU.addRequired<llvm::DataLayoutPass>();
+     AU.addRequired<llvm::TargetLibraryInfo>();
+     AU.addRequired<llvm::UnifyFunctionExitNodes> ();
+     AU.addRequired<llvm::CallGraphWrapperPass>();
+    } 
+
+    char ABC3::ID = 0;
+
+    static llvm::RegisterPass<ABC3> 
+    Z ("abc-3", "Insert array buffer checks");
 
 } // end namespace seahorn
   

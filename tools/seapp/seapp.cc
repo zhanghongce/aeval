@@ -298,7 +298,7 @@ int main(int argc, char **argv) {
   pass_manager.add(llvm::createDeadInstEliminationPass());
   pass_manager.add (llvm::createGlobalDCEPass ()); // kill unused internal global
   
-  pass_manager.add (new seahorn::LowerGvInitializers ());
+  //pass_manager.add (new seahorn::LowerGvInitializers ());
   pass_manager.add(llvm::createUnifyFunctionExitNodesPass ());
 
   if (ArrayBoundsChecks > 0)
@@ -311,8 +311,13 @@ int main(int argc, char **argv) {
         // -- Turn undef into nondet (undef might be created by ABC1)
         pass_manager.add (seahorn::createNondetInitPass ());
         break;
-      default:
+      case 2: 
         pass_manager.add (new seahorn::ABC2 ());
+        break;
+      default:
+        pass_manager.add (new seahorn::ABC3 ());
+        // --- inline some special functions
+        pass_manager.add (llvm::createAlwaysInlinerPass ());
     }      
   }
 

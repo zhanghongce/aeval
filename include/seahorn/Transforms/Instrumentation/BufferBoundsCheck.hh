@@ -226,10 +226,6 @@ namespace seahorn
       
      private /* helpers */ :
       
-      void update_callgraph(Function* caller, CallInst* callee);
-
-      Value* computeGepOffset(GetElementPtrInst *gep);
-   
       BasicBlock* Assert (Value* cond, BasicBlock* then, BasicBlock* cur, 
                           Instruction* inst, const Twine &errorBBName);
 
@@ -284,6 +280,30 @@ namespace seahorn
     virtual void getAnalysisUsage (llvm::AnalysisUsage &AU) const;
     virtual const char* getPassName () const {return "ArrayBoundsCheck2";}
     
+  };
+
+
+  /* 
+     Third encoding.
+
+     Assume that the analyzed program includes some predefined functions:
+
+     - void sea_abc_init(void);
+     - void sea_abc_alloc (uint64_t *base, uint64_t size);
+     - void sea_abc_log_ptr (uint8_t *base, uint64_t offset);
+     - void sea_abc_assert_valid_ptr (uint8_t *base, uint64_t offset);
+     - void sea_abc_assert_valid_offset (uint64_t offset, uint64_t size);
+
+     This encoding simply calls to these functions.
+  */
+  class ABC3 : public llvm::ModulePass
+  {
+   public:
+    static char ID;
+    ABC3 ():  llvm::ModulePass (ID) { }
+    virtual bool runOnModule (llvm::Module &M);
+    virtual void getAnalysisUsage (llvm::AnalysisUsage &AU) const;
+    virtual const char* getPassName () const {return "ArrayBoundsCheck3";}
   };
 
 }
