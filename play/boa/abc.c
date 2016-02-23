@@ -30,6 +30,8 @@ __attribute__((used)) void sea_abc_init(void);
 
 void sea_abc_assert_valid_ptr (uint8_t *base, int64_t offset)
 {
+  if (!sea_ptr) return;
+
   if (base == sea_base)
   {
    assert (offset >= 0 );
@@ -49,6 +51,8 @@ void sea_abc_assert_valid_ptr (uint8_t *base, int64_t offset)
  */
 void sea_abc_assert_valid_offset (int64_t offset, int64_t size)
 {
+  if (!sea_ptr) return;
+  
    assert (offset <= size);
   /* TODO: do not know how to check for underflow */
 }
