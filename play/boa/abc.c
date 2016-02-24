@@ -1,24 +1,31 @@
 #include <stdint.h>
+#include <stddef.h>
 
-extern uint8_t *nd_uint8_ptr (void);
-extern int64_t nd(void);
-extern uint64_t nd_uint64_t(void);
+typedef ptrdiff_t sea_ptrdiff_t;
+/* need size to be signed */
+typedef ptrdiff_t sea_size_t;
 
-static uint8_t* sea_base;
-static uint8_t* sea_ptr;
-static int64_t sea_offset;
-static int64_t sea_size;
+extern int8_t *nd_int8_ptr (void);
+extern int64_t nd_int64_t (void);
+extern sea_size_t nd_sea_size_t (void);
+
+static int8_t* sea_base;
+static int8_t* sea_ptr;
+static sea_ptrdiff_t sea_offset;
+static sea_size_t sea_size;
 
 extern void __VERIFIER_assume (int);
-extern void __VERIFIER_error (void);
+__attribute__((__noreturn__)) extern void __VERIFIER_error (void);
 
 #define assume __VERIFIER_assume
-__attribute__((always_inline)) void assert  (int v)  { if (!v) __VERIFIER_error (); }
+#define assert(X) if(!(X)){__VERIFIER_error ();}
 
-__attribute__((used)) void sea_abc_assert_valid_ptr (uint8_t *base, int64_t offset);
-__attribute__((used)) void sea_abc_assert_valid_offset (int64_t offset, int64_t size);
-__attribute__((used)) void sea_abc_log_ptr (uint8_t *base, int64_t offset);
-__attribute__((used)) void sea_abc_alloc (uint8_t *base, int64_t size);
+/* __attribute__((always_inline)) void assert  (int v)  { if (!v) __VERIFIER_error (); } */
+
+__attribute__((used)) void sea_abc_assert_valid_ptr (int8_t *base, sea_ptrdiff_t offset);
+__attribute__((used)) void sea_abc_assert_valid_offset (sea_ptrdiff_t offset, sea_size_t size);
+__attribute__((used)) void sea_abc_log_ptr (int8_t *base, sea_ptrdiff_t offset);
+__attribute__((used)) void sea_abc_alloc (int8_t *base, sea_size_t size);
 __attribute__((used)) void sea_abc_init(void);
   
 /*
@@ -28,8 +35,10 @@ __attribute__((used)) void sea_abc_init(void);
  * offset is the computed offset _Should be adjusted for used size if needed_
  */
 
-void sea_abc_assert_valid_ptr (uint8_t *base, int64_t offset)
+void sea_abc_assert_valid_ptr (int8_t *base, sea_ptrdiff_t offset)
 {
+  if (!sea_ptr) return;
+  
   if (base == sea_base)
   {
    assert (offset >= 0 );
@@ -47,7 +56,7 @@ void sea_abc_assert_valid_ptr (uint8_t *base, int64_t offset)
  * offset is the computed offset
  * size is a constant size
  */
-void sea_abc_assert_valid_offset (int64_t offset, int64_t size)
+void sea_abc_assert_valid_offset (sea_ptrdiff_t offset, sea_size_t size)
 {
    assert (offset <= size);
   /* TODO: do not know how to check for underflow */
@@ -58,15 +67,16 @@ void sea_abc_assert_valid_offset (int64_t offset, int64_t size)
  * base - the base argument to gep
  * offset - the computed offset from gep + used_size
  */
-void sea_abc_log_ptr (uint8_t *base, int64_t offset)
+void sea_abc_log_ptr (int8_t *base, sea_ptrdiff_t offset)
 {
-  if (nd()) return;
+  if (nd_int64_t()) return;
   
-  if (sea_ptr == base)
+  if (sea_ptr && sea_ptr == base)
   {
-    sea_ptr = nd_uint8_ptr();
-    /* trick alias analysis */
-    assume (sea_ptr == sea_ptr + offset);
+    /* update sea_ptr to base+offset, but trick alias analysis from
+       noticing that sea_ptr and base might alias */
+    sea_ptr = nd_int8_ptr();
+    assume (sea_ptr == base + offset);
   }
 }
 
@@ -75,12 +85,12 @@ void sea_abc_log_ptr (uint8_t *base, int64_t offset)
  * base - pointer to allocated buffer
  * size - the size of the allocated buffer
  */
-void sea_abc_alloc (uint8_t *base, int64_t size)
+void sea_abc_alloc (int8_t *base, sea_size_t size)
 {
   if (sea_ptr == 0 && sea_base == base)
   {
     assume (sea_size == size);
-    sea_ptr = nd_uint8_ptr();
+    sea_ptr = nd_int8_ptr();
     assume (sea_ptr == sea_base);
   }
   else
@@ -89,9 +99,9 @@ void sea_abc_alloc (uint8_t *base, int64_t size)
 
 void sea_abc_init(void)
 {
-  sea_base = nd_uint8_ptr ();
+  sea_base = nd_int8_ptr ();
   assume (sea_base > 0);
-  sea_size = nd ();
+  sea_size = nd_sea_size_t ();
   assume (sea_size >= 0); 
   sea_offset = 0;
   sea_ptr = 0;
