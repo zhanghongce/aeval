@@ -1994,6 +1994,9 @@ namespace seahorn {
             Value *base = GEP->getPointerOperand ();            
             if (abc::ShouldBeTrackedPtr (base, F, dsa_count)) {
 
+              // XXX I think this misses the case when GEP is stored into memory.
+              // XXX Also don't need to instrument GEP that is only used in icmp
+              // XXX Essentially, as long as the GEP does not escape, we don't need to log it.
               // only instrument indirect gep
               if (std::all_of (GEP->uses().begin (), GEP->uses().end (), 
                                 [](Use& u) { 
