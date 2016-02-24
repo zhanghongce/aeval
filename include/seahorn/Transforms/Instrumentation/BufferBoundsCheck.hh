@@ -200,6 +200,7 @@ namespace seahorn
       IRBuilder<> m_B;
       CallGraph* m_cg;
       DSACount* m_dsa_count;
+      ObjectSizeOffsetEvaluator m_eval;
 
       /// tracked_ptr is some aligned address between 
       ///    [tracked_base, ... , tracked_base + tracked_size - address_sizeof(tracked_ptr))]
@@ -213,10 +214,6 @@ namespace seahorn
       Function* m_nondetFn;
       Function* m_nondetPtrFn;
       Function* m_assumeFn;
-
-      // Gep instructions that feed other instructions (included other
-      // gep's) different from load/store.
-      const DenseSet<GetElementPtrInst*>* m_indirect_gep;
 
      public: // counters for stats
       
@@ -259,7 +256,6 @@ namespace seahorn
       ABCInst (Module& M, 
                const DataLayout* dl, const TargetLibraryInfo* tli,
                IRBuilder<> B, CallGraph* cg, DSACount* dsa_count,
-               const DenseSet<GetElementPtrInst*>* indirect_gep,
                Function* errorFn, Function* nondetFn,
                Function* nondetPtrFn, Function* assumeFn);
       

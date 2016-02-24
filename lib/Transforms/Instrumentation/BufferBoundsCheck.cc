@@ -8,6 +8,7 @@
 #include "llvm/Transforms/Utils/UnifyFunctionExitNodes.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Cloning.h"
+#include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/CommandLine.h"
 
@@ -70,7 +71,7 @@ namespace seahorn {
     }
  
     // Return true iff the check can be determined as definitely safe
-    // statically.
+    // or unsafe statically.
     inline bool IsTrivialCheck (const DataLayout* dl, 
                                 const TargetLibraryInfo* tli,
                                 const Value* Ptr) {
@@ -78,9 +79,32 @@ namespace seahorn {
       // Compute the size of the object pointed by Ptr. It also checks
       // for underflow and overflow.
       uint64_t Size;
-      return getObjectSize (Ptr, Size, dl, tli, true);
+      if (getObjectSize (Ptr, Size, dl, tli, true)){
+        // static check
+        if (Size == 0) 
+          errs () << "ArrayBoundsCheck: definite unsafe access to " << *Ptr << "\n";
+        return true;
+      } 
+      return false; 
     }
- 
+   
+    bool canEscape (GetElementPtrInst* GEP) {
+      for (Use& u: GEP->uses ()) {
+        if (isa<ICmpInst> (u.getUser ()))
+          continue;
+        else if (isa<LoadInst> (u.getUser ()))
+          continue;
+        else if (StoreInst* SI = dyn_cast<StoreInst> (u.getUser ())) {
+          if (SI->getValueOperand () == GEP)
+            return true;
+        } else {
+          // TODO: any other case where it cannot escape
+          return true;
+        }
+      }
+      return false;
+    }
+
     inline unsigned fieldOffset (const DataLayout* dl, const StructType *t, 
                                  unsigned field) {
       return dl->getStructLayout (const_cast<StructType*>(t))->
@@ -130,8 +154,8 @@ namespace seahorn {
                                    dl->getABITypeAlignment (Ptr->getType ()));
     }
                                
-    // Helper to create a integer constant
-    inline Value* createIntCst (LLVMContext &ctx, uint64_t val) {
+    // Helper to create an integer constant
+    inline Value* createIntCst (LLVMContext &ctx, int64_t val) {
       return ConstantInt::get (createIntTy (ctx), val);
     }
 
@@ -166,6 +190,21 @@ namespace seahorn {
       return GV;
     }
 
+#if 1
+    //! extract offset from gep using llvm machinery
+    inline Value* computeGepOffset(const DataLayout* dl, IRBuilder<> B, 
+                                   GetElementPtrInst *gep) {
+      
+      LLVMContext& ctx = B.getContext ();
+      unsigned IntTyBits = dl->getPointerTypeSizeInBits(gep->getType());
+      APInt offset(IntTyBits, 0);
+      if (gep->accumulateConstantOffset (*dl, offset)){
+        return createIntCst (ctx, offset.getSExtValue ());       
+      } else {
+        return EmitGEPOffset (&B, *dl, gep, true);
+      }
+    }
+#else
     //! extract offset from gep
     inline Value* computeGepOffset(const DataLayout* dl, IRBuilder<> B, 
                                    GetElementPtrInst *gep) {
@@ -199,6 +238,7 @@ namespace seahorn {
       } 
       return curVal;
     }
+#endif 
 
     // Whether a pointer should be tracked based on DSA (if available)
     bool ShouldBeTrackedPtr (Value* ptr, Function& F, DSACount* m_dsa_count) {
@@ -636,7 +676,7 @@ namespace seahorn
         else 
           size = abc::createMul (B, nElems, ty_size, "alloca_size");
         m_offsets [ptr] = ConstantInt::get (m_Int64Ty, 0);
-        m_sizes [ptr] = B.CreateSExtOrTrunc (size, m_Int64Ty);
+        m_sizes [ptr] = B.CreateZExtOrTrunc (size, m_Int64Ty);
         return;
       }
       else if (const CallInst * MallocInst = extractMallocCall (ptr ,m_tli)) {
@@ -645,7 +685,7 @@ namespace seahorn
           if (size->getType ()->isIntegerTy ()) {
             B.SetInsertPoint(insertPoint);
             m_offsets [ptr] = ConstantInt::get (m_Int64Ty, 0);
-            m_sizes [ptr] = B.CreateSExtOrTrunc (size, m_Int64Ty);
+            m_sizes [ptr] = B.CreateZExtOrTrunc (size, m_Int64Ty);
             return;
           }
         }
@@ -1049,10 +1089,6 @@ namespace seahorn {
           }
       */
 
-      // We only need to instrument indirect gep
-      if (!(m_indirect_gep->count(gep) > 0))
-        return;
-
       LLVMContext& ctx = m_B.getContext ();
       BasicBlock* bb = insertPt->getParent ();
       Function* F = bb->getParent ();
@@ -1169,7 +1205,6 @@ namespace seahorn {
     }
 
     //! Instrument any allocation site
-    // p := alloca (n) or p:= malloc (n)
     void ABC2::ABCInst::doAllocaSite (Value* Ptr, Value* Size /* bytes*/, 
                                       Instruction* insertPt) {
       /*
@@ -1219,7 +1254,7 @@ namespace seahorn {
       
       /// assume (tracked_size == n);
       Assume (m_B.CreateICmpEQ(vtracked_size,
-                               m_B.CreateSExtOrTrunc (Size, 
+                               m_B.CreateZExtOrTrunc (Size, 
                                                       abc::createIntTy (ctx))),
               insertPt->getParent()->getParent());
 
@@ -1382,7 +1417,17 @@ namespace seahorn {
 
       m_B.SetInsertPoint (bb1); 
       Value* vtracked_base = abc::createLoad(m_B, m_tracked_base, m_dl);      
+#if 1
+      // use llvm machinery to figure out the size
+      SizeOffsetEvalType Data = m_eval.compute (base);
+      Value* vtracked_size = Data.first;
+      if (vtracked_size)
+        vtracked_size =  m_B.CreateZExtOrTrunc (vtracked_size, Type::getInt64Ty (ctx));
+      else
+        vtracked_size = abc::createLoad(m_B, m_tracked_size, m_dl);      
+#else
       Value* vtracked_size = abc::createLoad(m_B, m_tracked_size, m_dl);      
+#endif 
       Value* vbase = m_B.CreateBitOrPointerCast (base, abc::voidPtr (ctx));
       Value* voffset = abc::computeGepOffset (m_dl, m_B, gep);
       BranchInst::Create (bb1_then, bb1_else, 
@@ -1486,7 +1531,17 @@ namespace seahorn {
       m_B.SetInsertPoint (abc_under_bb);
 
       Value* offset = abc::createLoad(m_B, m_tracked_offset, m_dl);
+#if 1
+      // use llvm machinery to figure out the size
+      SizeOffsetEvalType Data = m_eval.compute (Ptr);
+      Value* size = Data.first;
+      if (size)
+        size =  m_B.CreateZExtOrTrunc (size, Type::getInt64Ty (ctx));
+      else
+        size = abc::createLoad(m_B, m_tracked_size, m_dl);      
+#else
       Value* size = abc::createLoad(m_B, m_tracked_size, m_dl); 
+#endif 
 
       /////
       // underflow check
@@ -1545,13 +1600,12 @@ namespace seahorn {
                             const TargetLibraryInfo* tli,
                             IRBuilder<> B, CallGraph* cg,
                             DSACount* dsa_count,
-                            const DenseSet<GetElementPtrInst*>* indirect_gep,
                             Function* errorFn, Function* nondetFn,
                             Function* nondetPtrFn, Function* assumeFn): 
         m_dl (dl), m_tli (tli), m_B (B), m_cg (cg), m_dsa_count (dsa_count),
+        m_eval (dl, tli, B.getContext (), true),             
         m_tracked_base (nullptr), m_tracked_ptr (nullptr),
         m_tracked_offset (nullptr), m_tracked_size (nullptr),              
-        m_indirect_gep (indirect_gep),
         m_errorFn (errorFn), m_nondetFn (nondetFn), 
         m_nondetPtrFn (nondetPtrFn), m_assumeFn (assumeFn),
         m_checks_added (0), m_trivial_checks (0), m_mem_accesses (0)
@@ -1569,8 +1623,9 @@ namespace seahorn {
 
     void ABC2::ABCInst::visit (LoadInst *I) {
       Value* ptr = I->getPointerOperand ();
-
+      
       // skip our own global variables
+      // XXX: I think this check is not needed
       if (ptr == m_tracked_base || ptr == m_tracked_ptr ||
           ptr == m_tracked_offset || ptr == m_tracked_size)
         return;
@@ -1597,6 +1652,7 @@ namespace seahorn {
       Value* ptr = I->getPointerOperand ();
 
       // skip our own global variables
+      // XXX: I think this check is not needed
       if (ptr == m_tracked_base || ptr == m_tracked_ptr ||
           ptr == m_tracked_offset || ptr == m_tracked_size)
         return;
@@ -1638,9 +1694,16 @@ namespace seahorn {
     }
 
     void ABC2::ABCInst::visit (AllocaInst *I) {
-      // note that the frontend can promote malloc-like instructions
+      // note that the seahorn frontend can promote malloc-like instructions
       // to alloca's.
-
+#if 1
+      // use llvm machinery to figure out the size
+      SizeOffsetEvalType Data = m_eval.compute (I);
+      if (Value* size = Data.first) 
+        doAllocaSite (I, size, abc::getNextInst (I));
+      else
+        errs () << "Warning: missing alloca site: " << *I << "\n";
+#else
       uint64_t size; //bytes
       if (getObjectSize(I, size, m_dl, m_tli, true)) {
         doAllocaSite (I, 
@@ -1662,9 +1725,19 @@ namespace seahorn {
         return;
       }
       errs () << "Warning: missing alloca site: " << *I << "\n";
+#endif 
     }
 
     void ABC2::ABCInst::visit (CallInst *I) {
+#if 1
+      // I should be a malloc-like or new-like call.
+      // Use llvm machinery to figure the size
+      SizeOffsetEvalType Data = m_eval.compute (I);
+      if (Value* size = Data.first) 
+        doAllocaSite (I, size, abc::getNextInst (I));
+      else
+        errs () << "Warning: missing " << *I << "\n";
+#else
       if (isMallocLikeFn(I, m_tli, true) || isOperatorNewLikeFn(I, m_tli, true)){
         if (I->getNumArgOperands () == 1) {
           Value *size = I->getArgOperand(0); // bytes
@@ -1673,6 +1746,7 @@ namespace seahorn {
         }
       }
       errs () << "Warning: missing " << *I << "\n";
+#endif 
     }
 
     bool ABC2::runOnModule (llvm::Module &M)
@@ -1734,7 +1808,6 @@ namespace seahorn {
       
       unsigned untracked_dsa_checks = 0;
       const TargetLibraryInfo * tli = &getAnalysis<TargetLibraryInfo>();
-      DenseSet <GetElementPtrInst*> indirect_gep;
       std::vector<Instruction*> Worklist;
       for (Function &F : M) {
         if (F.isDeclaration ()) continue;
@@ -1744,15 +1817,8 @@ namespace seahorn {
           
           if (GetElementPtrInst* GEP  = dyn_cast<GetElementPtrInst> (I)) {
             Value *ptr = GEP->getPointerOperand ();            
-            if (abc::ShouldBeTrackedPtr (ptr, F, m_dsa_count)) {
-              if (!std::all_of (GEP->uses().begin (), GEP->uses().end (), 
-                                [](Use& u) { 
-                                  return (isa<LoadInst>(u.getUser()) || 
-                                          isa<StoreInst>(u.getUser()));})) {
-                indirect_gep.insert (GEP);
-              }
+            if (abc::ShouldBeTrackedPtr (ptr, F, m_dsa_count) && abc::canEscape (GEP))
               Worklist.push_back (I);
-            }
           } else if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
             Value* ptr = LI->getPointerOperand ();
             if (abc::ShouldBeTrackedPtr (ptr, F, m_dsa_count)) 
@@ -1791,7 +1857,7 @@ namespace seahorn {
       } 
       
       const DataLayout * dl = &getAnalysis<DataLayoutPass>().getDataLayout ();
-      ABCInst abc (M, dl, tli, B, cg, m_dsa_count, &indirect_gep, 
+      ABCInst abc (M, dl, tli, B, cg, m_dsa_count, 
                    errorFn, nondetFn, nondetPtrFn, assumeFn);
       for (auto I: Worklist) {
         if (GetElementPtrInst * GEP  = dyn_cast<GetElementPtrInst> (I)) {
@@ -1992,20 +2058,8 @@ namespace seahorn {
           
           if (GetElementPtrInst* GEP  = dyn_cast<GetElementPtrInst> (I)) {
             Value *base = GEP->getPointerOperand ();            
-            if (abc::ShouldBeTrackedPtr (base, F, dsa_count)) {
-
-              // XXX I think this misses the case when GEP is stored into memory.
-              // XXX Also don't need to instrument GEP that is only used in icmp
-              // XXX Essentially, as long as the GEP does not escape, we don't need to log it.
-              // only instrument indirect gep
-              if (std::all_of (GEP->uses().begin (), GEP->uses().end (), 
-                                [](Use& u) { 
-                                  return (isa<LoadInst>(u.getUser()) || 
-                                          isa<StoreInst>(u.getUser()));})) {
-                continue; 
-              }
-
-
+            if (abc::ShouldBeTrackedPtr (base, F, dsa_count) && abc::canEscape (GEP)) 
+            {
               B.SetInsertPoint (abc::getNextInst (I));
               Value* offset = abc::computeGepOffset (dl, B, GEP);                  
               instrumented_gep [GEP] = offset;
@@ -2022,7 +2076,6 @@ namespace seahorn {
               if (abc::IsTrivialCheck (dl, tli, ptr)) {
                 trivial_checks++;
               } else {
-
                 int addr_sz = abc::getAddrSize (dl, *I);
                 if (addr_sz < 0) {
                   errs () << "Error: cannot find size of the accessed address for " 
@@ -2116,7 +2169,7 @@ namespace seahorn {
               Value *base2 = 
                   B.CreateBitOrPointerCast (MTI->getSource(), abc::voidPtr(ctx));
               Value *len = 
-                  B.CreateSExtOrTrunc (MTI->getLength(), abc::createIntTy(ctx));
+                  B.CreateZExtOrTrunc (MTI->getLength(), abc::createIntTy(ctx));
               abc::update_cg (cg, &F, 
                               B.CreateCall2 (abc_assert_valid_ptr, base1, len));
               abc::update_cg (cg, &F, 
@@ -2132,7 +2185,7 @@ namespace seahorn {
               Value *base = 
                   B.CreateBitOrPointerCast (MSI->getDest(), abc::voidPtr(ctx));
               Value *len = 
-                  B.CreateSExtOrTrunc (MSI->getLength(), abc::createIntTy(ctx));
+                  B.CreateZExtOrTrunc (MSI->getLength(), abc::createIntTy(ctx));
               abc::update_cg (cg, &F, 
                               B.CreateCall2 (abc_assert_valid_ptr, base, len));
             }
@@ -2141,8 +2194,9 @@ namespace seahorn {
           } else if (AllocaInst *AI = dyn_cast<AllocaInst>(I)) {
             Value* ptr = AI;
             if (abc::ShouldBeTrackedPtr (ptr, F, dsa_count))  {
-              B.SetInsertPoint (abc::getNextInst (I));
+
               Value* vsize = nullptr;
+              B.SetInsertPoint (abc::getNextInst (I));
               uint64_t size; //bytes
               if (getObjectSize(I, size, dl, tli, true)) {
                 vsize = abc::createIntCst (ctx, size);
@@ -2157,22 +2211,28 @@ namespace seahorn {
                   vsize = abc::createMul (B, nElems, ty_size, "alloca_size");
                 }
               }
-              assert (vsize);
+
+              if (!vsize) {
+                errs () << "Warning: missing " << *I << "\n";
+                continue;
+              }
+
               abc::update_cg (cg, &F, 
                    B.CreateCall2 (abc_alloc, 
                                   B.CreateBitOrPointerCast (ptr, abc::voidPtr (ctx)),
-                                  B.CreateSExtOrTrunc (vsize,Type::getInt64Ty (ctx))));
+                                  B.CreateZExtOrTrunc (vsize,Type::getInt64Ty (ctx))));
             }
-          } else if (isMallocLikeFn(I, tli, true) || isOperatorNewLikeFn(I, tli, true)){
+          } 
+          else if (isMallocLikeFn(I, tli, true) || isOperatorNewLikeFn(I, tli, true)){
             if (abc::ShouldBeTrackedPtr (I, F, dsa_count)) {
               if (CallInst* CI = dyn_cast<CallInst> (I)) {
                 B.SetInsertPoint (abc::getNextInst (I));
                 Value* ptr = CI;
                 Value *size = CI->getArgOperand(0); // bytes
                 abc::update_cg (cg, &F,
-                     B.CreateCall2 (abc_alloc, 
+                                B.CreateCall2 (abc_alloc, 
                                    B.CreateBitOrPointerCast (ptr, abc::voidPtr (ctx)),
-                                   B.CreateSExtOrTrunc (size,Type::getInt64Ty (ctx))));
+                                   B.CreateZExtOrTrunc (size,Type::getInt64Ty (ctx))));
               }
             }
           }
