@@ -1,6 +1,10 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef ptrdiff_t sea_ptrdiff_t;
 /* need size to be signed */
 typedef ptrdiff_t sea_size_t;
@@ -28,6 +32,10 @@ __attribute__((used)) void sea_abc_log_ptr (int8_t *base, sea_ptrdiff_t offset);
 __attribute__((used)) void sea_abc_alloc (int8_t *base, sea_size_t size);
 __attribute__((used)) void sea_abc_init(void);
   
+#ifdef __cplusplus
+}
+#endif
+ 
 /*
  * checks that base + offset is a valid pointer
  * insert after every load/store when size is unknown
