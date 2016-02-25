@@ -5,32 +5,33 @@
 extern "C" {
 #endif
 
-typedef ptrdiff_t sea_ptrdiff_t;
-/* need size to be signed */
-typedef ptrdiff_t sea_size_t;
+  typedef ptrdiff_t sea_ptrdiff_t;
+  /* need size to be signed */
+  typedef ptrdiff_t sea_size_t;
 
-extern int8_t *nd_int8_ptr (void);
-extern int64_t nd_int64_t (void);
-extern sea_size_t nd_sea_size_t (void);
+  extern int8_t *nd_int8_ptr (void);
+  extern int64_t nd_int64_t (void);
+  extern sea_size_t nd_sea_size_t (void);
 
-static int8_t* sea_base;
-static int8_t* sea_ptr;
-static sea_ptrdiff_t sea_offset;
-static sea_size_t sea_size;
+  static int8_t* sea_base;
+  static int8_t* sea_ptr;
+  static sea_ptrdiff_t sea_offset;
+  static sea_size_t sea_size;
+  
 
-extern void __VERIFIER_assume (int);
-__attribute__((__noreturn__)) extern void __VERIFIER_error (void);
+  extern void __VERIFIER_assume (int);
+  __attribute__((__noreturn__)) extern void __VERIFIER_error (void);
 
 #define assume __VERIFIER_assume
 #define assert(X) if(!(X)){__VERIFIER_error ();}
 
-/* __attribute__((always_inline)) void assert  (int v)  { if (!v) __VERIFIER_error (); } */
+  /* __attribute__((always_inline)) void assert  (int v)  { if (!v) __VERIFIER_error (); } */
 
-__attribute__((used)) void sea_abc_assert_valid_ptr (int8_t *base, sea_ptrdiff_t offset);
-__attribute__((used)) void sea_abc_assert_valid_offset (sea_ptrdiff_t offset, sea_size_t size);
-__attribute__((used)) void sea_abc_log_ptr (int8_t *base, sea_ptrdiff_t offset);
-__attribute__((used)) void sea_abc_alloc (int8_t *base, sea_size_t size);
-__attribute__((used)) void sea_abc_init(void);
+  __attribute__((used)) void sea_abc_assert_valid_ptr (int8_t *base, sea_ptrdiff_t offset);
+  __attribute__((used)) void sea_abc_assert_valid_offset (sea_ptrdiff_t offset, sea_size_t size);
+  __attribute__((used)) void sea_abc_log_ptr (int8_t *base, sea_ptrdiff_t offset);
+  __attribute__((used)) void sea_abc_alloc (int8_t *base, sea_size_t size);
+  __attribute__((used)) void sea_abc_init(void);
   
 #ifdef __cplusplus
 }
