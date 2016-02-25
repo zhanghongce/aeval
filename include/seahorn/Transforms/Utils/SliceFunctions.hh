@@ -8,16 +8,22 @@ namespace seahorn
 {
   using namespace llvm;
   
-  struct SliceFunctions : public ModulePass
+  class SliceFunctions : public ModulePass
   {
+    void printModuleInfo (Module& M);
+
+   public:
+
     static char ID;
 
     SliceFunctions (): ModulePass (ID) {}
     
-    bool runOnModule (Module &M);
+    virtual bool runOnModule (Module &M);
 
-    void getAnalysisUsage (AnalysisUsage &AU)
-    {AU.setPreservesAll ();}
+    virtual void getAnalysisUsage (AnalysisUsage &AU);
+
+    virtual const char* getPassName () const override 
+    {return "SliceFunctions";}  
 
   };
 }
