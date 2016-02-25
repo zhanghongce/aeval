@@ -52,12 +52,14 @@ void sea_abc_assert_valid_ptr (int8_t *base, sea_ptrdiff_t offset)
    assert (offset >= 0 );
    assert (offset <= sea_size);
   }
+#ifndef SEA_BASE_ONLY
   else if (base == sea_ptr)
   {
     assume (sea_ptr > sea_base);
     assert (sea_offset + offset >= 0);
     assert (sea_offset + offset <= sea_size);
   }
+#endif
 }
 
 /**
@@ -78,6 +80,7 @@ void sea_abc_assert_valid_offset (sea_ptrdiff_t offset, sea_size_t size)
  */
 void sea_abc_log_ptr (int8_t *base, sea_ptrdiff_t offset)
 {
+#ifndef SEA_BASE_ONLY
   if (nd_int64_t()) return;
   
   if (sea_ptr && sea_ptr == base)
@@ -87,6 +90,7 @@ void sea_abc_log_ptr (int8_t *base, sea_ptrdiff_t offset)
     sea_ptr = nd_int8_ptr();
     assume (sea_ptr == base + offset);
   }
+#endif
 }
 
 /**
