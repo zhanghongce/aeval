@@ -1924,54 +1924,49 @@ namespace seahorn {
         return false;
       }
       
+      const TargetLibraryInfo * tli = &getAnalysis<TargetLibraryInfo>();
+      const DataLayout* dl = &getAnalysis<DataLayoutPass>().getDataLayout ();
+      
       // Gather some statistics about DSA nodes
       DSACount* dsa_count = &getAnalysis<DSACount> ();    
 
       LLVMContext &ctx = M.getContext ();
+      Type *voidTy = Type::getVoidTy (ctx);
+      Type *intPtrTy = dl->getIntPtrType (ctx, 0);
+      errs () << "intPtrTy is " << *intPtrTy << "\n";
+      
+      Type *i8PtrTy = Type::getInt8Ty (ctx)->getPointerTo ();
+      
       
       AttrBuilder AB;
       AttributeSet as = AttributeSet::get (ctx, AttributeSet::FunctionIndex, AB); 
 
       Function* abc_init = dyn_cast<Function>
           (M.getOrInsertFunction ("sea_abc_init",
-                                  as,
-                                  Type::getVoidTy (ctx),
-                                  NULL));
+                                  as, voidTy, NULL));
       abc_init->addFnAttr(Attribute::AlwaysInline);
 
       Function* abc_alloc = dyn_cast<Function>
           (M.getOrInsertFunction ("sea_abc_alloc",
-                                  as,
-                                  Type::getVoidTy (ctx),
-                                  Type::getInt8Ty (ctx)->getPointerTo (), 
-                                  Type::getInt64Ty (ctx), 
+                                  as, voidTy, i8PtrTy, intPtrTy,
                                   NULL));
       abc_alloc->addFnAttr(Attribute::AlwaysInline);
 
       Function* abc_log_ptr = dyn_cast<Function>
           (M.getOrInsertFunction ("sea_abc_log_ptr",
-                                  as,
-                                  Type::getVoidTy (ctx),
-                                  Type::getInt8Ty (ctx)->getPointerTo (), 
-                                  Type::getInt64Ty (ctx), 
+                                  as, voidTy, i8PtrTy, intPtrTy,
                                   NULL));
       abc_log_ptr->addFnAttr(Attribute::AlwaysInline);
       
       Function* abc_assert_valid_ptr = dyn_cast<Function>
           (M.getOrInsertFunction ("sea_abc_assert_valid_ptr",
-                                  as,
-                                  Type::getVoidTy (ctx),
-                                  Type::getInt8Ty (ctx)->getPointerTo (), 
-                                  Type::getInt64Ty (ctx), 
+                                  as, voidTy, i8PtrTy, intPtrTy,
                                   NULL));
       abc_assert_valid_ptr->addFnAttr(Attribute::AlwaysInline);
 
       Function* abc_assert_valid_offset = dyn_cast<Function>
           (M.getOrInsertFunction ("sea_abc_assert_valid_offset",
-                                  as,
-                                  Type::getVoidTy (ctx),
-                                  Type::getInt64Ty (ctx), 
-                                  Type::getInt64Ty (ctx), 
+                                  as, voidTy, intPtrTy, intPtrTy,
                                   NULL));
       abc_assert_valid_offset->addFnAttr(Attribute::AlwaysInline);
 
@@ -2020,8 +2015,6 @@ namespace seahorn {
       unsigned checks_added = 0;
       unsigned trivial_checks = 0;
       unsigned mem_accesses = 0;
-      const TargetLibraryInfo * tli = &getAnalysis<TargetLibraryInfo>();
-      const DataLayout* dl = &getAnalysis<DataLayoutPass>().getDataLayout ();
       DenseMap<GetElementPtrInst*, Value*> instrumented_gep;
       
       // do initialization
