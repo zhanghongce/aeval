@@ -54,6 +54,7 @@ void sea_abc_assert_valid_ptr (int8_t *base, sea_ptrdiff_t offset)
   }
   else if (base == sea_ptr)
   {
+    assume (sea_ptr > sea_base);
     assert (sea_offset + offset >= 0);
     assert (sea_offset + offset <= sea_size);
   }
