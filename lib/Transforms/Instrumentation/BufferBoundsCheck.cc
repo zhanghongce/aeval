@@ -1184,10 +1184,12 @@ namespace seahorn {
         if (abc::IsTrivialCheck (m_dl, m_tli, &GV))
           continue;
 
-        // // skip global variables that we just introduced
-        // if (&GV == m_tracked_base || &GV == m_tracked_ptr ||
-        //     &GV == m_tracked_offset || &GV == m_tracked_size)
-        //   continue;
+        // skip global variables that we just introduced
+        // IsTrivialCheck should have returned true before reaching
+        // this point.
+        if (&GV == m_tracked_base || &GV == m_tracked_ptr ||
+            &GV == m_tracked_offset || &GV == m_tracked_size)
+          continue;
 
         if (!abc::ShouldBeTrackedPtr (&GV, *main, m_dsa_count))
           continue;
@@ -1636,8 +1638,9 @@ namespace seahorn {
     void ABC2::ABCInst::visit (LoadInst *I) {
       Value* ptr = I->getPointerOperand ();
       
-      // skip our own global variables
-      // XXX: I think this check is not needed
+      // skip our own global variables. IsTrivialCheck should skip any
+      // access to a the tracked variables but we keep it to avoid
+      // incrementing m_mem_accesses counter.
       if (ptr == m_tracked_base || ptr == m_tracked_ptr ||
           ptr == m_tracked_offset || ptr == m_tracked_size)
         return;
@@ -1663,8 +1666,9 @@ namespace seahorn {
     void ABC2::ABCInst::visit (StoreInst *I) {
       Value* ptr = I->getPointerOperand ();
 
-      // skip our own global variables
-      // XXX: I think this check is not needed
+      // skip our own global variables. IsTrivialCheck should skip
+      // this access but we keep it to avoid incrementing
+      // m_mem_accesses counter.
       if (ptr == m_tracked_base || ptr == m_tracked_ptr ||
           ptr == m_tracked_offset || ptr == m_tracked_size)
         return;
@@ -1989,10 +1993,10 @@ namespace seahorn {
                                   NULL));
       abc_assert_valid_offset->addFnAttr(Attribute::AlwaysInline);
 
-      std::vector<StringRef> sea_funcs = 
-          { "sea_abc_assert_valid_ptr", "sea_abc_assert_valid_offset", 
-            "sea_abc_log_ptr", "sea_abc_alloc", "sea_abc_init" };
-     
+      std::vector<Function*> sea_funcs = 
+          { abc_assert_valid_offset, abc_assert_valid_ptr, 
+            abc_log_ptr, abc_alloc, abc_init };
+
       GlobalVariable *LLVMUsed = M.getGlobalVariable("llvm.used");
       std::vector<Constant*> MergedVars;
       if (LLVMUsed) {
@@ -2002,7 +2006,7 @@ namespace seahorn {
         for (unsigned I = 0, E = Inits->getNumOperands(); I != E; ++I) {
           Value* V = Inits->getOperand(I)->stripPointerCasts();
           if (std::find (sea_funcs.begin (), sea_funcs.end (),
-                         V->getName ()) == sea_funcs.end ()) {
+                         V) == sea_funcs.end ()) {
             MergedVars.push_back(Inits->getOperand(I));
           }
         }
@@ -2046,6 +2050,10 @@ namespace seahorn {
         if (abc::IsTrivialCheck (dl, tli, &GV))
           continue;
 
+        // IsTrivialCheck should have skipped them but just in case.
+        if (GV.getName ().startswith ("sea_"))
+          continue;
+
         if (!abc::ShouldBeTrackedPtr (&GV, *main, dsa_count))
           continue;
 
@@ -2064,6 +2072,11 @@ namespace seahorn {
       
       for (Function &F : M) {
         if (F.isDeclaration ()) continue;
+
+        // skip sea functions
+        if (std::find (sea_funcs.begin (), 
+                       sea_funcs.end (), &F) != sea_funcs.end ())  
+          continue;
         
         for (inst_iterator i = inst_begin(F), e = inst_end(F); i != e; ++i)  {
           Instruction *I = &*i;
@@ -2083,6 +2096,12 @@ namespace seahorn {
             }
           } else if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
             Value* ptr = LI->getPointerOperand ();
+            // IsTrivialCheck should skip any access to a sea
+            // global but we keep it to avoid incrementing
+            // m_mem_accesses counter.
+            if (ptr->getName ().startswith ("sea_"))
+              continue;
+
             if (abc::ShouldBeTrackedPtr (ptr, F, dsa_count)) { 
               mem_accesses++;
               if (abc::IsTrivialCheck (dl, tli, ptr)) {
@@ -2131,6 +2150,12 @@ namespace seahorn {
               untracked_dsa_checks++;
           } else if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
             Value* ptr = SI->getPointerOperand ();
+            // IsTrivialCheck should skip any access to a sea
+            // global but we keep it to avoid incrementing
+            // m_mem_accesses counter.
+            if (ptr->getName ().startswith ("sea_"))
+              continue;
+
             if (abc::ShouldBeTrackedPtr (ptr, F, dsa_count))  {
               mem_accesses++;
               if (abc::IsTrivialCheck (dl, tli, ptr)) {
