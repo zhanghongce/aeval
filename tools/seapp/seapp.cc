@@ -116,6 +116,11 @@ ExternalizeAddrTakenFuncs ("externalize-addr-taken-funcs",
                            llvm::cl::desc ("Externalize uses of address-taken functions"),
                            llvm::cl::init (false));
 
+static llvm::cl::opt<bool>
+SliceFunction ("slice-function", 
+     llvm::cl::desc ("Enable function slicing"), 
+     llvm::cl::init (false));
+
 static llvm::cl::opt<int>
 SROA_Threshold ("sroa-threshold",
                 llvm::cl::desc ("Threshold for ScalarReplAggregates pass"),
@@ -200,8 +205,6 @@ int main(int argc, char **argv) {
   }
   if (dl) pass_manager.add (new llvm::DataLayoutPass ());
 
-  pass_manager.add (new seahorn::SliceFunctions ());
-
   // -- Create a main function if we do not have one.
   pass_manager.add (new seahorn::DummyMainFunction ());
  
@@ -235,6 +238,13 @@ int main(int argc, char **argv) {
   // -- externalize uses of address-taken functions
   if (ExternalizeAddrTakenFuncs)
     pass_manager.add (seahorn::createExternalizeAddressTakenFunctionsPass ());
+
+  if (SliceFunction) {
+    // Enable function slicing
+    pass_manager.add (new seahorn::SliceFunctions ());
+    // Ensure that there is a main function after slicing
+    pass_manager.add (new seahorn::DummyMainFunction ());
+  }
 
   // kill internal unused code
   pass_manager.add (llvm::createGlobalDCEPass ()); // kill unused internal global

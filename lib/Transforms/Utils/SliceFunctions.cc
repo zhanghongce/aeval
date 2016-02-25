@@ -16,7 +16,7 @@
 #include <vector>
 
 static llvm::cl::list<std::string> 
-FunctionNames("slice-functions", 
+FunctionNames("slice-function-names", 
                llvm::cl::desc ("Set of functions to be kept"),
                llvm::cl::ZeroOrMore);
 
