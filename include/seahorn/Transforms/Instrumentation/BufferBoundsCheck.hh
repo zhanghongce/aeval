@@ -66,8 +66,7 @@ namespace seahorn
     const DataLayout *m_dl;
     TargetLibraryInfo *m_tli;
 
-    Type *m_Int64Ty;    
-    Type *m_Int64PtrTy;    
+    Type *m_IntPtrTy;    
 
     Function * m_errorFn;
 
@@ -139,7 +138,7 @@ namespace seahorn
 
     ABC1 () : llvm::ModulePass (ID), 
               m_dl (nullptr), m_tli (nullptr),
-              m_Int64Ty (nullptr), m_Int64PtrTy (nullptr),
+              m_IntPtrTy (nullptr), 
               m_errorFn (nullptr), 
               m_mem_accesses (0), m_checks_added (0), 
               m_trivial_checks (0), m_checks_unable (0) { }
@@ -201,6 +200,8 @@ namespace seahorn
       CallGraph* m_cg;
       DSACount* m_dsa_count;
       ObjectSizeOffsetEvaluator m_eval;
+
+      Type *m_IntPtrTy;    
 
       /// tracked_ptr is some aligned address between 
       ///    [tracked_base, ... , tracked_base + tracked_size - address_sizeof(tracked_ptr))]

@@ -105,7 +105,7 @@ namespace seahorn {
       return false;
     }
 
-    inline unsigned fieldOffset (const DataLayout* dl, const StructType *t, 
+    inline uint64_t fieldOffset (const DataLayout* dl, const StructType *t, 
                                  unsigned field) {
       return dl->getStructLayout (const_cast<StructType*>(t))->
           getElementOffset (field);
@@ -117,28 +117,37 @@ namespace seahorn {
       return I->getParent ()->getInstList ().getNext (I);
     }
     
-    inline Type* createIntTy (LLVMContext& ctx) {
-      return Type::getInt64Ty (ctx);
+    inline Type* createIntTy (const DataLayout*dl, LLVMContext& ctx) {
+      return dl->getIntPtrType (ctx, 0);
     }
 
-    inline Value* createAdd(IRBuilder<> B, Value *LHS, Value *RHS, 
-                            const Twine &Name = "") {
+    inline Type* geti8PtrTy (LLVMContext &ctx) {
+      return Type::getInt8Ty (ctx)->getPointerTo ();
+    }
+
+    inline Value* createIntCst (Type* ty, int64_t val) {
+      return ConstantInt::get (ty, val);
+    }
+
+    inline Value* createAdd (IRBuilder<> B, const DataLayout*dl,
+                             Value *LHS, Value *RHS, 
+                             const Twine &Name = "") {
       assert (LHS->getType ()->isIntegerTy () && 
               RHS->getType ()->isIntegerTy ());
-
-      Type* IntTy = createIntTy (B.getContext ());
+      Type* IntTy = createIntTy (dl, B.getContext ());
       Value *LHS1 = B.CreateSExtOrBitCast (LHS, IntTy);
       Value *RHS1 = B.CreateSExtOrBitCast (RHS, IntTy);
       return  B.CreateAdd (LHS1, RHS1, Name);
     }
 
-    inline Value* createMul(IRBuilder<> B, Value *LHS, unsigned RHS, 
-                            const Twine &Name = "") {
+    inline Value* createMul (IRBuilder<> B, const DataLayout*dl, 
+                             Value *LHS, unsigned RHS, 
+                             const Twine &Name = "") {
       assert (LHS->getType ()->isIntegerTy ());
-      Type* IntTy = createIntTy (B.getContext ());
+      Type* IntTy = createIntTy (dl, B.getContext ());
       Value* LHS1 = B.CreateSExtOrBitCast (LHS, IntTy );
       return  B.CreateMul (LHS1, 
-                           ConstantInt::get (IntTy, RHS), 
+                           createIntCst (IntTy, RHS),
                            Name);
     }
 
@@ -154,23 +163,13 @@ namespace seahorn {
                                    dl->getABITypeAlignment (Ptr->getType ()));
     }
                                
-    // Helper to create an integer constant
-    inline Value* createIntCst (LLVMContext &ctx, int64_t val) {
-      return ConstantInt::get (createIntTy (ctx), val);
-    }
-
-    // Helper to create a null constant
-    inline Type* voidPtr (LLVMContext &ctx) {
-      return Type::getInt8Ty (ctx)->getPointerTo ();
-    }
-
-    // Helper to create a null constant
     inline Value* createNullCst (LLVMContext &ctx) {
-      return ConstantPointerNull::get (Type::getInt8Ty (ctx)->getPointerTo ());
+      return ConstantPointerNull::get (cast<PointerType> (geti8PtrTy (ctx)));
     }
 
-    inline Value* createGlobalInt(Module& M, unsigned val, const Twine& Name ="") {
-      IntegerType* intTy = cast<IntegerType>(createIntTy (M.getContext ()));
+    inline Value* createGlobalInt (const DataLayout*dl, Module& M, 
+                                   unsigned val, const Twine& Name ="") {
+      IntegerType* intTy = cast<IntegerType>(createIntTy (dl, M.getContext ()));
       ConstantInt *Cst = ConstantInt::get(intTy, val);
       GlobalVariable *GV = new GlobalVariable (M, Cst->getType (), 
                                                false,  /*non-constant*/
@@ -182,7 +181,7 @@ namespace seahorn {
 
     inline Value* createGlobalPtr(Module& M, const Twine& Name ="") {
       auto NullPtr = cast<ConstantPointerNull>(createNullCst (M.getContext ()));
-      GlobalVariable *GV = new GlobalVariable (M, voidPtr (M.getContext ()), 
+      GlobalVariable *GV = new GlobalVariable (M, geti8PtrTy (M.getContext ()), 
                                                false, /*non-constant*/
                                                GlobalValue::InternalLinkage,
                                                NullPtr);
@@ -199,7 +198,7 @@ namespace seahorn {
       unsigned IntTyBits = dl->getPointerTypeSizeInBits(gep->getType());
       APInt offset(IntTyBits, 0);
       if (gep->accumulateConstantOffset (*dl, offset)){
-        return createIntCst (ctx, offset.getSExtValue ());       
+        return createIntCst (createIntTy (dl, ctx), offset.getSExtValue ());       
       } else {
         return EmitGEPOffset (&B, *dl, gep, true);
       }
@@ -216,15 +215,17 @@ namespace seahorn {
         ts.push_back (*typeIt);
       }
       
-      Value* base = abc::createIntCst (B.getContext (), 0);
+      Type* IntTy = createIntTy (dl, B.getContext ());
+      Value* base = abc::createIntCst (IntTy, 0);
       Value* curVal = base;
       
       for (unsigned i = 0; i < ps.size (); ++i) {
         if (const StructType *st = dyn_cast<StructType> (ts [i])) {
           if (const ConstantInt *ci = dyn_cast<ConstantInt> (ps [i])) {
-            unsigned off = abc::fieldOffset (dl, st, ci->getZExtValue ());
-            curVal = abc::createAdd(B, curVal, 
-                                    abc::createIntCst (B.getContext (), off));
+            uint64_t off = abc::fieldOffset (dl, st, ci->getZExtValue ());
+            curVal = abc::createAdd(B, dl, 
+                                    curVal, 
+                                    abc::createIntCst (IntTy, off));
           }
           else assert (false);
         }
@@ -232,8 +233,8 @@ namespace seahorn {
         { // arrays, pointers, and vectors
           unsigned sz = abc::storageSize (dl, seqt->getElementType ());
           Value *lhs = curVal;
-          Value *rhs = abc::createMul (B, ps[i], sz);
-          curVal = abc::createAdd (B, lhs, rhs); 
+          Value *rhs = abc::createMul (B, dl, ps[i], sz);
+          curVal = abc::createAdd (B, dl, lhs, rhs); 
         }
       } 
       return curVal;
@@ -370,10 +371,10 @@ namespace seahorn
             E = FTy->param_end (); I!=E; ++I, ++FAI)  {
       Type *PTy = *I;
       if (IsShadowableType (PTy)) {
-        ParamsTy.push_back (m_Int64Ty);
+        ParamsTy.push_back (m_IntPtrTy);
         Twine offset_name = FAI->getName () + ".shadow.offset";
         NewNames.push_back (offset_name.str ());
-        ParamsTy.push_back (m_Int64Ty);
+        ParamsTy.push_back (m_IntPtrTy);
         Twine size_name = FAI->getName () + ".shadow.size";
         NewNames.push_back (size_name.str ());
       }
@@ -425,17 +426,17 @@ namespace seahorn
       B.SetInsertPoint (ret);
 
       // StoreInst* SI_Off = 
-      //     B.CreateAlignedStore (UndefValue::get (m_Int64Ty), 
+      //     B.CreateAlignedStore (UndefValue::get (m_IntPtrTy), 
       //                           m_ret_offset,
       //                           m_dl->getABITypeAlignment (m_ret_offset->getType ())); 
 
       // StoreInst* SI_Size = 
-      //     B.CreateAlignedStore (UndefValue::get (m_Int64Ty), 
+      //     B.CreateAlignedStore (UndefValue::get (m_IntPtrTy), 
       //                           m_ret_size,
       //                           m_dl->getABITypeAlignment (m_ret_size->getType ())); 
 
-      StoreInst* SI_Off =  B.CreateStore (UndefValue::get (m_Int64Ty), m_ret_offset); 
-      StoreInst* SI_Size = B.CreateStore (UndefValue::get (m_Int64Ty), m_ret_size);
+      StoreInst* SI_Off =  B.CreateStore (UndefValue::get (m_IntPtrTy), m_ret_offset); 
+      StoreInst* SI_Size = B.CreateStore (UndefValue::get (m_IntPtrTy), m_ret_size);
 
       m_ret_shadows [NF] = std::make_pair (SI_Off,SI_Size);
     }
@@ -458,7 +459,7 @@ namespace seahorn
       // insert placeholders for new arguments
       unsigned added_new_args = NF->arg_size () - F->arg_size();
       for(unsigned i=0; i < added_new_args ; i++)
-        Args.push_back (UndefValue::get (m_Int64Ty)); // for shadow formal parameters
+        Args.push_back (UndefValue::get (m_IntPtrTy)); // for shadow formal parameters
 
       // create new call 
       Instruction *New = B.CreateCall (NF, ArrayRef<Value*> (Args));
@@ -515,7 +516,7 @@ namespace seahorn
           for (unsigned i=0; i < PHI->getNumIncomingValues (); i++) {
             if (PHI->getIncomingValue (i) == v && 
                 ( ( i >= PHIShadow->getNumIncomingValues ()) ||
-                  PHIShadow->getIncomingValue (i) == UndefValue::get (m_Int64Ty))) {
+                  PHIShadow->getIncomingValue (i) == UndefValue::get (m_IntPtrTy))) {
               PHIShadow->setIncomingValue (i, m_table [v]);
             }
           }
@@ -545,9 +546,9 @@ namespace seahorn
     for (unsigned i = 0; i < ps.size (); ++i) {
       if (const StructType *st = dyn_cast<const StructType> (ts [i])) {
         if (const ConstantInt *ci = dyn_cast<const ConstantInt> (ps [i])) {
-          unsigned off = abc::fieldOffset (m_dl, st, ci->getZExtValue ());
-          curVal = abc::createAdd (B, curVal, 
-                                   ConstantInt::get (m_Int64Ty, off));
+          uint64_t off = abc::fieldOffset (m_dl, st, ci->getZExtValue ());
+          curVal = abc::createAdd (B, m_dl, curVal, 
+                                   abc::createIntCst (m_IntPtrTy, off));
         }
         else assert (false);
       }
@@ -555,8 +556,8 @@ namespace seahorn
         // arrays, pointers, and vectors
         unsigned sz = abc::storageSize (m_dl, seqt->getElementType ());
         Value *LHS = curVal;
-        Value *RHS = abc::createMul(B, const_cast<Value*> (ps[i]), sz);
-        curVal = abc::createAdd(B, LHS, RHS); 
+        Value *RHS = abc::createMul (B, m_dl, const_cast<Value*> (ps[i]), sz);
+        curVal = abc::createAdd (B, m_dl, LHS, RHS); 
       }
     } 
     m_offsets [gep] = curVal;                                   
@@ -614,21 +615,21 @@ namespace seahorn
     if (const PHINode *PHI = dyn_cast<PHINode> (ptr)) {
       Instruction *insertPoint = const_cast<Instruction*> (cast<Instruction> (PHI));
       PHINode* shadowPHINodeOff = 
-          PHINode::Create (m_Int64Ty, PHI->getNumIncomingValues (), 
+          PHINode::Create (m_IntPtrTy, PHI->getNumIncomingValues (), 
                            ((ptr->hasName ()) ? 
                             ptr->getName () + ".shadow.offset" : ""),
                            insertPoint);
       PHINode* shadowPHINodeSize = 
-          PHINode::Create (m_Int64Ty, PHI->getNumIncomingValues (), 
+          PHINode::Create (m_IntPtrTy, PHI->getNumIncomingValues (), 
                            ((ptr->hasName ()) ? 
                             ptr->getName () + ".shadow.size" : ""),
                            insertPoint);
 
       for (unsigned i=0; i < PHI->getNumIncomingValues (); i++) {
         // placeholder for now
-        shadowPHINodeOff->addIncoming (UndefValue::get (m_Int64Ty), 
+        shadowPHINodeOff->addIncoming (UndefValue::get (m_IntPtrTy), 
                                        PHI->getIncomingBlock (i));
-        shadowPHINodeSize->addIncoming (UndefValue::get (m_Int64Ty), 
+        shadowPHINodeSize->addIncoming (UndefValue::get (m_IntPtrTy), 
                                         PHI->getIncomingBlock (i));
       }
 
@@ -660,8 +661,8 @@ namespace seahorn
       // (eg. if the pointer is a global variable)
       uint64_t Size;
       if (getObjectSize(ptr, Size, m_dl, m_tli, true)) {
-        m_offsets [ptr] = ConstantInt::get (m_Int64Ty, 0);
-        m_sizes [ptr] = ConstantInt::get (m_Int64Ty,Size);
+        m_offsets [ptr] = ConstantInt::get (m_IntPtrTy, 0);
+        m_sizes [ptr] = ConstantInt::get (m_IntPtrTy, Size);
         return;
       } 
 
@@ -674,9 +675,9 @@ namespace seahorn
         if (ty_size == 1) 
           size = nElems;
         else 
-          size = abc::createMul (B, nElems, ty_size, "alloca_size");
-        m_offsets [ptr] = ConstantInt::get (m_Int64Ty, 0);
-        m_sizes [ptr] = B.CreateZExtOrTrunc (size, m_Int64Ty);
+          size = abc::createMul (B, m_dl, nElems, ty_size, "alloca_size");
+        m_offsets [ptr] = ConstantInt::get (m_IntPtrTy, 0);
+        m_sizes [ptr] = B.CreateZExtOrTrunc (size, m_IntPtrTy);
         return;
       }
       else if (const CallInst * MallocInst = extractMallocCall (ptr ,m_tli)) {
@@ -684,8 +685,8 @@ namespace seahorn
           Value *size = MallocInst->getArgOperand(0);
           if (size->getType ()->isIntegerTy ()) {
             B.SetInsertPoint(insertPoint);
-            m_offsets [ptr] = ConstantInt::get (m_Int64Ty, 0);
-            m_sizes [ptr] = B.CreateZExtOrTrunc (size, m_Int64Ty);
+            m_offsets [ptr] = ConstantInt::get (m_IntPtrTy, 0);
+            m_sizes [ptr] = B.CreateZExtOrTrunc (size, m_IntPtrTy);
             return;
           }
         }
@@ -786,7 +787,7 @@ namespace seahorn
 
     /// --- Underflow: add check offset >= 0 
     Value* Cond_U = B.CreateICmpSGE (ptrOffset, 
-                                     ConstantInt::get (m_Int64Ty, 0),
+                                     ConstantInt::get (m_IntPtrTy, 0),
                                      "buffer_under");
 
     BasicBlock *OldBB1 = Cont0;
@@ -802,15 +803,15 @@ namespace seahorn
 
     Value *range = nullptr;
     if (len) {
-      range = abc::createAdd (B, ptrOffset, len);
+      range = abc::createAdd (B, m_dl, ptrOffset, len);
     } else {
       int addr_sz = abc::getAddrSize (m_dl, inst);
       if (addr_sz < 0) { // This should not happen ...
         errs () << "Error: cannot find size of the accessed address for " << inst << "\n";
         return true;
       }
-      range = abc::createAdd (B, ptrOffset, 
-                              ConstantInt::get (m_Int64Ty, addr_sz));
+      range = abc::createAdd (B, m_dl, ptrOffset, 
+                              abc::createIntCst (m_IntPtrTy, addr_sz));
     }
     
     Value* Cond_O = B.CreateICmpSLE (range, ptrSize, "buffer_over");
@@ -832,8 +833,11 @@ namespace seahorn
     DSACount* m_dsa_count = &getAnalysis<DSACount> ();    
 
     LLVMContext &ctx = M.getContext ();
-    m_Int64Ty = Type::getInt64Ty (ctx);
-    m_Int64PtrTy = m_Int64Ty->getPointerTo ();
+    m_dl = &getAnalysis<DataLayoutPass>().getDataLayout ();
+    m_tli = &getAnalysis<TargetLibraryInfo>();
+
+    m_IntPtrTy = m_dl->getIntPtrType (ctx, 0);
+    errs () << "intPtrTy is " << *m_IntPtrTy << "\n";
 
     AttrBuilder AB;
     AB.addAttribute (Attribute::NoReturn);
@@ -854,8 +858,8 @@ namespace seahorn
         funcsToInstrument.push_back (&F);
     }
     // Insert shadow global variables for function return values 
-    m_ret_offset = abc::createGlobalInt (M, 0, "ret.offset");
-    m_ret_size = abc::createGlobalInt (M, 0, "ret.size");
+    m_ret_offset = abc::createGlobalInt (m_dl, M, 0, "ret.offset");
+    m_ret_size = abc::createGlobalInt (m_dl, M, 0, "ret.size");
     for (auto F: funcsToInstrument) {
        addFunShadowParams (F, ctx);
     }
@@ -915,8 +919,6 @@ namespace seahorn
       }
     }
 
-    m_dl = &getAnalysis<DataLayoutPass>().getDataLayout ();
-    m_tli = &getAnalysis<TargetLibraryInfo>();
     IRBuilder<> B (ctx);
 
     for (auto inst: WorkList) {
@@ -1099,10 +1101,10 @@ namespace seahorn {
       
       CallInst *nd = NonDet (insertPt->getParent()->getParent());
       Value *vtracked_ptr = abc::createLoad(m_B, m_tracked_ptr, m_dl);
-      Value* condA = m_B.CreateICmpSGE (nd, abc::createIntCst (ctx, 0));
+      Value* condA = m_B.CreateICmpSGE (nd, abc::createIntCst (m_IntPtrTy, 0));
       Value* condB = m_B.CreateICmpSGT(vtracked_ptr,
                                        abc::createNullCst (ctx));
-      Value* condC = m_B.CreateICmpEQ (m_B.CreateBitOrPointerCast (rhs, abc::voidPtr (ctx)),
+      Value* condC = m_B.CreateICmpEQ (m_B.CreateBitOrPointerCast (rhs, abc::geti8PtrTy (ctx)),
                                        vtracked_ptr);
       Value* cond = m_B.CreateAnd (condA, m_B.CreateAnd (condB, condC));
       bb->getTerminator ()->eraseFromParent ();      
@@ -1111,7 +1113,7 @@ namespace seahorn {
 
       m_B.SetInsertPoint (bb1);
       /// tracked_ptr = lhs;
-      //abc::createStore (m_B, m_B.CreateBitOrPointerCast (lhs, abc::voidPtr (ctx)),
+      //abc::createStore (m_B, m_B.CreateBitOrPointerCast (lhs, abc::geti8PtrTy (ctx)),
       //                          m_tracked_ptr, m_dl);
       //// This code is equivalent to "tracked_ptr = lhs" but
       //// it will not force tracked_ptr and lhs to be in the
@@ -1121,13 +1123,13 @@ namespace seahorn {
       CallInst* nd_ptr = NonDetPtr (insertPt->getParent()->getParent());
       abc::createStore (m_B, nd_ptr, m_tracked_ptr, m_dl);      
       Assume (m_B.CreateICmpEQ(nd_ptr, 
-                               m_B.CreateBitOrPointerCast (lhs, abc::voidPtr (ctx))),
+                               m_B.CreateBitOrPointerCast (lhs, abc::geti8PtrTy (ctx))),
               insertPt->getParent()->getParent());
 
       /// tracked_offset += n;
       Value* gep_offset = abc::computeGepOffset (m_dl, m_B, gep);    
       abc::createStore (m_B, 
-                        abc::createAdd(m_B, 
+                        abc::createAdd(m_B, m_dl,
                                        gep_offset, 
                                        abc::createLoad(m_B, m_tracked_offset, m_dl)),
                         m_tracked_offset, m_dl);
@@ -1163,17 +1165,17 @@ namespace seahorn {
       // x = nd ();
       // assume (x > 0);
       // m_tracked_size = x;
-      m_tracked_size = abc::createGlobalInt (M, 0, "tracked_size");      
+      m_tracked_size = abc::createGlobalInt (m_dl, M, 0, "tracked_size");      
       CallInst *x = NonDet (main);
-      Assume (m_B.CreateICmpSGT(x, abc::createIntCst(ctx, 0)), main);
+      Assume (m_B.CreateICmpSGT(x, abc::createIntCst (m_IntPtrTy, 0)), main);
       abc::createStore (m_B, x, m_tracked_size, m_dl);
 
       // m_tracked_ptr = 0
-      m_tracked_ptr  = abc::createGlobalPtr (M, "tracked_ptr");
+      m_tracked_ptr  = abc::createGlobalPtr ( M, "tracked_ptr");
       abc::createStore (m_B, abc::createNullCst (ctx), m_tracked_ptr, m_dl);
 
       // m_tracked_offset = 0;
-      m_tracked_offset = abc::createGlobalInt (M, 0, "tracked_offset");
+      m_tracked_offset = abc::createGlobalInt (m_dl, M, 0, "tracked_offset");
 
       Instruction * insertPt = m_B.GetInsertPoint ();
       /// Allocation of global variables
@@ -1193,7 +1195,7 @@ namespace seahorn {
         uint64_t size;
         if (getObjectSize(&GV, size, m_dl, m_tli, true)) {
           doAllocaSite (&GV,
-                        abc::createIntCst (m_B.getContext (), size), 
+                        abc::createIntCst (m_IntPtrTy, size), 
                         insertPt);
         }
         else {
@@ -1231,7 +1233,7 @@ namespace seahorn {
       Value* vtracked_size = abc::createLoad(m_B, m_tracked_size, m_dl);
       Value* vtracked_base = abc::createLoad(m_B, m_tracked_base, m_dl);
       Value* vtracked_ptr = abc::createLoad(m_B, m_tracked_ptr, m_dl);
-      Value* PtrX = m_B.CreateBitOrPointerCast (Ptr, abc::voidPtr (ctx));
+      Value* PtrX = m_B.CreateBitOrPointerCast (Ptr, abc::geti8PtrTy (ctx));
       Value* cond = m_B.CreateAnd (m_B.CreateIsNull(vtracked_ptr),
                                    m_B.CreateICmpEQ (PtrX, vtracked_base));
 
@@ -1255,11 +1257,12 @@ namespace seahorn {
       /// assume (tracked_size == n);
       Assume (m_B.CreateICmpEQ(vtracked_size,
                                m_B.CreateZExtOrTrunc (Size, 
-                                                      abc::createIntTy (ctx))),
+                                                      abc::createIntTy (m_dl, ctx))),
               insertPt->getParent()->getParent());
 
       /// tracked_offset = 0
-      abc::createStore (m_B, abc::createIntCst (ctx, 0), m_tracked_offset, m_dl);
+      abc::createStore (m_B, abc::createIntCst (m_IntPtrTy, 0), 
+                        m_tracked_offset, m_dl);
 
       BranchInst::Create (cont, alloca_then_bb);
 
@@ -1329,10 +1332,11 @@ namespace seahorn {
 
       // assert (offset + addr_sz <= size);     
       m_B.SetInsertPoint (bb1);                                  
-      Value* vsize = abc::createIntCst (ctx, size);
+      Value* vsize = abc::createIntCst (m_IntPtrTy, size);
       Value* voffset = abc::computeGepOffset (m_dl, m_B, gep);
-      Value* voffset_sz = abc::createAdd (m_B, voffset,
-                                          abc::createIntCst (ctx, addr_sz));
+      Value* voffset_sz = abc::createAdd (m_B, m_dl, 
+                                          voffset,
+                                          abc::createIntCst (m_IntPtrTy, addr_sz));
       Assert (m_B.CreateICmpSLE (voffset_sz, vsize),
               bb2, bb1, insertPt, "overflow_error_bb");
 
@@ -1346,7 +1350,7 @@ namespace seahorn {
         m_B.SetInsertPoint (bb2); 
         Value* base = gep->getPointerOperand ();
         Value* vtracked_base = abc::createLoad(m_B, m_tracked_base, m_dl);      
-        Value* vbase = m_B.CreateBitOrPointerCast (base, abc::voidPtr (ctx));
+        Value* vbase = m_B.CreateBitOrPointerCast (base, abc::geti8PtrTy (ctx));
         BranchInst::Create (bb2_then, bb2_else, 
                             m_B.CreateICmpEQ (vtracked_base, vbase), bb2);            
         
@@ -1355,7 +1359,7 @@ namespace seahorn {
         BranchInst::Create (abc_under_bb1, bb2_then);      
         // assert (offset >= 0);
         m_B.SetInsertPoint (abc_under_bb1);
-        Assert (m_B.CreateICmpSGE (voffset, abc::createIntCst (ctx, 0)), 
+        Assert (m_B.CreateICmpSGE (voffset, abc::createIntCst (m_IntPtrTy, 0)), 
                 cont, abc_under_bb1, insertPt, "underflow_error_bb");
         
         m_B.SetInsertPoint (bb2_else); 
@@ -1368,8 +1372,8 @@ namespace seahorn {
         BranchInst::Create (abc_under_bb2, bb3);      
         // assert (tracked_offset + offset >= 0);
         m_B.SetInsertPoint (abc_under_bb2);
-        Assert (m_B.CreateICmpSGE (abc::createAdd (m_B, voffset, vtracked_offset), 
-                                   abc::createIntCst (ctx, 0)), 
+        Assert (m_B.CreateICmpSGE (abc::createAdd (m_B, m_dl, voffset, vtracked_offset), 
+                                   abc::createIntCst (m_IntPtrTy, 0)), 
                 cont, abc_under_bb2, insertPt, "underflow_error_bb");
 
       }
@@ -1422,13 +1426,14 @@ namespace seahorn {
       SizeOffsetEvalType Data = m_eval.compute (base);
       Value* vtracked_size = Data.first;
       if (vtracked_size)
-        vtracked_size =  m_B.CreateZExtOrTrunc (vtracked_size, Type::getInt64Ty (ctx));
+        vtracked_size =  m_B.CreateZExtOrTrunc (vtracked_size, 
+                                                abc::createIntTy (m_dl, ctx));
       else
         vtracked_size = abc::createLoad(m_B, m_tracked_size, m_dl);      
 #else
       Value* vtracked_size = abc::createLoad(m_B, m_tracked_size, m_dl);      
 #endif 
-      Value* vbase = m_B.CreateBitOrPointerCast (base, abc::voidPtr (ctx));
+      Value* vbase = m_B.CreateBitOrPointerCast (base, abc::geti8PtrTy (ctx));
       Value* voffset = abc::computeGepOffset (m_dl, m_B, gep);
       BranchInst::Create (bb1_then, bb1_else, 
                           m_B.CreateICmpEQ (vtracked_base, vbase), bb1);            
@@ -1443,15 +1448,17 @@ namespace seahorn {
         BranchInst::Create (abc_over_bb1, abc_under_bb1);
       } else {
         m_B.SetInsertPoint (abc_under_bb1);
-        Assert (m_B.CreateICmpSGE (voffset, abc::createIntCst (ctx, 0)), 
+        Assert (m_B.CreateICmpSGE (voffset, abc::createIntCst (m_IntPtrTy, 0)), 
                 abc_over_bb1, abc_under_bb1, insertPt, "underflow_error_bb");
       }
 
       // assert (offset + addr_sz <= tracked_size);
       m_B.SetInsertPoint (abc_over_bb1);
       Value* over_cond1 = m_B.CreateICmpSLE (
-          abc::createAdd (m_B, voffset, 
-                          abc::createIntCst (ctx, addr_sz)),  vtracked_size);
+          abc::createAdd (m_B, m_dl, 
+                          voffset, 
+                          abc::createIntCst (m_IntPtrTy, addr_sz)),  
+          vtracked_size);
           
       Assert (over_cond1, cont, abc_over_bb1, insertPt, "overflow_error_bb");
 
@@ -1468,19 +1475,21 @@ namespace seahorn {
      
       // assert (tracked_offset + offset >= 0);
       m_B.SetInsertPoint (abc_under_bb2);
-      voffset = abc::createAdd (m_B, voffset, vtracked_offset);
+      voffset = abc::createAdd (m_B, m_dl, voffset, vtracked_offset);
 
       if (DisableUnderflow)  {
         BranchInst::Create(abc_over_bb2, abc_under_bb2);
       } else {
         Assert (m_B.CreateICmpSGE (voffset, 
-                                   abc::createIntCst (ctx, 0)), 
+                                   abc::createIntCst (m_IntPtrTy, 0)), 
                 abc_over_bb2, abc_under_bb2, insertPt, "underflow_error_bb");
       }
 
       // assert (tracked_offset + offset + addr_sz <= tracked_size);
       m_B.SetInsertPoint (abc_over_bb2);
-      voffset = abc::createAdd (m_B, voffset, abc::createIntCst (ctx, addr_sz));
+      voffset = abc::createAdd (m_B, m_dl, 
+                                voffset, 
+                                abc::createIntCst (m_IntPtrTy, addr_sz));
       Assert (m_B.CreateICmpSLE (voffset, vtracked_size),
               cont, abc_over_bb2, insertPt, "overflow_error_bb");
      }
@@ -1524,7 +1533,7 @@ namespace seahorn {
       Value* condA = m_B.CreateICmpSGT(vtracked_ptr, 
                                        abc::createNullCst (ctx));
       Value* condB = m_B.CreateICmpEQ (vtracked_ptr,
-                                       m_B.CreateBitOrPointerCast (Ptr, abc::voidPtr (ctx)));
+                                       m_B.CreateBitOrPointerCast (Ptr, abc::geti8PtrTy (ctx)));
       Value* cond = m_B.CreateAnd (condA, condB);
       bb->getTerminator ()->eraseFromParent ();      
       BranchInst::Create (abc_under_bb, cont, cond, bb);      
@@ -1536,7 +1545,7 @@ namespace seahorn {
       SizeOffsetEvalType Data = m_eval.compute (Ptr);
       Value* size = Data.first;
       if (size)
-        size =  m_B.CreateZExtOrTrunc (size, Type::getInt64Ty (ctx));
+        size =  m_B.CreateZExtOrTrunc (size, abc::createIntTy (m_dl, ctx));
       else
         size = abc::createLoad(m_B, m_tracked_size, m_dl);      
 #else
@@ -1553,7 +1562,7 @@ namespace seahorn {
         // abc_under_bb:
         //    if (m_tracked_offset >= 0) goto abc_over_bb else goto err_under_bb
         
-        Assert (m_B.CreateICmpSGE (offset, abc::createIntCst (ctx, 0)), 
+        Assert (m_B.CreateICmpSGE (offset, abc::createIntCst (m_IntPtrTy, 0)), 
                 abc_over_bb, abc_under_bb, insertPt, "underflow_error_bb");
       }
 
@@ -1578,7 +1587,7 @@ namespace seahorn {
       //        goto err_over_bb
       if (N) {
         // both offset and N are in bytes
-        offset = abc::createAdd (m_B, offset, N);
+        offset = abc::createAdd (m_B, m_dl, offset, N);
       } else {
         int addr_sz = abc::getAddrSize (m_dl, *insertPt);
         if (addr_sz < 0) { // this should not happen
@@ -1587,8 +1596,9 @@ namespace seahorn {
           return;
         }
         // both offset and addr_sz are in bytes
-        offset = abc::createAdd (m_B, offset, 
-                                 abc::createIntCst (ctx, addr_sz));
+        offset = abc::createAdd (m_B, m_dl, 
+                                 offset, 
+                                 abc::createIntCst (m_IntPtrTy, addr_sz));
       }
 
       Assert (m_B.CreateICmpSLE (offset, size), cont, abc_over_bb, 
@@ -1602,8 +1612,10 @@ namespace seahorn {
                             DSACount* dsa_count,
                             Function* errorFn, Function* nondetFn,
                             Function* nondetPtrFn, Function* assumeFn): 
-        m_dl (dl), m_tli (tli), m_B (B), m_cg (cg), m_dsa_count (dsa_count),
+        m_dl (dl), m_tli (tli), 
+        m_B (B), m_cg (cg), m_dsa_count (dsa_count),
         m_eval (dl, tli, B.getContext (), true),             
+        m_IntPtrTy (dl->getIntPtrType (M.getContext (), 0)),
         m_tracked_base (nullptr), m_tracked_ptr (nullptr),
         m_tracked_offset (nullptr), m_tracked_size (nullptr),              
         m_errorFn (errorFn), m_nondetFn (nondetFn), 
@@ -1707,7 +1719,7 @@ namespace seahorn {
       uint64_t size; //bytes
       if (getObjectSize(I, size, m_dl, m_tli, true)) {
         doAllocaSite (I, 
-                      abc::createIntCst (m_B.getContext (), size), 
+                      abc::createIntCst (m_IntPtrTy, size), 
                       abc::getNextInst (I)); 
         return;
       } else {
@@ -1719,7 +1731,7 @@ namespace seahorn {
           size = nElems;
         else {
           m_B.SetInsertPoint (I);
-          size = abc::createMul (m_B, nElems, ty_size, "alloca_size");
+          size = abc::createMul (m_B, m_dl, nElems, ty_size, "alloca_size");
         }
         doAllocaSite (I, size, abc::getNextInst (I)); 
         return;
@@ -1763,6 +1775,9 @@ namespace seahorn {
       DSACount* m_dsa_count = &getAnalysis<DSACount> ();    
 
       LLVMContext &ctx = M.getContext ();
+
+      const TargetLibraryInfo * tli = &getAnalysis<TargetLibraryInfo>();
+      const DataLayout * dl = &getAnalysis<DataLayoutPass>().getDataLayout ();
       
       AttrBuilder AB;
       AB.addAttribute (Attribute::NoReturn);
@@ -1774,17 +1789,21 @@ namespace seahorn {
       
       AB.clear ();
       as = AttributeSet::get (ctx, AttributeSet::FunctionIndex, AB); 
+
+      Type *intPtrTy = dl->getIntPtrType (ctx, 0);
+      errs () << "intPtrTy is " << *intPtrTy << "\n";
+      Type *i8PtrTy = Type::getInt8Ty (ctx)->getPointerTo ();
       
       Function* nondetFn = dyn_cast<Function>
           (M.getOrInsertFunction ("verifier.nondet",
                                   as,
-                                  Type::getInt64Ty (ctx), 
+                                  intPtrTy, 
                                   NULL));
       
       Function* nondetPtrFn = dyn_cast<Function>
           (M.getOrInsertFunction ("verifier.nondet_ptr",
                                   as,
-                                Type::getInt8Ty (ctx)->getPointerTo (), 
+                                  i8PtrTy, 
                                   NULL));
 
       Function* assumeFn = dyn_cast<Function>
@@ -1807,7 +1826,6 @@ namespace seahorn {
       }
       
       unsigned untracked_dsa_checks = 0;
-      const TargetLibraryInfo * tli = &getAnalysis<TargetLibraryInfo>();
       std::vector<Instruction*> Worklist;
       for (Function &F : M) {
         if (F.isDeclaration ()) continue;
@@ -1856,7 +1874,6 @@ namespace seahorn {
         }
       } 
       
-      const DataLayout * dl = &getAnalysis<DataLayoutPass>().getDataLayout ();
       ABCInst abc (M, dl, tli, B, cg, m_dsa_count, 
                    errorFn, nondetFn, nondetPtrFn, assumeFn);
       for (auto I: Worklist) {
@@ -1914,6 +1931,8 @@ namespace seahorn {
 namespace seahorn {
     using namespace llvm;
 
+    // TODO: optimize futher using MemoryBuiltins capabilities (as
+    // done in ABC2)
     bool ABC3::runOnModule (llvm::Module &M)
     {
       if (M.begin () == M.end ()) return false;
@@ -1992,7 +2011,7 @@ namespace seahorn {
 
       // Recreate llvm.used.
       if (!MergedVars.empty ()) {
-        ArrayType *ATy = ArrayType::get(abc::voidPtr (ctx), MergedVars.size());
+        ArrayType *ATy = ArrayType::get(abc::geti8PtrTy (ctx), MergedVars.size());
         LLVMUsed = new llvm::GlobalVariable(
             M, ATy, false, llvm::GlobalValue::AppendingLinkage,
             llvm::ConstantArray::get(ATy, MergedVars), "llvm.used");
@@ -2034,8 +2053,8 @@ namespace seahorn {
         if (getObjectSize(&GV, size, dl, tli, true)) {
           abc::update_cg (cg, main,
                B.CreateCall2 (abc_alloc, 
-                              B.CreateBitOrPointerCast (&GV,abc::voidPtr (ctx)),
-                              abc::createIntCst (ctx, size)));
+                              B.CreateBitOrPointerCast (&GV,abc::geti8PtrTy (ctx)),
+                              abc::createIntCst (intPtrTy, size)));
         }
         else {// this should not happen ...
           errs () << "Warning: cannot infer statically the size of global " 
@@ -2059,7 +2078,7 @@ namespace seahorn {
               abc::update_cg (cg, &F, 
                    B.CreateCall2 (abc_log_ptr, 
                                   B.CreateBitOrPointerCast (base,
-                                                            abc::voidPtr (ctx)),
+                                                            abc::geti8PtrTy (ctx)),
                                   offset));
             }
           } else if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
@@ -2083,25 +2102,28 @@ namespace seahorn {
                   Value* offset = instrumented_gep [gep];
                   if (!offset) 
                     offset = abc::computeGepOffset (dl, B, gep);                  
-                  offset = abc::createAdd (B, offset, 
-                                           abc::createIntCst (ctx, addr_sz));
+                  offset = abc::createAdd (B, dl, 
+                                           offset, 
+                                           abc::createIntCst (intPtrTy, addr_sz));
                   Value* base = gep->getPointerOperand ();
                   uint64_t size; //bytes
                   if (getObjectSize(base, size, dl, tli, true)) {
                     abc::update_cg (cg, &F, 
                          B.CreateCall2 (abc_assert_valid_offset, 
-                                        offset, abc::createIntCst (ctx, size)));
+                                        offset, 
+                                        abc::createIntCst (intPtrTy, size)));
                   }
                   else {
-                    base = B.CreateBitOrPointerCast (base, abc::voidPtr (ctx));
+                    base = B.CreateBitOrPointerCast (base, abc::geti8PtrTy (ctx));
                     abc::update_cg (cg, &F, 
                          B.CreateCall2 (abc_assert_valid_ptr, base, offset));
                   }
                 } else { // ptr is not a gep
-                  Value* base = B.CreateBitOrPointerCast (ptr, abc::voidPtr (ctx));
+                  Value* base = B.CreateBitOrPointerCast (ptr, abc::geti8PtrTy (ctx));
                   abc::update_cg (cg, &F, 
-                       B.CreateCall2 (abc_assert_valid_ptr, base,
-                                      abc::createIntCst (ctx, addr_sz)));
+                       B.CreateCall2 (abc_assert_valid_ptr,
+                                      base,
+                                      abc::createIntCst (intPtrTy, addr_sz)));
                 }
               }
             }
@@ -2127,26 +2149,28 @@ namespace seahorn {
                   Value* offset = instrumented_gep [gep];
                   if (!offset) 
                     offset = abc::computeGepOffset (dl, B, gep);                  
-
-                  offset = abc::createAdd (B, offset, 
-                                           abc::createIntCst (ctx, addr_sz));
+                  offset = abc::createAdd (B, dl, 
+                                           offset, 
+                                           abc::createIntCst (intPtrTy, addr_sz));
                   Value* base = gep->getPointerOperand ();
                   uint64_t size; //bytes
                   if (getObjectSize(base, size, dl, tli, true)) {
                     abc::update_cg (cg, &F, 
-                         B.CreateCall2 (abc_assert_valid_offset, offset, 
-                                        abc::createIntCst (ctx, size)));
+                         B.CreateCall2 (abc_assert_valid_offset, 
+                                        offset, 
+                                        abc::createIntCst (intPtrTy, size)));
                   }
                   else {
-                    base = B.CreateBitOrPointerCast (base, abc::voidPtr (ctx));
+                    base = B.CreateBitOrPointerCast (base, abc::geti8PtrTy (ctx));
                     abc::update_cg (cg, &F, 
                          B.CreateCall2 (abc_assert_valid_ptr, base, offset));
                   }
                 } else { // ptr is not a gep
-                  Value* base = B.CreateBitOrPointerCast (ptr, abc::voidPtr (ctx));
+                  Value* base = B.CreateBitOrPointerCast (ptr, abc::geti8PtrTy (ctx));
                   abc::update_cg (cg, &F, 
-                       B.CreateCall2 (abc_assert_valid_ptr, base,
-                                      abc::createIntCst (ctx, addr_sz)));
+                       B.CreateCall2 (abc_assert_valid_ptr, 
+                                      base,
+                                      abc::createIntCst (intPtrTy, addr_sz)));
                 }
               }
             }
@@ -2158,11 +2182,11 @@ namespace seahorn {
               mem_accesses+=2;
               checks_added+=2; 
               Value *base1 = 
-                  B.CreateBitOrPointerCast (MTI->getDest(), abc::voidPtr(ctx));
+                  B.CreateBitOrPointerCast (MTI->getDest(), abc::geti8PtrTy(ctx));
               Value *base2 = 
-                  B.CreateBitOrPointerCast (MTI->getSource(), abc::voidPtr(ctx));
+                  B.CreateBitOrPointerCast (MTI->getSource(), abc::geti8PtrTy(ctx));
               Value *len = 
-                  B.CreateZExtOrTrunc (MTI->getLength(), abc::createIntTy(ctx));
+                  B.CreateZExtOrTrunc (MTI->getLength(), intPtrTy);
               abc::update_cg (cg, &F, 
                               B.CreateCall2 (abc_assert_valid_ptr, base1, len));
               abc::update_cg (cg, &F, 
@@ -2176,9 +2200,9 @@ namespace seahorn {
               mem_accesses++;
               checks_added++; 
               Value *base = 
-                  B.CreateBitOrPointerCast (MSI->getDest(), abc::voidPtr(ctx));
+                  B.CreateBitOrPointerCast (MSI->getDest(), abc::geti8PtrTy(ctx));
               Value *len = 
-                  B.CreateZExtOrTrunc (MSI->getLength(), abc::createIntTy(ctx));
+                  B.CreateZExtOrTrunc (MSI->getLength(), intPtrTy);
               abc::update_cg (cg, &F, 
                               B.CreateCall2 (abc_assert_valid_ptr, base, len));
             }
@@ -2192,7 +2216,7 @@ namespace seahorn {
               B.SetInsertPoint (abc::getNextInst (I));
               uint64_t size; //bytes
               if (getObjectSize(I, size, dl, tli, true)) {
-                vsize = abc::createIntCst (ctx, size);
+                vsize = abc::createIntCst (intPtrTy, size);
               } else {
                 Value *nElems = AI->getArraySize (); // number of elements
                 Type* ty = AI->getAllocatedType (); // size of the allocated type
@@ -2200,8 +2224,7 @@ namespace seahorn {
                 if (ty_size == 1) 
                   vsize = nElems;
                 else {
-                  //B.SetInsertPoint (AI);
-                  vsize = abc::createMul (B, nElems, ty_size, "alloca_size");
+                  vsize = abc::createMul (B, dl, nElems, ty_size, "alloca_size");
                 }
               }
 
@@ -2212,8 +2235,8 @@ namespace seahorn {
 
               abc::update_cg (cg, &F, 
                    B.CreateCall2 (abc_alloc, 
-                                  B.CreateBitOrPointerCast (ptr, abc::voidPtr (ctx)),
-                                  B.CreateZExtOrTrunc (vsize,Type::getInt64Ty (ctx))));
+                                  B.CreateBitOrPointerCast (ptr, abc::geti8PtrTy (ctx)),
+                                  B.CreateZExtOrTrunc (vsize, intPtrTy)));
             }
           } 
           else if (isMallocLikeFn(I, tli, true) || isOperatorNewLikeFn(I, tli, true)){
@@ -2224,8 +2247,8 @@ namespace seahorn {
                 Value *size = CI->getArgOperand(0); // bytes
                 abc::update_cg (cg, &F,
                                 B.CreateCall2 (abc_alloc, 
-                                   B.CreateBitOrPointerCast (ptr, abc::voidPtr (ctx)),
-                                   B.CreateZExtOrTrunc (size,Type::getInt64Ty (ctx))));
+                                   B.CreateBitOrPointerCast (ptr, abc::geti8PtrTy (ctx)),
+                                               B.CreateZExtOrTrunc (size,intPtrTy)));
               }
             }
           }
