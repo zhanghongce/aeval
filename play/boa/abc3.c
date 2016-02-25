@@ -74,6 +74,13 @@ void sea_abc_log_ptr (int8_t *base, sea_ptrdiff_t offset) {}
  */
 void sea_abc_alloc (int8_t *base, sea_size_t size)
 {
+  /* assume all pointers are strictly positive
+     (and trick LLVM into not reducing the assumption to nothing)
+  */
+  int8_t *tmp = nd_int8_ptr ();
+  assume (((ptrdiff_t)tmp) > 0);
+  assume (tmp == base);
+  
   if (nd_sea_size_t ())
   {
     /* at some point, allocate a pointer below the bad region */
