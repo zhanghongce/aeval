@@ -90,6 +90,7 @@ void sea_abc_log_ptr (int8_t *base, sea_ptrdiff_t offset)
        noticing that sea_ptr and base might alias */
     sea_ptr = nd_int8_ptr();
     assume (sea_ptr == base + offset);
+    sea_offset += offset;
   }
 #endif
 }
