@@ -10,7 +10,7 @@ extern "C" {
   /* need size to be signed */
   typedef ptrdiff_t sea_size_t;
 
-  extern int8_t *nd_int8_ptr (void);
+  extern  int8_t *  nd_int8_ptr (void);
   extern int64_t nd_int64_t (void);
   extern sea_size_t nd_sea_size_t (void);
 
@@ -74,6 +74,13 @@ void sea_abc_log_ptr (int8_t *base, sea_ptrdiff_t offset) {}
  */
 void sea_abc_alloc (int8_t *base, sea_size_t size)
 {
+  /* assume all pointers are strictly positive
+     (and trick LLVM into not reducing the assumption to nothing)
+  */
+  int8_t *tmp = nd_int8_ptr ();
+  assume (((ptrdiff_t)tmp) > 0);
+  assume (tmp == base);
+  
   if (nd_sea_size_t ())
   {
     /* at some point, allocate a pointer below the bad region */
@@ -95,6 +102,10 @@ void sea_abc_init(void)
   /* pick a bad pointer. A bad pointer is an address that should never
      be accessed */
   sea_bad_ptr = nd_int8_ptr ();
+  int8_t *tmp = nd_int8_ptr ();
+  assume (((ptrdiff_t)tmp) > 0);
+  assume (tmp == sea_bad_ptr);
+  
   sea_active = false;
   sea_top_alloc = nd_int8_ptr ();
   assume (sea_top_alloc > sea_bad_ptr);
