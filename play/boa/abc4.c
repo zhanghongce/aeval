@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <stdbool.h>
 #include <stddef.h>
 
 #ifdef __cplusplus
@@ -15,9 +16,12 @@ extern "C" {
 
   static int8_t* sea_base;
   static int8_t* sea_ptr;
-  static sea_ptrdiff_t sea_offset;
+  /* number of bytes that can be dereferenced from sea_ptr
+   * sea_deref_bytes = sea_size - (sea_ptr - sea_base)
+   */
+  static sea_ptrdiff_t sea_deref_bytes;
   static sea_size_t sea_size;
-  
+  static bool sea_active;
 
   extern void __VERIFIER_assume (int);
   __attribute__((__noreturn__)) extern void __VERIFIER_error (void);
@@ -46,7 +50,7 @@ extern "C" {
 
 void sea_abc_assert_valid_ptr (int8_t *base, sea_ptrdiff_t offset)
 {
-  if (!sea_ptr) return;
+  if (!sea_active) return;
   
   if (base == sea_base)
   {
@@ -57,8 +61,7 @@ void sea_abc_assert_valid_ptr (int8_t *base, sea_ptrdiff_t offset)
   else if (base == sea_ptr)
   {
     assume (sea_ptr > sea_base);
-    assert (sea_offset + offset >= 0);
-    assert (sea_offset + offset <= sea_size);
+    assert (sea_deref_bytes - offset >= 0);
   }
 #endif
 }
@@ -84,13 +87,13 @@ void sea_abc_log_ptr (int8_t *base, sea_ptrdiff_t offset)
 #ifndef SEA_BASE_ONLY
   if (nd_int64_t()) return;
   
-  if (sea_ptr && sea_ptr == base)
+  if (sea_active && sea_ptr == base)
   {
     /* update sea_ptr to base+offset, but trick alias analysis from
        noticing that sea_ptr and base might alias */
     sea_ptr = nd_int8_ptr();
     assume (sea_ptr == base + offset);
-    sea_offset += offset;
+    sea_deref_bytes -= offset;
   }
 #endif
 }
@@ -102,11 +105,13 @@ void sea_abc_log_ptr (int8_t *base, sea_ptrdiff_t offset)
  */
 void sea_abc_alloc (int8_t *base, sea_size_t size)
 {
-  if (sea_ptr == 0 && sea_base == base)
+  if (!sea_active && sea_base == base)
   {
     assume (sea_size == size);
     sea_ptr = nd_int8_ptr();
     assume (sea_ptr == sea_base);
+    sea_deref_bytes = sea_size;
+    sea_active = true;
   }
   else
     assume (sea_base + sea_size < base);
@@ -118,6 +123,7 @@ void sea_abc_init(void)
   assume (sea_base > 0);
   sea_size = nd_sea_size_t ();
   assume (sea_size >= 0); 
-  sea_offset = 0;
+  sea_deref_bytes = 0;
   sea_ptr = 0;
+  sea_active = false;
 }
