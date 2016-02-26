@@ -8,4 +8,5 @@ add_llvm_library (SeaTransformsScalar
   PromoteMalloc.cc
   KillVarArgFn.cc
   PromoteBoolLoads.cc
+  SimplifyPointerLoops.cc
   )

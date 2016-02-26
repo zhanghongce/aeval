@@ -305,6 +305,7 @@ int main(int argc, char **argv) {
   { 
     pass_manager.add (new seahorn::LowerCstExprPass ());
     pass_manager.add (new seahorn::CanAccessMemory ());
+    pass_manager.add (seahorn::createSimplifyPointerLoopsPass ());
     switch (ArrayBoundsChecks) {
       case 1: 
         pass_manager.add (new seahorn::ABC1 ());
