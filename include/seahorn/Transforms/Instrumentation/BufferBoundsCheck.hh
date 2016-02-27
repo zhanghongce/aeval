@@ -267,6 +267,7 @@ namespace seahorn
       void visit (MemSetInst *MSI);
       void visit (AllocaInst *I);
       void visit (CallInst *I);
+      void visit (iterator_range<Function::arg_iterator> Args);
     }; // end class
     
    public:
