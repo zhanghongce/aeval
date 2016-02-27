@@ -1899,6 +1899,8 @@ namespace seahorn {
       }
 
       #ifdef DEREFERENCEABLE_OPT
+      Function* F = I->getParent()->getParent();
+
       if (!abc::ShouldBeTrackedPtr (I->getArgOperand (0), *F, m_dsa_count))
         return;
 
@@ -1908,9 +1910,7 @@ namespace seahorn {
       uint64_t n = I->getDereferenceableBytes (0);
       if (n == 0)
         return;
-      
-      Function* F = I->getParent()->getParent();
-      
+            
       // if all uses are trivial then skip
       if (std::all_of (I->getArgOperand (0)->uses().begin (),
                        I->getArgOperand (0)->uses().end (), 
