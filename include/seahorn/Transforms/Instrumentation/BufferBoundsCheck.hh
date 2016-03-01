@@ -210,7 +210,8 @@ namespace seahorn
       Value* m_tracked_ptr;
       Value* m_tracked_offset;
       Value* m_tracked_size;
-      
+      Value* m_tracked_escaped_ptr;
+
       Function* m_errorFn;
       Function* m_nondetFn;
       Function* m_nondetPtrFn;
@@ -267,7 +268,7 @@ namespace seahorn
       void visit (MemSetInst *MSI);
       void visit (AllocaInst *I);
       void visit (CallInst *I);
-      void visit (iterator_range<Function::arg_iterator> Args);
+      void visit (Function *F);
     }; // end class
     
    public:
