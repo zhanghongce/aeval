@@ -7,6 +7,8 @@
 
 #include "seahorn/config.h"
 
+#include <boost/bimap.hpp>
+
 #ifndef HAVE_DSA
 namespace seahorn
 {
@@ -58,6 +60,7 @@ namespace seahorn
     DSGraph* m_gDsg;
     DenseMap<const DSNode*, WrapperDSNode> m_nodes;
     DenseMap<const DSNode*, ValueSet> m_referrers_map;
+    boost::bimap<const Value*, unsigned int> m_alloc_sites;
 
     void add_node (const DSNode* n) {
       auto it = m_nodes.find (n);
@@ -87,6 +90,21 @@ namespace seahorn
       return it->second;
     }
 
+    bool add_alloc_site (const Value* v, unsigned int & site_id) {
+      typedef boost::bimap<const Value*, unsigned int>::value_type bm_type;
+
+      site_id = 0;
+      auto it = m_alloc_sites.left.find (v);
+      if (it == m_alloc_sites.left.end ()) {
+        site_id = m_alloc_sites.size () + 1;
+        m_alloc_sites.insert (bm_type (v, site_id));
+        return true;
+      } else {
+        site_id = it->second;
+        return false;
+      }
+    }
+
   public:
  
     static char ID;
@@ -96,6 +114,22 @@ namespace seahorn
     unsigned getId (const DSNode* n) const;
     bool isAccessed (const DSNode* n) const;
     DataStructures * getDSA () { return m_dsa; }
+
+    const unsigned int getAllocSiteID (const Value* V) {
+      auto it = m_alloc_sites.left.find (V);
+      if (it != m_alloc_sites.left.end ())
+        return it->second;
+      else
+        return 0; // not found
+    }
+
+    const Value* getAllocValue (unsigned int alloc_site_id) {
+      auto it = m_alloc_sites.right.find (alloc_site_id);
+      if (it != m_alloc_sites.right.end ())
+        return it->second;
+      else
+        return nullptr; //not found
+    }
 
     virtual bool runOnModule (llvm::Module &M);
     virtual void getAnalysisUsage (llvm::AnalysisUsage &AU) const;

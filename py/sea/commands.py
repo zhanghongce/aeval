@@ -137,6 +137,9 @@ class Seapp(sea.LimitedCmd):
         ap.add_argument ('--abc-dsa-node', dest='abc_dsa', 
                          help='Insert array bounds checks only if a pointer belongs to the DSA node',
                          type=int, default=0, metavar='ID')
+        ap.add_argument ('--abc-alloc-site', dest='abc_site', 
+                         help='Insert array bounds checks only if a pointer belongs to the allocation site',
+                         type=int, default=0, metavar='ID')
         ap.add_argument ('--overflow-check', dest='ioc', help='Insert signed integer overflow checks',
                          default=False, action='store_true')
         ap.add_argument ('--null-check', dest='ndc', help='Insert null dereference checks',
@@ -188,12 +191,11 @@ class Seapp(sea.LimitedCmd):
         if args.abc:
             argv.append ('--abc={id}'.format(id=args.abc))
             argv.append ('--abc-dsa-node={n}'.format (n=args.abc_dsa))
-            if args.abc_no_under:
-                argv.append ('--abc-disable-underflow')            
-        if args.ioc:
-            argv.append ('--overflow-check')
-        if args.ndc:
-            argv.append ('--null-check')
+            argv.append ('--abc-alloc-site={n}'.format (n=args.abc_site))
+            if args.abc_no_under: argv.append ('--abc-disable-underflow') 
+                
+        if args.ioc: argv.append ('--overflow-check')
+        if args.ndc: argv.append ('--null-check')
 
         if args.entry is not None:
             argv.append ('--entry-point=\"{0}\"'.format (args.entry))
@@ -228,6 +230,9 @@ class MixedSem(sea.LimitedCmd):
         ap.add_argument ('--no-reduce-main', dest='reduce_main',
                          help='Do not reduce main to return paths only',
                          default=True, action='store_false')
+        ap.add_argument ('--symbolize-constant-loop-bounds', dest='sym_bounds', 
+                         help='Convert constant loop bounds into symbolic ones',
+                         default=False, action='store_true')
         add_in_out_args (ap)
         _add_S_arg (ap)
         return ap
@@ -241,6 +246,8 @@ class MixedSem(sea.LimitedCmd):
         if args.out_file is not None: argv.extend (['-o', args.out_file])
         if not args.ms_skip: argv.append ('--horn-mixed-sem')
         if args.reduce_main: argv.append ('--ms-reduce-main')
+        if args.sym_bounds: argv.append ('--horn-symbolize-loops')
+            
         if args.llvm_asm: argv.append ('-S')
         argv.extend (args.in_files)
         return self.seappCmd.run (args, argv)

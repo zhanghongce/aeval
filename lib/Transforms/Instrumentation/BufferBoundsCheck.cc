@@ -17,6 +17,11 @@ TrackedDSNode("abc-dsa-node",
         llvm::cl::desc ("Only instrument pointers within this dsa node"),
         llvm::cl::init (0));
 
+static llvm::cl::opt<unsigned int>
+TrackedAllocSite("abc-alloc-site",
+        llvm::cl::desc ("Only instrument pointers from this allocation site"),
+        llvm::cl::init (0));
+
 static llvm::cl::opt<bool>
 DisableUnderflow("abc-disable-underflow",
         llvm::cl::desc ("Disable underflow checks"),
@@ -394,14 +399,16 @@ namespace seahorn {
      #ifndef HAVE_DSA
      return true;
      #else
-     
+
      DSGraph* dsg = nullptr;
      DSGraph* gDsg = nullptr;
      if (m_dsa_count->getDSA ()) {
        dsg = m_dsa_count->getDSA ()->getDSGraph (F);
        gDsg = m_dsa_count->getDSA ()->getGlobalsGraph (); 
      }
-     
+
+     if (!dsg || !gDsg) return true; // DSA graph not found. this should not happen
+
      const DSNode* n = dsg->getNodeForValue (ptr).getNode ();
      if (!n) n = gDsg->getNodeForValue (ptr).getNode ();
      if (!n) return true; // DSA node not found. This should not happen.
@@ -409,11 +416,17 @@ namespace seahorn {
      if (!m_dsa_count->isAccessed (n))
        return false;
      else {
-       if (TrackedDSNode != 0)
-         return (m_dsa_count->getId (n) == TrackedDSNode);
-       else 
-         return true;
+       if (TrackedDSNode > 0) {
+         return (m_dsa_count->getId (n) == TrackedDSNode);      
+       } else if (TrackedAllocSite > 0) {
+         const Value* v = m_dsa_count->getAllocValue (TrackedAllocSite);
+         if (!v) return false;
+           
+         const DSNode* alloc_n = dsg->getNodeForValue (v).getNode ();
+         return (alloc_n == n);
+       } 
      }
+     return true;
      #endif 
    }
 
@@ -1377,6 +1390,24 @@ namespace seahorn {
               assume (tracked_base + m_tracked_size < p); 
            }
       */
+      
+      if (TrackedAllocSite > 0) {
+        if (m_dsa_count->getAllocSiteID (Ptr) == TrackedAllocSite) {
+          goto ALLOCA;
+        } else {
+          // assume (tracked_base + tracked_size < ptr); 
+          m_B.SetInsertPoint (insertPt);
+          Value* vtracked_size = abc::createLoad(m_B, m_tracked_size, m_dl);
+          Value* vtracked_base = abc::createLoad(m_B, m_tracked_base, m_dl);
+          Value* vPtr = m_B.CreateBitOrPointerCast (Ptr, abc::geti8PtrTy (m_B.getContext ()));
+
+          Assume (m_B.CreateICmpSLT(m_B.CreateGEP(vtracked_base, vtracked_size), vPtr),
+                  insertPt->getParent()->getParent());
+          return;
+        }
+      }
+                
+   ALLOCA:
 
       LLVMContext& ctx = m_B.getContext ();
       BasicBlock* bb = insertPt->getParent ();
@@ -1579,7 +1610,7 @@ namespace seahorn {
 
       m_B.SetInsertPoint (bb1); 
       Value* vtracked_base = abc::createLoad(m_B, m_tracked_base, m_dl);      
-#ifdef SIZE_OPT
+      #ifdef SIZE_OPT
       // use llvm machinery to figure out the size
       SizeOffsetEvalType Data = m_eval.compute (base);
       Value* vtracked_size = Data.first;
@@ -1588,9 +1619,9 @@ namespace seahorn {
                                                 abc::createIntTy (m_dl, ctx));
       else
         vtracked_size = abc::createLoad(m_B, m_tracked_size, m_dl);      
-#else
+      #else
       Value* vtracked_size = abc::createLoad(m_B, m_tracked_size, m_dl);      
-#endif 
+      #endif 
       Value* vbase = m_B.CreateBitOrPointerCast (base, abc::geti8PtrTy (ctx));
       Value* voffset = abc::computeGepOffset (m_dl, m_B, gep);
       BranchInst::Create (bb1_then, bb1_else, 
@@ -1698,7 +1729,7 @@ namespace seahorn {
       m_B.SetInsertPoint (abc_under_bb);
 
       Value* offset = abc::createLoad(m_B, m_tracked_offset, m_dl);
-#ifdef SIZE_OPT
+      #ifdef SIZE_OPT
       // use llvm machinery to figure out the size
       SizeOffsetEvalType Data = m_eval.compute (Ptr);
       Value* size = Data.first;
@@ -1706,9 +1737,9 @@ namespace seahorn {
         size =  m_B.CreateZExtOrTrunc (size, abc::createIntTy (m_dl, ctx));
       else
         size = abc::createLoad(m_B, m_tracked_size, m_dl);      
-#else
+      #else
       Value* size = abc::createLoad(m_B, m_tracked_size, m_dl); 
-#endif 
+      #endif 
 
       /////
       // underflow check
@@ -1836,7 +1867,7 @@ namespace seahorn {
       if (!abc::IsTrivialCheck (m_dl, m_tli, ptr)) {
 
         #ifdef  ESCAPE_PTR_OPT
-        // record that the pointer that is being stored escapes
+        // record that the pointer being stored escapes
         if (I->getValueOperand()->getType()->isPointerTy ()) {
           /// if (stored value == tracked_ptr) 
           ///     tracked_escaped_ptr = true

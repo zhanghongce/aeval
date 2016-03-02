@@ -78,6 +78,12 @@ static llvm::cl::opt<bool>
 CutLoops ("horn-cut-loops", llvm::cl::desc ("Cut all natural loops"),
            llvm::cl::init (false));
 
+
+static llvm::cl::opt<bool>
+SymbolizeLoops ("horn-symbolize-loops", 
+               llvm::cl::desc ("Convert constant loop bounds into symbolic bounds"),
+               llvm::cl::init (false));
+
 // The number refers to the encoding id. If zero no bounds check.
 static llvm::cl::opt<unsigned>
 ArrayBoundsChecks ("abc", 
@@ -341,6 +347,11 @@ int main(int argc, char **argv) {
     pass_manager.add (new seahorn::MixedSemantics ());
     pass_manager.add (new seahorn::RemoveUnreachableBlocksPass ());
     pass_manager.add (seahorn::createPromoteMallocPass ());
+  }
+
+  if (SymbolizeLoops) 
+  {
+    pass_manager.add (seahorn::createSymbolizeConstantLoopBoundsPass ());
   }
 
   if (CutLoops)

@@ -9,4 +9,5 @@ add_llvm_library (SeaTransformsScalar
   KillVarArgFn.cc
   PromoteBoolLoads.cc
   SimplifyPointerLoops.cc
+  SymbolizeConstantLoopBounds.cc
   )

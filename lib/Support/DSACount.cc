@@ -2,7 +2,14 @@
 
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/InstIterator.h"
+#include "llvm/Target/TargetLibraryInfo.h"
+#include "llvm/Analysis/MemoryBuiltins.h"
 #include "llvm/Support/CommandLine.h"
+
+// FIXME: this class prints DSA nodes as well as alllocation sites so
+//        it's not only about DSA. We should either move the stuff
+//        about allocation sites to another file or change the class
+//        name.
 
 static llvm::cl::opt<unsigned int>
 DSNodeThreshold("dsa-count-threshold",
@@ -236,12 +243,41 @@ namespace seahorn
 
       write(errs ());
 
+      // allocation sites
+      errs () << " ========== Allocation sites  ==========\n";
+      const TargetLibraryInfo * tli = &getAnalysis<TargetLibraryInfo>();
+      for (auto &F: M) {
+        for (inst_iterator i = inst_begin(F), e = inst_end(F); i != e; ++i) {      
+          Instruction* I = &*i;
+          if (AllocaInst* AI = dyn_cast<AllocaInst> (I)) {
+            /// XXX: Global variables???
+
+            if (AI->getAllocatedType ()->isArrayTy ()) { 
+              unsigned int alloc_site_id; 
+              if (add_alloc_site (AI, alloc_site_id)) {
+                // consider only allocation of arrays
+                errs () << "  [Alloc site Id " << alloc_site_id << "]  "
+                        << *I  << "\n";
+              }
+            }
+          } else if (isAllocationFn (I, tli, true)) {
+            Value *V = I;
+            V = V->stripPointerCasts();
+            unsigned int alloc_site_id; 
+            if (add_alloc_site (V, alloc_site_id)) {
+              errs () << "  [Alloc site Id " << alloc_site_id << "]  "
+                      << *V  << "\n";
+            }
+          }
+        }
+      }
       return false;
   }
 
   void DSACount::getAnalysisUsage (llvm::AnalysisUsage &AU) const {
     AU.setPreservesAll ();
     AU.addRequiredTransitive<llvm::SteensgaardDataStructures> ();
+    AU.addRequired<llvm::TargetLibraryInfo>();
   }
 
 } // end namespace
