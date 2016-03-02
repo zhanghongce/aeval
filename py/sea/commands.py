@@ -307,8 +307,13 @@ class Seaopt(sea.LimitedCmd):
         ap.add_argument ('--enable-nondet-init', dest='enable_nondet_init', default=False,
                          action='store_true')
         ap.add_argument ('--llvm-inline-threshold', dest='inline_threshold',
-                         type=int, metavar='T',
+                         type=int, metavar='NUM',
                          help='Inline threshold (default = 255)')
+        ap.add_argument ('--llvm-unroll-threshold', type=int,
+                         help='Unrolling threshold (default = 150)',
+                         dest='unroll_threshold',
+                         default=150, metavar='NUM')
+
         add_in_out_args (ap)
         _add_S_arg (ap)
         return ap
@@ -331,7 +336,11 @@ class Seaopt(sea.LimitedCmd):
         if not args.enable_nondet_init:
             argv.append ('--enable-nondet-init=false')
         if args.inline_threshold is not None:
-            argv.append ('--inline-threshold={t}'.format(t=args.inline_threshold))
+            argv.append ('--inline-threshold={t}'.format
+                         (t=args.inline_threshold))
+        if args.unroll_threshold is not None:
+            argv.append ('--unroll-threshold={t}'.format
+                         (t=args.unroll_threshold))
 
         argv.extend (args.in_files)
         if args.llvm_asm: argv.append ('-S')
@@ -351,7 +360,7 @@ class Unroll(sea.LimitedCmd):
 
     def mk_arg_parser (self, ap):
         ap = super (Unroll, self).mk_arg_parser (ap)
-        ap.add_argument ('--threshold', type=int, help='Unrolling threshhold. ' +
+        ap.add_argument ('--threshold', type=int, help='Unrolling threshold. ' +
                          'Loops of larger size than this value will not ' +
                          'be unrolled (-unroll-threshold)',
                          default=131072, metavar='T')
