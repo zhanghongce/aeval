@@ -106,13 +106,14 @@ static llvm::cl::opt<bool>
                 llvm::cl::init(false));
 
 static llvm::cl::opt<bool>
-    LowerInvoke("lower-invoke", llvm::cl::desc("Lower all invoke instructions"),
-                llvm::cl::init(false));
+LowerInvoke ("lower-invoke", 
+             llvm::cl::desc ("Lower all invoke instructions"),
+             llvm::cl::init (false));
 
-static llvm::cl::opt<bool> DevirtualizeFuncs(
-    "devirt-functions",
-    llvm::cl::desc("Devirtualize indirect calls using only types"),
-    llvm::cl::init(false));
+static llvm::cl::opt<bool>
+DevirtualizeFuncs ("devirt-functions", 
+                   llvm::cl::desc ("Devirtualize indirect calls using only types"),
+                   llvm::cl::init (false));
 
 static llvm::cl::opt<bool> ExternalizeAddrTakenFuncs(
     "externalize-addr-taken-funcs",
@@ -276,22 +277,23 @@ int main(int argc, char **argv) {
   pass_manager.add(llvm::createLowerSwitchPass());
 
   pass_manager.add(llvm::createDeadInstEliminationPass());
-  pass_manager.add(new seahorn::RemoveUnreachableBlocksPass());
+  pass_manager.add (new seahorn::RemoveUnreachableBlocksPass ());
 
-  if (LowerInvoke) {
+  if (LowerInvoke) 
+  {
     // -- lower invoke's
     pass_manager.add(llvm::createLowerInvokePass());
     // cleanup after lowering invoke's
-    pass_manager.add(llvm::createCFGSimplificationPass());
+    pass_manager.add (llvm::createCFGSimplificationPass ());  
   }
-
-  if (InlineAll) {
-    pass_manager.add(seahorn::createMarkInternalInlinePass());
-    pass_manager.add(llvm::createAlwaysInlinerPass());
-    pass_manager.add(
-        llvm::createGlobalDCEPass()); // kill unused internal global
-    pass_manager.add(seahorn::createPromoteMallocPass());
-    pass_manager.add(new seahorn::RemoveUnreachableBlocksPass());
+  
+  if (InlineAll)
+  {
+    pass_manager.add (seahorn::createMarkInternalInlinePass ());
+    pass_manager.add (llvm::createAlwaysInlinerPass ());
+    pass_manager.add (llvm::createGlobalDCEPass ()); // kill unused internal global
+    pass_manager.add (seahorn::createPromoteMallocPass ());
+    pass_manager.add (new seahorn::RemoveUnreachableBlocksPass ());
   }
 
   pass_manager.add(llvm::createDeadInstEliminationPass());

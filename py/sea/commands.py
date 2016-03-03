@@ -139,9 +139,9 @@ class Seapp(sea.LimitedCmd):
                          dest='enable_ext_funcs', default=False,
                          action='store_true')
         ap.add_argument ('--lower-invoke',
-                                          help='Lower invoke instructions',
-                                          dest='lower_invoke', default=False,
-                                          action='store_true')
+                         help='Lower invoke instructions',
+                         dest='lower_invoke', default=False,
+                         action='store_true')
         ap.add_argument ('--devirt-functions',
                          help='Devirtualize indirect functions',
                          dest='devirt_funcs', default=False,
@@ -173,7 +173,7 @@ class Seapp(sea.LimitedCmd):
             argv.append ('--strip-extern=false')
 
         if args.lower_invoke:
-            argv.append('--lower-invoke')
+            argv.append ('--lower-invoke')
 
         if args.devirt_funcs:
             argv.append ('--devirt-functions')
