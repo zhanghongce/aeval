@@ -107,6 +107,11 @@ StripExtern ("strip-extern", llvm::cl::desc ("Replace external functions by nond
               llvm::cl::init (false));
 
 static llvm::cl::opt<bool>
+LowerInvoke ("lower-invoke", 
+             llvm::cl::desc ("Lower all invoke instructions"),
+             llvm::cl::init (false));
+
+static llvm::cl::opt<bool>
 DevirtualizeFuncs ("devirt-functions", 
                    llvm::cl::desc ("Devirtualize indirect calls using only types"),
                    llvm::cl::init (false));
@@ -115,11 +120,6 @@ static llvm::cl::opt<bool>
 ExternalizeAddrTakenFuncs ("externalize-addr-taken-funcs", 
                            llvm::cl::desc ("Externalize uses of address-taken functions"),
                            llvm::cl::init (false));
-
-static llvm::cl::opt<bool>
-SliceFunction ("slice-function", 
-     llvm::cl::desc ("Enable function slicing"), 
-     llvm::cl::init (false));
 
 static llvm::cl::opt<int>
 SROA_Threshold ("sroa-threshold",
@@ -205,6 +205,9 @@ int main(int argc, char **argv) {
   }
   if (dl) pass_manager.add (new llvm::DataLayoutPass ());
 
+  // Enable function slicing
+  pass_manager.add (new seahorn::SliceFunctions ());
+
   // -- Create a main function if we do not have one.
   pass_manager.add (new seahorn::DummyMainFunction ());
  
@@ -231,6 +234,7 @@ int main(int argc, char **argv) {
   // turn all functions internal so that we can inline them if requested
   pass_manager.add (llvm::createInternalizePass (llvm::ArrayRef<const char*>("main")));
   
+
   // -- resolve indirect calls
   if (DevirtualizeFuncs)
     pass_manager.add (seahorn::createDevirtualizeFunctionsPass ());
@@ -238,13 +242,6 @@ int main(int argc, char **argv) {
   // -- externalize uses of address-taken functions
   if (ExternalizeAddrTakenFuncs)
     pass_manager.add (seahorn::createExternalizeAddressTakenFunctionsPass ());
-
-  if (SliceFunction) {
-    // Enable function slicing
-    pass_manager.add (new seahorn::SliceFunctions ());
-    // Ensure that there is a main function after slicing
-    pass_manager.add (new seahorn::DummyMainFunction ());
-  }
 
   // kill internal unused code
   pass_manager.add (llvm::createGlobalDCEPass ()); // kill unused internal global
@@ -281,6 +278,14 @@ int main(int argc, char **argv) {
   
   pass_manager.add(llvm::createDeadInstEliminationPass());
   pass_manager.add (new seahorn::RemoveUnreachableBlocksPass ());
+
+  if (LowerInvoke) 
+  {
+    // -- lower invoke's
+    pass_manager.add(llvm::createLowerInvokePass());
+    // cleanup after lowering invoke's
+    pass_manager.add (llvm::createCFGSimplificationPass ());  
+  }
 
   if (InlineAll)
   {
