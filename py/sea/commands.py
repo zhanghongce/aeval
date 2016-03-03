@@ -138,6 +138,10 @@ class Seapp(sea.LimitedCmd):
                          help='Externalize uses of address-taken functions',
                          dest='enable_ext_funcs', default=False,
                          action='store_true')
+        ap.add_argument ('--lower-invoke',
+                                          help='Lower invoke instructions',
+                                          dest='lower_invoke', default=False,
+                                          action='store_true')
         ap.add_argument ('--devirt-functions',
                          help='Devirtualize indirect functions',
                          dest='devirt_funcs', default=False,
@@ -147,7 +151,7 @@ class Seapp(sea.LimitedCmd):
         ap.add_argument ('--strip-extern', help='Replace external function calls ' +
                          'by non-determinism', default=False, action='store_true',
                          dest='strip_external')
-        ap.add_argument ('--slice-function', dest='slice_function', 
+        ap.add_argument ('--slice-function', dest='slice_function',
                          help='Slice program keeping this function',
                          default=None, metavar='FUNCTION')
         add_in_out_args (ap)
@@ -167,6 +171,9 @@ class Seapp(sea.LimitedCmd):
             argv.append ('--strip-extern=true')
         else:
             argv.append ('--strip-extern=false')
+
+        if args.lower_invoke:
+            argv.append('--lower-invoke')
 
         if args.devirt_funcs:
             argv.append ('--devirt-functions')
@@ -446,7 +453,7 @@ class Seahorn(sea.LimitedCmd):
 
         if args.bmc:
             argv.append ('--horn-bmc')
-            
+
         if args.crab:
             argv.append ('--horn-crab')
 
@@ -680,6 +687,8 @@ class SeaInc(sea.LimitedCmd):
                         default=False,action='store_true')
         ap.add_argument ('--bench', help='Output Benchmarking Info', action='store_true',
                     default=False, dest="bench")
+        ap.add_argument ('--debug_cex', help='Print RAW CEX for debugging', action='store_true',
+                        default=False, dest="debug_cex")
         ap.add_argument ('--inv', help='Outpu Invariants', action='store_true',
                     default=False, dest="inv")
         ap.add_argument ('--stat', help='Print statistics', dest="stat",
@@ -691,8 +700,8 @@ class SeaInc(sea.LimitedCmd):
         ap.add_argument ('--pp',
                     help='Enable default pre-processing in the solver',
                     action='store_true', default=False)
-        ap.add_argument ('--verbose', help='Verbose', action='store_true',
-                    default=False, dest="verbose")
+        ap.add_argument ('--inc_verbose', help='Verbose', action='store_true',
+                    default=False, dest="inc_verbose")
         ap.add_argument ('--save', help='Save results file', action='store_true',
                         default=False, dest="save")
         ap.add_argument ('--timeout', help='Timeout per function',
@@ -730,4 +739,4 @@ Bpf = sea.SeqCmd ('bpf', 'alias for fe|unroll|cut-loops|opt|horn --solve',
                   FrontEnd.cmds + [Unroll(), CutLoops(), Seaopt(), Seahorn(solve=True)])
 feCrab = sea.SeqCmd ('fe-crab', 'alias for fe|crab', FrontEnd.cmds + [Crab()])
 seaTerm = sea.SeqCmd ('term', 'SeaHorn Termination analysis', Smt.cmds + [SeaTerm()])
-seaInc = sea.SeqCmd ('inc', 'SeaHorn Termination analysis', Smt.cmds + [SeaInc()])
+seaInc = sea.SeqCmd ('inc', 'SeaHorn Inconsistency analysis', Smt.cmds + [SeaInc()])

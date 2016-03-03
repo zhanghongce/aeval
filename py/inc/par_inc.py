@@ -20,6 +20,7 @@ import ntpath
 root = os.path.dirname (os.path.dirname (os.path.realpath (__file__)))
 verbose=False
 bench=False
+debug_cex= False
 
 class bcolors:
     HEADER = '\033[95m'
@@ -109,7 +110,7 @@ class Feasibility(object):
         done = False
         rounds = 1 # counter for feasibility check
         self.ee_idx = self.ee_vars(expr_query) #entr/exit vars
-        if verbose: print "EE VARS INDEX:", self.ee_idx
+        self.log.info("EE VARS INDEX ..." + str(self.ee_idx))
         out = ""
         function_name = self.function_name
         while not done:
@@ -176,7 +177,7 @@ class Feasibility(object):
         self.log.info("Inspecting the CEX ... ")
         raw_cex = self.fp.get_ground_sat_answer()
         ground_sat = get_conjuncts(raw_cex)
-        if verbose: print "RAW CEX:", ground_sat
+        if debug_cex: print "RAW CEX:", ground_sat
         fpred = ground_sat[0] if len(ground_sat[0].children()) != 0 else ground_sat[1] # inspecting the first predicate
         var_flags = self.getListFlags(fpred)
         self.flags = len(var_flags) + 1 # TODO Jorge
@@ -185,7 +186,7 @@ class Feasibility(object):
         f_flags = [t for t in false_idxs if t not in self.ee_idx] # filter entry/exit flags
         self.feasible_flag |= set(t_flags)
         self.non_feasible_flag = set(f_flags)
-        if verbose: print "TRUE FLAGS:" + str(t_flags) ,  "\nFALSE FLAGS:" + str(f_flags)
+        self.log.info("TRUE FLAGS ... " + str(t_flags) +  "\t FALSE FLAGS ... "  + str(f_flags))
         if f_flags == []:
             self.log.info("No failing flags ...")
             return None, ground_sat
@@ -272,7 +273,7 @@ class Feasibility(object):
         """
         false_idxs = list()
         true_idxs = list ()
-        if verbose: print "Get list of failing flags from : ", pred
+        if debug_cex: print "Get list of failing flags from : ", pred
         ch = pred.children()
         i=0
         for val in ch[0:flags_len]:
@@ -309,6 +310,13 @@ def jobStarter(args, query_index, smt2_file):
 
 class JobsSpanner(object):
     def __init__(self, args):
+        print "\n\t =========  SEAHORN INCONSISTENCY CHECKS   ========"
+        global verbose
+        verbose = args.inc_verbose
+        global bench
+        bench = args.bench
+        global debug_cex
+        debug_cex = args.debug_cex
         log = 3 if verbose else 0
         self.log = LoggingManager.get_logger(__name__,log)
         self.args = args
@@ -339,18 +347,18 @@ class JobsSpanner(object):
             self.log.info('Parsing  ... ' + str(smt2_file))
             queries = fp.parse_file (smt2_file)
             stats.stop('Parse')
-            if bench: print "Parse time [" + str(stats.get('Parse')) + " ms]"
+            self.log.info("Parsing time ... " + str(stats.get('Parse')) + " ms")
             n_function = len(queries)
             n_query = n_function if self.args.func < 0 or self.args.func > n_function else self.args.func
-            if bench: print "Number of functions ...  " + str(n_function)
-            if bench: print "Number of jobs ... " + str(n_query)
+            self.log.info("Number of functions ...  " + str(n_function))
+            self.log.info("Number of jobs ... " + str(n_query))
             all_results = ""
             pool_jobs = Pool(processes=n_query)
             try:
                 for q in range(n_query):
                     query = queries[q]
                     function_name  = self.getFunctionName(query)
-                    if bench: print "checking feasibility of function =>  " + function_name
+                    self.log.info("Checking feasibility of ...  " + str(function_name))
                     #job_result = pool_jobs.apply_async(jobStarter, (self.args, qi, smt2_file, ), callback=self.onReturn)
                     job_result = pool_jobs.apply_async(jobStarter, (self.args, q, smt2_file, ))
                     job_result.wait(timeout=self.args.timeout)
