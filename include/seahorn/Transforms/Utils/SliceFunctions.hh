@@ -10,7 +10,7 @@ namespace seahorn
   
   class SliceFunctions : public ModulePass
   {
-    void printModuleInfo (Module& M);
+    void printFunctionsInfo (Module& M);
 
    public:
 

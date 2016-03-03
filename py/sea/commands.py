@@ -181,12 +181,12 @@ class Seapp(sea.LimitedCmd):
         if args.ndc:
             argv.append ('--null-check')
 
-        if args.entry is not None:
+        if args.entry is not None and args.slice_function is None:
             argv.append ('--entry-point={0}'.format (args.entry))
 
         if args.slice_function is not None:
-            argv.append ('--slice-function')
             argv.append ('--slice-function-names={0}'.format (args.slice_function))
+            argv.append ('--entry-point={0}'.format (args.slice_function))
 
         if args.kill_vaarg:
             argv.append('--kill-vaarg=true')
