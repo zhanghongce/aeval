@@ -19,9 +19,6 @@ extern "C" {
   static sea_ptrdiff_t sea_offset;
   static sea_size_t sea_size;
 
-  static int8_t* sea_saved_ptr;
-  static bool sea_escaped_ptr;
-
   extern void __VERIFIER_assume (int);
   __attribute__((__noreturn__)) extern void __VERIFIER_error (void);
 
@@ -36,10 +33,6 @@ extern "C" {
   __attribute__((used)) void sea_abc_alloc (int8_t *base, sea_size_t size);
   __attribute__((used)) void sea_abc_init(void);
 
-  __attribute__((used)) void sea_abc_save_ptr(void);
-  __attribute__((used)) void sea_abc_restore_ptr(void);
-  __attribute__((used)) void sea_abc_escape_ptr(int8_t* base);
-  
 #ifdef __cplusplus
 }
 #endif
@@ -98,7 +91,6 @@ void sea_abc_log_ptr (int8_t *base, sea_ptrdiff_t offset)
     sea_ptr = nd_int8_ptr();
     assume (sea_ptr == base + offset);
     sea_offset += offset;
-    sea_escaped_ptr = false;
   }
 #endif
 }
@@ -129,22 +121,4 @@ void sea_abc_init(void)
   assume (sea_size > 0); 
   sea_offset = 0;
   sea_ptr = 0;
-  sea_escaped_ptr = false;
-}
-
-void sea_abc_save_ptr(void) 
-{
-  sea_saved_ptr = sea_ptr; 
-}
-
-void sea_abc_restore_ptr(void)
-{
-  if (!sea_escaped_ptr)
-    sea_ptr = sea_saved_ptr;
-}
-
-void sea_abc_escape_ptr(int8_t* base)
-{
-  if (sea_ptr == base) 
-    sea_escaped_ptr = true;
 }

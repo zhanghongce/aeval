@@ -247,8 +247,7 @@ namespace seahorn
       void doAllocaSite (Value* Ptr, Value* Size, Instruction* insertPt);
    
       //! Instrument pointer arithmetic
-      void doPtrArith (Value* lhs, Value* rhs, GetElementPtrInst * gep, 
-                       Instruction* insertPt);
+      void doPtrArith (GetElementPtrInst * gep, Instruction* insertPt);
             
       //! Instrument any read or write to a pointer
       void doPtrCheck (Value* Ptr, Value* N, Instruction* insertPt);
