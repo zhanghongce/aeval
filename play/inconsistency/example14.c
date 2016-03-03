@@ -5,7 +5,7 @@ from bixie
 
 extern void __VERIFIER_error (void);
 
-void assert (int v) { if (!v) __VERIFIER_error (); }
+__attribute__((always_inline))void assert (int v) { if (!v) __VERIFIER_error (); }
 
 
 int main ()
@@ -15,12 +15,13 @@ int main ()
 
   int j=SIZE;
   int done=0;
-  
-  do 
+
+  do
   {
     j--;
     if (a[j]==nd()) {
-      assert(0<=j && j<SIZE);
+        if (0>=j) __VERIFIER_error();
+        //assert(j<SIZE);
       done = 1;
     }
   } while ( done==0 && j >= 0 );
