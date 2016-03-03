@@ -1,5 +1,4 @@
 #include <stdint.h>
-#include <stdbool.h>
 #include <stddef.h>
 
 #ifdef __cplusplus
@@ -18,6 +17,7 @@ extern "C" {
   static int8_t* sea_ptr;
   static sea_ptrdiff_t sea_offset;
   static sea_size_t sea_size;
+  
 
   extern void __VERIFIER_assume (int);
   __attribute__((__noreturn__)) extern void __VERIFIER_error (void);
@@ -32,7 +32,7 @@ extern "C" {
   __attribute__((used)) void sea_abc_log_ptr (int8_t *base, sea_ptrdiff_t offset);
   __attribute__((used)) void sea_abc_alloc (int8_t *base, sea_size_t size);
   __attribute__((used)) void sea_abc_init(void);
-
+  
 #ifdef __cplusplus
 }
 #endif
@@ -108,9 +108,8 @@ void sea_abc_alloc (int8_t *base, sea_size_t size)
     sea_ptr = nd_int8_ptr();
     assume (sea_ptr == sea_base);
   }
-  else {
+  else
     assume (sea_base + sea_size < base);
-  }
 }
 
 void sea_abc_init(void)
@@ -118,7 +117,7 @@ void sea_abc_init(void)
   sea_base = nd_int8_ptr ();
   assume (sea_base > 0);
   sea_size = nd_sea_size_t ();
-  assume (sea_size > 0); 
+  assume (sea_size >= 0); 
   sea_offset = 0;
   sea_ptr = 0;
 }
