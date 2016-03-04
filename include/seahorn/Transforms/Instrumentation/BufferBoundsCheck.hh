@@ -223,6 +223,13 @@ namespace seahorn
       unsigned m_trivial_checks; 
       unsigned m_mem_accesses;
       
+      unsigned m_intrinsics_checks_added;
+      unsigned m_gep_known_size_and_offset_checks_added;
+      unsigned m_gep_known_size_checks_added;
+      unsigned m_gep_unknown_size_checks_added;
+      unsigned m_non_gep_known_size_checks_added;
+      unsigned m_non_gep_unknown_size_checks_added;
+
      private /* helpers */ :
       
       BasicBlock* Assert (Value* cond, BasicBlock* then, BasicBlock* cur, 
@@ -234,23 +241,21 @@ namespace seahorn
 
       CallInst* NonDetPtr (Function* F);
 
-      void doGepOffsetCheck (GetElementPtrInst* gep, uint64_t size, Instruction* insertPt);
-      
-      void doGepPtrCheck (GetElementPtrInst* gep, Instruction* insertPt);
-
      private /*main operations*/ :
 
       //! Initialization of base, offset, and size.
       void doInit (Module& M);
 
       //! Instrument any allocation site
-      void doAllocaSite (Value* Ptr, Value* Size, Instruction* insertPt);
+      void doAllocaSite (Value* ptr, Value* size, Instruction* insertPt);
    
       //! Instrument pointer arithmetic
       void doPtrArith (GetElementPtrInst * gep, Instruction* insertPt);
             
       //! Instrument any read or write to a pointer
-      void doPtrCheck (Value* Ptr, Value* N, Instruction* insertPt);
+      void doGepOffsetCheck (GetElementPtrInst* gep, uint64_t size, Instruction* insertPt);
+      void doGepPtrCheck (GetElementPtrInst* gep, Instruction* insertPt);
+      void doPtrCheck (Value* ptr, Value* n, Instruction* insertPt);
       
      public:
       

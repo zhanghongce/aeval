@@ -134,12 +134,22 @@ class Seapp(sea.LimitedCmd):
         ap.add_argument ('--abc-disable-underflow', dest='abc_no_under',
                          help='Insert only overflow bounds checks',
                          default=False, action='store_true')
+        ap.add_argument ('--abc-escape-ptr', dest='abc_escape_ptr',
+                         help='Keep track whether a pointer escapes',
+                         default=False, action='store_true')
+        ap.add_argument ('--abc-use-deref', dest='abc_use_deref',
+                         help='Use dereferenceable attribute to add extra assumptions',
+                         default=False, action='store_true')
+        ap.add_argument ('--abc-track-base-only', dest='abc_track_base_only',
+                         help='Track only accesses to base pointers',
+                         default=False, action='store_true')
         ap.add_argument ('--abc-dsa-node', dest='abc_dsa', 
                          help='Insert array bounds checks only if a pointer belongs to the DSA node',
                          type=int, default=0, metavar='ID')
         ap.add_argument ('--abc-alloc-site', dest='abc_site', 
                          help='Insert array bounds checks only if a pointer belongs to the allocation site',
                          type=int, default=0, metavar='ID')
+
         ap.add_argument ('--overflow-check', dest='ioc', help='Insert signed integer overflow checks',
                          default=False, action='store_true')
         ap.add_argument ('--null-check', dest='ndc', help='Insert null dereference checks',
@@ -193,6 +203,9 @@ class Seapp(sea.LimitedCmd):
             argv.append ('--abc-dsa-node={n}'.format (n=args.abc_dsa))
             argv.append ('--abc-alloc-site={n}'.format (n=args.abc_site))
             if args.abc_no_under: argv.append ('--abc-disable-underflow') 
+            if args.abc_escape_ptr: argv.append ('--abc-escape-ptr') 
+            if args.abc_use_deref: argv.append ('--abc-use-deref') 
+            if args.abc_track_base_only: argv.append ('--abc-track-base-only') 
                 
         if args.ioc: argv.append ('--overflow-check')
         if args.ndc: argv.append ('--null-check')
