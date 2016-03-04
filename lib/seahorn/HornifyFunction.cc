@@ -2,6 +2,20 @@
 #include "seahorn/LiveSymbols.hh"
 #include "seahorn/Support/CFG.hh"
 #include "seahorn/Support/ExprSeahorn.hh"
+#include "ufo/Stats.hh"
+
+#include "llvm/Support/CommandLine.h"
+
+static llvm::cl::opt<bool>
+ReduceFalse ("horn-reduce-constraints",
+             llvm::cl::desc
+             ("Reduce false constraints"),
+             llvm::cl::init (true));
+static llvm::cl::opt<bool>
+FlattenBody ("horn-flatten",
+             llvm::cl::desc
+             ("Flatten bodies of generated rules"),
+             llvm::cl::init (false));
 
 namespace seahorn
 {
@@ -293,11 +307,19 @@ namespace seahorn
     rule = boolop::limp (boolop::lneg (s.read (m_sem.errorFlag (entry))), rule);
     m_db.addRule (allVars, rule);
     allVars.clear ();
+    ZSolver<EZ3> smt (m_zctx);
     
     UfoLargeSymExec lsem (m_sem);
     
+
+    DenseSet<const BasicBlock*> reached;
+    reached.insert (&cpg.begin ()->bb ());
+    
+    unsigned rule_cnt = 0;
     for (const CutPoint &cp : cpg)
       {
+        if (reached.count (&cp.bb ()) <= 0) continue;
+        
         for (const CpEdge *edge : boost::make_iterator_range (cp.succ_begin (),
                                                               cp.succ_end ()))
         {
@@ -323,8 +345,38 @@ namespace seahorn
           for (const Expr &v : ls.live (&dst)) args.push_back (s.read (v));
           allVars.insert (args.begin (), args.end ());
           
+          if (ReduceFalse)
+          {
+            ufo::ScopedStats __st__ ("HornifyFunction.reduce-false");
+            bind::IsConst isConst;
+            for (auto &e : side)
+            {
+              // ignore uninterpreted functions, makes the problem easier to solve
+              if (!bind::isFapp (e) || isConst (e)) smt.assertExpr (e);
+            }
+          
+            auto res = smt.solve ();
+            smt.reset ();
+            if (!res) continue; /* skip a rule with an inconsistent body */
+          }
+          
+          reached.insert (&dst);
           Expr post = bind::fapp (m_parent.bbPredicate (dst), args);
-          m_db.addRule (allVars, boolop::limp (boolop::land (pre, tau), post));
+          Expr body = boolop::land (pre, tau);
+          // flatten body if needed
+          if (FlattenBody &&
+              isOpX<AND> (body) && body->arity () == 2 && isOpX<AND> (body->arg (1)))
+          {
+            ExprVector v;
+            v.reserve (1 + body->arg (1)->arity ());
+            v.push_back (body->arg (0));
+            body = body->arg (1);
+            for (unsigned i = 0; i < body->arity (); ++i) v.push_back (body->arg (i));
+            
+            body = mknary<AND> (mk<TRUE> (m_efac), v);
+          }
+          
+          m_db.addRule (allVars, boolop::limp (body, post));
         }
       }
     
