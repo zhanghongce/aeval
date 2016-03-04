@@ -125,7 +125,7 @@ namespace seahorn
       boost::copy (vars, std::back_inserter (m_vars));
     }
 
-    void addRule (HornRule rule)
+    void addRule (const HornRule &rule)
     {
       m_rules.push_back (rule);
       boost::copy (rule.vars (), std::back_inserter (m_vars));
