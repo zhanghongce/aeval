@@ -229,10 +229,10 @@ class Feasibility(object):
         true_false_vars = not_vars + true_vars + [qr.ctx]
         new_vars_conjunct = z3.Not(z3.And(*true_false_vars)) if len(not_vars + true_vars) >= 2 else z3.Not(*true_false_vars)
         and_predicate = z3.And(*[body,new_vars_conjunct,qr.ctx])
-        if verbose: print "New Conjunct:", and_predicate
+        if debug_cex: print "New Conjunct:", and_predicate
         new_exist_vars = self.existVars(exist_vars, true_false_vars)
         new_query = z3.Exists(new_exist_vars,and_predicate)
-        if verbose: print "NEW Query:\n", new_query
+        if debug_cex: print "NEW Query:\n", new_query
         return new_query
 
     def mkVars(self, idxs, qr):
