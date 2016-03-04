@@ -51,14 +51,18 @@ void sea_abc_assert_valid_ptr (int8_t *base, sea_ptrdiff_t offset)
   
   if (base == sea_base)
   {
+#ifndef DISABLE_UNDERFLOW
    assert (offset >= 0 );
+#endif 
    assert (offset <= sea_size);
   }
 #ifndef SEA_BASE_ONLY
   else if (base == sea_ptr)
   {
     assume (sea_ptr > sea_base);
+#ifndef DISABLE_UNDERFLOW
     assert (sea_offset + offset >= 0);
+#endif 
     assert (sea_offset + offset <= sea_size);
   }
 #endif
@@ -72,7 +76,9 @@ void sea_abc_assert_valid_ptr (int8_t *base, sea_ptrdiff_t offset)
 void sea_abc_assert_valid_offset (sea_ptrdiff_t offset, sea_size_t size)
 {
    assert (offset <= size);
+#ifndef DISABLE_UNDERFLOW
   /* TODO: do not know how to check for underflow */
+#endif 
 }
 
 /**
