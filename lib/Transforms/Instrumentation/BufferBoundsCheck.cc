@@ -11,6 +11,7 @@
 #include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/ErrorHandling.h"
 
 // Notes: ABC1 is obsolete and very incomplete. We keep it for
 // comparison with the other encodings.
@@ -982,8 +983,7 @@ namespace seahorn
     } else {
       int addr_sz = abc::getAddrSize (m_dl, inst);
       if (addr_sz < 0) { // This should not happen ...
-        errs () << "Error: cannot find size of the accessed address for " << inst << "\n";
-        return true;
+        report_fatal_error("BBC pass cannot find size of address");
       }
       range = abc::createAdd (B, m_dl, ptrOffset, 
                               abc::createIntCst (m_IntPtrTy, addr_sz));
@@ -1408,7 +1408,7 @@ namespace seahorn {
                         insertPt);
         }
         else {
-          // this should not happen ...
+          // this should not happen unless the global is external
           errs () << "Warning: cannot infer statically the size of global " 
                   << GV << "\n";
         }
@@ -1516,9 +1516,7 @@ namespace seahorn {
       */
       int addr_sz = abc::getAddrSize (m_dl, *insertPt);
       if (addr_sz < 0) { // this should not happen
-        errs () << "Error: cannot find size of the accessed address for " 
-                << *insertPt << "\n";
-        return;
+        report_fatal_error("BBC pass cannot find size of address");
       }
 
       LLVMContext& ctx = m_B.getContext ();
@@ -1590,9 +1588,7 @@ namespace seahorn {
 
       int addr_sz = abc::getAddrSize (m_dl, *insertPt);
       if (addr_sz < 0) { // this should not happen
-        errs () << "Error: cannot find size of the accessed address for " 
-                << *insertPt << "\n";
-        return;
+        report_fatal_error("BBC pass cannot find size of address");
       }
 
       LLVMContext& ctx = m_B.getContext ();
@@ -1818,9 +1814,7 @@ namespace seahorn {
       } else {
         int addr_sz = abc::getAddrSize (m_dl, *insertPt);
         if (addr_sz < 0) { // this should not happen
-          errs () << "Error: cannot find size of the accessed address for " 
-                  << *insertPt << "\n";
-          return;
+          report_fatal_error("BBC pass cannot find size of address");
         }
         // both offset and addr_sz are in bytes
         offset = abc::createAdd (m_B, m_dl, 
@@ -2018,6 +2012,7 @@ namespace seahorn {
           doAllocaSite (I, size, abc::getNextInst (I));
         else
           errs () << "Warning: missing allocation site " << *I << "\n";        
+        
         return;
       }
 
@@ -2081,9 +2076,12 @@ namespace seahorn {
           // executed:
           //    saved_tracked_ptr = tracked_ptr
           //    saved_tracked_offset = tracked_offset
-          m_B.SetInsertPoint (F->getEntryBlock ().getFirstInsertionPt ());
-          saved_tracked_ptr = abc::createLoad(m_B, m_tracked_ptr, m_dl, "saved_tracked_ptr");      
-          saved_tracked_offset = abc::createLoad(m_B, m_tracked_offset, m_dl, "saved_tracked_offset");      
+
+          if (abc::getReturnInst (F)) {
+            m_B.SetInsertPoint (F->getEntryBlock ().getFirstInsertionPt ());
+            saved_tracked_ptr = abc::createLoad(m_B, m_tracked_ptr, m_dl, "saved_tracked_ptr");      
+            saved_tracked_offset = abc::createLoad(m_B, m_tracked_offset, m_dl, "saved_tracked_offset");      
+          }
         }
       }
 
@@ -2143,31 +2141,25 @@ namespace seahorn {
         }
       }
 
-      if (EscapePtr) {
-        // XXX: we could move this code to visit(ReturnInst*)
-        if (saved_tracked_ptr) {
-          SmallVector<Instruction*, 4> Worklist;
-          for (inst_iterator i = inst_begin(*F), e = inst_end(*F); i != e; ++i)
-            if (isa<ReturnInst> (&*i)){ Worklist.push_back (&*i);}
-          for (auto I: Worklist) {
-            // restore tracked_ptr if tracked_ptr did not escape:
-            //    if (!escaped_ptr)
-            //       tracked_ptr = saved_tracked_ptr
-            //       tracked_offset = saved_tracked_offset
-            LLVMContext& ctx = m_B.getContext ();
-            BasicBlock* bb = I->getParent ();
-            BasicBlock* cont = bb->splitBasicBlock(I);
-            m_B.SetInsertPoint (bb->getTerminator ());
-            Value *vescaped_ptr = abc::createLoad(m_B, m_tracked_escaped_ptr, m_dl);                
-            Value* cond = m_B.CreateICmpEQ (vescaped_ptr, ConstantInt::getFalse (ctx));
-            bb->getTerminator ()->eraseFromParent ();      
-            BasicBlock* bb1 = BasicBlock::Create(ctx, "restore_tracked_bb", F);
-            BranchInst::Create (bb1, cont, cond, bb);    
-            m_B.SetInsertPoint (bb1);
-            abc::createStore (m_B, saved_tracked_ptr, m_tracked_ptr, m_dl);                
-            abc::createStore (m_B, saved_tracked_offset, m_tracked_offset, m_dl);                
-            BranchInst::Create (cont, bb1);
-          }
+      if (EscapePtr && saved_tracked_ptr) {
+        if (ReturnInst* RI = abc::getReturnInst (F)) {
+          // restore tracked_ptr if tracked_ptr did not escape:
+          //    if (!escaped_ptr)
+          //       tracked_ptr = saved_tracked_ptr
+          //       tracked_offset = saved_tracked_offset
+          LLVMContext& ctx = m_B.getContext ();
+          BasicBlock* bb = RI->getParent ();
+          BasicBlock* cont = bb->splitBasicBlock(RI);
+          m_B.SetInsertPoint (bb->getTerminator ());
+          Value *vescaped_ptr = abc::createLoad(m_B, m_tracked_escaped_ptr, m_dl);                
+          Value* cond = m_B.CreateICmpEQ (vescaped_ptr, ConstantInt::getFalse (ctx));
+          bb->getTerminator ()->eraseFromParent ();      
+          BasicBlock* bb1 = BasicBlock::Create(ctx, "restore_tracked_bb", F);
+          BranchInst::Create (bb1, cont, cond, bb);    
+          m_B.SetInsertPoint (bb1);
+          abc::createStore (m_B, saved_tracked_ptr, m_tracked_ptr, m_dl);                
+          abc::createStore (m_B, saved_tracked_offset, m_tracked_offset, m_dl);                
+          BranchInst::Create (cont, bb1);
         }
       }
     }
@@ -2499,7 +2491,7 @@ namespace seahorn {
                               B.CreateBitOrPointerCast (&GV,abc::geti8PtrTy (ctx)),
                               abc::createIntCst (intPtrTy, size)));
         }
-        else {// this should not happen ...
+        else {// this should not happen unless global is external
           errs () << "Warning: cannot infer statically the size of global " 
                   << GV << "\n";
         }
@@ -2544,9 +2536,7 @@ namespace seahorn {
               } else {
                 int addr_sz = abc::getAddrSize (dl, *I);
                 if (addr_sz < 0) {
-                  errs () << "Error: cannot find size of the accessed address for " 
-                          << *I << "\n";
-                  continue;
+                  report_fatal_error("BBC: cannot find size of address");
                 }
  
                 checks_added++;
@@ -2598,9 +2588,7 @@ namespace seahorn {
               } else {
                 int addr_sz = abc::getAddrSize (dl, *I);
                 if (addr_sz < 0) {
-                  errs () << "Error: cannot find size of the accessed address for " 
-                          << *I << "\n";
-                  continue;
+                   report_fatal_error("BBC: cannot find size of address");
                 }
                 checks_added++;
                 B.SetInsertPoint (SI);
