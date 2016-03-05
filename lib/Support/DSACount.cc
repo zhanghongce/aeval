@@ -6,11 +6,6 @@
 #include "llvm/Analysis/MemoryBuiltins.h"
 #include "llvm/Support/CommandLine.h"
 
-// FIXME: this class prints DSA nodes as well as alllocation sites so
-//        it's not only about DSA. We should either move the stuff
-//        about allocation sites to another file or change the class
-//        name.
-
 static llvm::cl::opt<unsigned int>
 DSNodeThreshold("dsa-count-threshold",
     llvm::cl::desc ("Only show DSA node stats if its memory accesses exceed the threshold"),
@@ -18,8 +13,14 @@ DSNodeThreshold("dsa-count-threshold",
     llvm::cl::Hidden);
 
 static llvm::cl::opt<bool>
-OnlyArrayAlloca("print-only-array-alloca",
-    llvm::cl::desc ("Only show Alloca sites of array type"),
+OnlyArrayAlloca("dsa-count-only-array-alloca",
+    llvm::cl::desc ("Only show alloca sites of array type"),
+    llvm::cl::init (false),
+    llvm::cl::Hidden);
+
+static llvm::cl::opt<bool>
+DSACountPrint("dsa-count-print-stats",
+    llvm::cl::desc ("Print all DSA and allocation information"),
     llvm::cl::init (false),
     llvm::cl::Hidden);
 
@@ -37,7 +38,7 @@ namespace seahorn
       m_dsa (nullptr), m_gDsg (nullptr) { }
 
     
-  unsigned DSACount::getId (const DSNode* n) const {
+  unsigned int DSACount::getDSNodeID (const DSNode* n) const {
      auto it = m_nodes.find (n);
      assert (it != m_nodes.end ());
      return it->second.m_id;
@@ -50,7 +51,7 @@ namespace seahorn
   }
 
   // Print statistics 
-  void DSACount::write (llvm::raw_ostream& o) {
+  void DSACount::write_dsa_info (llvm::raw_ostream& o) {
 
       o << " ========== DSACount  ==========\n";
     
@@ -99,6 +100,31 @@ namespace seahorn
       }
   }        
 
+  // horribly expensive
+  unsigned int DSACount::findDSNodeForValue (const Value* v) {
+    for (auto &p: m_referrers_map) {
+      for (auto &s: p.second) {
+        if (v == s) {
+          return getDSNodeID (p.first);
+        }
+      }
+    }
+    return 0;
+  }
+
+  void DSACount::write_alloca_info (llvm::raw_ostream& o) {
+    o << " ========== Allocation sites  ==========\n";
+    o << m_alloc_sites.right.size ()  
+      << " Total number of allocation sites\n";     
+    
+    for (auto p: m_alloc_sites.right) {
+      unsigned NodeId = findDSNodeForValue (p.second);
+      o << "  [Alloc site Id " << p.first << " DSNode Id "; 
+      if (NodeId == 0) o << " NOT FOUND";
+      else o << NodeId;
+      o <<  "]  " << *p.second  << "\n";
+    }
+  }
 
   bool DSACount::runOnModule (llvm::Module &M) {  
 
@@ -247,16 +273,13 @@ namespace seahorn
       unsigned id = 1;
       for (auto n: nodes_vector) n->m_id = id++;
 
-      write(errs ());
+      // Identify allocation sites and assign an identifier to each one
 
-      // allocation sites
-      errs () << " ========== Allocation sites  ==========\n";
       const TargetLibraryInfo * tli = &getAnalysis<TargetLibraryInfo>();
       for (auto &F: M) {
         for (inst_iterator i = inst_begin(F), e = inst_end(F); i != e; ++i) {      
           Instruction* I = &*i;
           /// XXX: Global variables???
-          
           if (AllocaInst* AI = dyn_cast<AllocaInst> (I)) {
             if (AI->getAllocatedType ()->isIntegerTy ())
               continue;
@@ -264,23 +287,23 @@ namespace seahorn
               continue;
             if (OnlyArrayAlloca && !AI->getAllocatedType ()->isArrayTy ())
               continue;
-
+            
             unsigned int alloc_site_id; 
-            if (add_alloc_site (AI, alloc_site_id)) {
-              errs () << "  [Alloc site Id " << alloc_site_id << "]  "
-                      << *I  << "\n";
-            }
+            add_alloc_site (AI, alloc_site_id);
           } else if (isAllocationFn (I, tli, true)) {
             Value *V = I;
             V = V->stripPointerCasts();
             unsigned int alloc_site_id; 
-            if (add_alloc_site (V, alloc_site_id)) {
-              errs () << "  [Alloc site Id " << alloc_site_id << "]  "
-                      << *V  << "\n";
-            }
+            add_alloc_site (V, alloc_site_id);
           }
         }
       }
+
+      if (DSACountPrint) {
+        write_dsa_info (errs ());
+        write_alloca_info (errs ());
+      }
+
       return false;
   }
 

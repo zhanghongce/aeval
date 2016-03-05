@@ -13,6 +13,8 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
 
+#include "avy/AvyDebug.h"
+
 // Notes: ABC1 is obsolete and very incomplete. We keep it for
 // comparison with the other encodings.
 
@@ -417,38 +419,50 @@ namespace seahorn {
 
     // Whether a pointer should be tracked based on DSA (if available)
     bool ShouldBeTrackedPtr (Value* ptr, Function& F, DSACount* m_dsa_count) {
-     #ifndef HAVE_DSA
-     return true;
-     #else
+      if (!ptr->getType()->isPointerTy ())
+        return false;
 
-     DSGraph* dsg = nullptr;
-     DSGraph* gDsg = nullptr;
-     if (m_dsa_count->getDSA ()) {
-       dsg = m_dsa_count->getDSA ()->getDSGraph (F);
-       gDsg = m_dsa_count->getDSA ()->getGlobalsGraph (); 
-     }
+      #ifndef HAVE_DSA
+      return true;
+      #else
 
-     if (!dsg || !gDsg) return true; // DSA graph not found. this should not happen
-
-     const DSNode* n = dsg->getNodeForValue (ptr).getNode ();
-     if (!n) n = gDsg->getNodeForValue (ptr).getNode ();
-     if (!n) return true; // DSA node not found. This should not happen.
-     
-     if (!m_dsa_count->isAccessed (n))
-       return false;
-     else {
-       if (TrackedDSNode > 0) {
-         return (m_dsa_count->getId (n) == TrackedDSNode);      
-       } else if (TrackedAllocSite > 0) {
-         const Value* v = m_dsa_count->getAllocValue (TrackedAllocSite);
-         if (!v) return false;
-           
-         const DSNode* alloc_n = dsg->getNodeForValue (v).getNode ();
-         return (alloc_n == n);
-       } 
-     }
-     return true;
-     #endif 
+      DSGraph* dsg = nullptr;
+      DSGraph* gDsg = nullptr;
+      if (m_dsa_count->getDSA ()) {
+        dsg = m_dsa_count->getDSA ()->getDSGraph (F);
+        gDsg = m_dsa_count->getDSA ()->getGlobalsGraph (); 
+      }
+      
+      if (!dsg || !gDsg) {
+        errs () << "Warning: DSA graph not found. This should not happen.\n";
+        return true; 
+      }
+      
+      const DSNode* n = dsg->getNodeForValue (ptr).getNode ();
+      if (!n) n = gDsg->getNodeForValue (ptr).getNode ();
+      if (!n)  {
+        errs () << "Warning: DSA node not found. This should not happen.\n";
+        return true; 
+      }
+      
+      if (!m_dsa_count->isAccessed (n))
+        return false;
+      else {
+        if (TrackedDSNode > 0) {
+          return (m_dsa_count->getDSNodeID (n) == TrackedDSNode);      
+        } else if (TrackedAllocSite > 0) {
+          const Value* v = m_dsa_count->getAllocValue (TrackedAllocSite);
+          if (!v) {
+            errs () << "Warning: not value found for allocation site\n";
+            return false;
+          }
+          
+          const DSNode* alloc_n = dsg->getNodeForValue (v).getNode ();
+          return (alloc_n == n);
+        } 
+      }
+      return true;
+      #endif 
    }
 
    inline void update_cg(CallGraph* cg, Function* caller, CallInst* callee) {
@@ -2099,13 +2113,10 @@ namespace seahorn {
           Value *vtracked_base, *vtracked_ptr, *vtracked_size, *vtracked_offset;
           vtracked_base = vtracked_ptr = vtracked_size = vtracked_offset = nullptr;
           for (Argument& A : F->args()) {
-            
+
             if (!abc::ShouldBeTrackedPtr (&A, *F, m_dsa_count))
               continue;
-            
-            if (!A.getType ()->isPointerTy ())
-              continue;
-            
+                        
             uint64_t n = A.getDereferenceableBytes ();
             if (n == 0)
               continue;
@@ -2484,14 +2495,14 @@ namespace seahorn {
       // allocation of global variables
       for (auto &GV: M.globals ()) {
 
+        if (!abc::ShouldBeTrackedPtr (&GV, *main, dsa_count))
+          continue;
+
         if (abc::IsTrivialCheck (dl, tli, &GV))
           continue;
 
         // IsTrivialCheck should have skipped them but just in case.
         if (GV.getName ().startswith ("sea_"))
-          continue;
-
-        if (!abc::ShouldBeTrackedPtr (&GV, *main, dsa_count))
           continue;
 
         uint64_t size;

@@ -22,7 +22,6 @@ namespace seahorn
     virtual bool runOnModule (llvm::Module &M) { return false;}
     virtual void getAnalysisUsage (llvm::AnalysisUsage &AU) const{ AU.setPreservesAll ();}
     virtual const char* getPassName () const {return "DSACount";}
-    void write (llvm::raw_ostream& o);
   };
 }
 #else
@@ -105,17 +104,29 @@ namespace seahorn
       }
     }
 
+    unsigned int findDSNodeForValue (const Value* v);
+
+    void write_dsa_info (llvm::raw_ostream& o);
+
+    void write_alloca_info (llvm::raw_ostream& o);
+
   public:
  
     static char ID;
     
     DSACount ();
 
-    unsigned getId (const DSNode* n) const;
-    bool isAccessed (const DSNode* n) const;
     DataStructures * getDSA () { return m_dsa; }
 
-    const unsigned int getAllocSiteID (const Value* V) {
+    // whether the DSNode is ever read or written
+    bool isAccessed (const DSNode* n) const;
+
+    // return unique numeric identifier for DSNode
+    unsigned int getDSNodeID (const DSNode* n) const;
+
+    // return unique numeric identifier for Value if it is an
+    // allocation site, otherwise 0.
+    const unsigned int getAllocSiteID (const Value* V) const {
       auto it = m_alloc_sites.left.find (V);
       if (it != m_alloc_sites.left.end ())
         return it->second;
@@ -123,7 +134,8 @@ namespace seahorn
         return 0; // not found
     }
 
-    const Value* getAllocValue (unsigned int alloc_site_id) {
+    // the inverse of getAllocSiteID
+    const Value* getAllocValue (unsigned int alloc_site_id) const {
       auto it = m_alloc_sites.right.find (alloc_site_id);
       if (it != m_alloc_sites.right.end ())
         return it->second;
@@ -134,7 +146,6 @@ namespace seahorn
     virtual bool runOnModule (llvm::Module &M);
     virtual void getAnalysisUsage (llvm::AnalysisUsage &AU) const;
     virtual const char* getPassName () const {return "DSACount";}
-    void write (llvm::raw_ostream& o);
 
   };
 }
