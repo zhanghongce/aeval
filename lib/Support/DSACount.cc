@@ -17,6 +17,12 @@ DSNodeThreshold("dsa-count-threshold",
     llvm::cl::init (0),
     llvm::cl::Hidden);
 
+static llvm::cl::opt<bool>
+OnlyArrayAlloca("print-only-array-alloca",
+    llvm::cl::desc ("Only show Alloca sites of array type"),
+    llvm::cl::init (false),
+    llvm::cl::Hidden);
+
 #ifdef HAVE_DSA
 #include "boost/range.hpp"
 #include "avy/AvyDebug.h"
@@ -249,16 +255,20 @@ namespace seahorn
       for (auto &F: M) {
         for (inst_iterator i = inst_begin(F), e = inst_end(F); i != e; ++i) {      
           Instruction* I = &*i;
+          /// XXX: Global variables???
+          
           if (AllocaInst* AI = dyn_cast<AllocaInst> (I)) {
-            /// XXX: Global variables???
+            if (AI->getAllocatedType ()->isIntegerTy ())
+              continue;
+            if (AI->getAllocatedType ()->isFloatingPointTy ())
+              continue;
+            if (OnlyArrayAlloca && !AI->getAllocatedType ()->isArrayTy ())
+              continue;
 
-            if (AI->getAllocatedType ()->isArrayTy ()) { 
-              unsigned int alloc_site_id; 
-              if (add_alloc_site (AI, alloc_site_id)) {
-                // consider only allocation of arrays
-                errs () << "  [Alloc site Id " << alloc_site_id << "]  "
-                        << *I  << "\n";
-              }
+            unsigned int alloc_site_id; 
+            if (add_alloc_site (AI, alloc_site_id)) {
+              errs () << "  [Alloc site Id " << alloc_site_id << "]  "
+                      << *I  << "\n";
             }
           } else if (isAllocationFn (I, tli, true)) {
             Value *V = I;
