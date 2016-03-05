@@ -212,22 +212,22 @@ namespace seahorn {
     }
 
     inline unsigned storageSize (const DataLayout* dl, const llvm::Type *t) {
-      // getTypeStorageSize does not include aligment padding.
-      return dl->getTypeAllocSize (const_cast<Type*> (t));
+      return dl->getTypeStoreSize (const_cast<Type*> (t));
     }
 
     inline unsigned storageSize (const DataLayout* dl, llvm::Type *t) {
-     // getTypeStorageSize does not include aligment padding.
-      return dl->getTypeAllocSize (t);
+      return dl->getTypeStoreSize (t);
     }
 
     inline int getAddrSize (const DataLayout* dl, const Instruction& I) {
       int size = -1; 
       if (const StoreInst * SI = dyn_cast<const StoreInst> (&I)) {
-        size = (int) storageSize (dl, SI->getPointerOperand ()->getType ());
+        if (PointerType* PTy = dyn_cast<PointerType> (SI->getPointerOperand ()->getType ()))
+          size = (int) storageSize (dl, PTy->getElementType());
       }
       else if (const LoadInst * LI = dyn_cast<const LoadInst> (&I)) {
-        size = (int) storageSize (dl, LI->getPointerOperand ()->getType ());
+        if (PointerType* PTy = dyn_cast<PointerType> (LI->getPointerOperand ()->getType ()))
+          size = (int) storageSize (dl, PTy->getElementType());
       }
       return size; 
     }
