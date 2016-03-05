@@ -117,7 +117,7 @@ void sea_abc_alloc (int8_t *base, sea_size_t size)
     sea_active = true;
   }
   else
-    assume (sea_base + sea_size < base);
+    assume ((sea_ptrdiff_t)(sea_base + sea_size) < (sea_ptrdiff_t)base);
 }
 
 void sea_abc_init(void)

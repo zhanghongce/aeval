@@ -49,6 +49,11 @@ TrackBaseOnly("abc-track-base-only",
         llvm::cl::desc ("Track only accesses to base pointers"),
         llvm::cl::init (false));
 
+static llvm::cl::opt<bool>
+PositiveAddresses("abc-assume-pos-addr",
+                  llvm::cl::desc ("Add assumption that addresses are positive"),
+                  llvm::cl::init (false));
+
 namespace seahorn {
 
    // common helpers to all ABC encodings
@@ -2680,12 +2685,15 @@ namespace seahorn {
                 abc::update_cg (cg, &F, 
                                 B.CreateCall2 (abc_alloc, vptr,
                                     B.CreateZExtOrTrunc (size, intPtrTy)));
-                // Trick llvm to make sure that all pointer addresses
-                // are positive
-                abc::update_cg (cg, &F, 
-                                B.CreateCall (assumeFn,
-                                    B.CreateICmpSGT(vptr, abc::createNullCst (ctx))));
-
+                if (PositiveAddresses)
+                {
+                  // Trick llvm to make sure that all pointer addresses
+                  // are positive
+                  abc::update_cg
+                    (cg, &F, 
+                     B.CreateCall (assumeFn,
+                                   B.CreateICmpSGT(vptr, abc::createNullCst (ctx))));
+                }
               } else {
                 errs () << "Warning: missing allocation site: " << *I << "\n";
               }
@@ -2700,11 +2708,17 @@ namespace seahorn {
                 abc::update_cg (cg, &F,
                                 B.CreateCall2 (abc_alloc, vI,
                                     B.CreateZExtOrTrunc (size,intPtrTy)));
-                // Trick llvm to make sure that all pointer addresses
-                // are positive
-                abc::update_cg (cg, &F, 
-                                B.CreateCall (assumeFn, 
-                                    B.CreateICmpSGT(vI, abc::createNullCst (ctx))));
+                if (PositiveAddresses)
+                {
+                  // Trick llvm to make sure that all pointer addresses
+                  // are positive
+                  abc::update_cg
+                    (cg, &F, 
+                     B.CreateCall (assumeFn, 
+                                   B.CreateICmpSGT(vI,
+                                                   abc::createNullCst (ctx))));
+                }
+                
               } else {
                 errs () << "Warning: missing allocation site " << *I << "\n";
               }
