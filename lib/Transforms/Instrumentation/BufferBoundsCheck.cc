@@ -2238,6 +2238,11 @@ namespace seahorn {
       for (Function &F : M) {
         if (F.isDeclaration ()) continue;
                 
+        // -- skip special functions
+        if (F.getName ().startswith ("seahorn.") ||
+            F.getName ().startswith ("shadow.") ||
+            F.getName ().startswith ("verifier.")) continue;
+
         for (inst_iterator i = inst_begin(F), e = inst_end(F); i != e; ++i)  {
           Instruction *I = &*i;
           
@@ -2509,6 +2514,12 @@ namespace seahorn {
         if (std::find (sea_funcs.begin (), 
                        sea_funcs.end (), &F) != sea_funcs.end ())  
           continue;
+
+        // -- skip special functions
+        if (F.getName ().startswith ("seahorn.") ||
+            F.getName ().startswith ("shadow.") ||
+            F.getName ().startswith ("verifier.")) continue;
+        
 
         for (inst_iterator i = inst_begin(F), e = inst_end(F); i != e; ++i)  {
           Instruction *I = &*i;
