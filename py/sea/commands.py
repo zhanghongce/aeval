@@ -171,6 +171,9 @@ class Seapp(sea.LimitedCmd):
         ap.add_argument ('--strip-extern', help='Replace external function calls ' + 
                          'by non-determinism', default=False, action='store_true',
                          dest='strip_external')
+        ap.add_argument ('--slice-function', dest='slice_function',
+                         help='Slice program keeping this function',
+                         default=None, metavar='FUNCTION')
         add_in_out_args (ap)
         _add_S_arg (ap)
         return ap
@@ -210,8 +213,12 @@ class Seapp(sea.LimitedCmd):
         if args.ioc: argv.append ('--overflow-check')
         if args.ndc: argv.append ('--null-check')
 
-        if args.entry is not None:
+        if args.entry is not None and args.slice_function is None:
             argv.append ('--entry-point={0}'.format (args.entry))
+
+        if args.slice_function is not None:
+            argv.append ('--slice-function-names={0}'.format (args.slice_function))
+            argv.append ('--entry-point={0}'.format (args.slice_function))
 
         if args.kill_vaarg:
             argv.append('--kill-vaarg=true')
