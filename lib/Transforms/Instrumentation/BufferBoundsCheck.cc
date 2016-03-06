@@ -441,7 +441,8 @@ namespace seahorn {
       const DSNode* n = dsg->getNodeForValue (ptr).getNode ();
       if (!n) n = gDsg->getNodeForValue (ptr).getNode ();
       if (!n)  {
-        errs () << "Warning: DSA node not found. This should not happen.\n";
+        errs () << "Warning: DSA node not found " 
+                << *(ptr->stripPointerCasts ()) << "\n";
         return true; 
       }
       
@@ -2684,7 +2685,7 @@ namespace seahorn {
             if (abc::ShouldBeTrackedPtr (ptr, F, dsa_count))  {
               mem_accesses++;
 
-              if (abc::IsTrivialCheck (dl, tli, MTI->getDest())) {
+              if (abc::IsTrivialCheck (dl, tli, MSI->getDest())) {
                 trivial_checks++;
               } else {
                 checks_added++; 
