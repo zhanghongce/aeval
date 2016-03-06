@@ -51,44 +51,49 @@ class Clang(sea.LimitedCmd):
         return _remap_file_name (in_file, ext, work_dir)
 
     def run (self, args, extra):
-        # do nothing on .bc and .ll files
-        if _bc_or_ll_file (args.in_files[0]): return 0
-        
-        cmd_name = which (['clang-mp-3.6', 'clang-3.6', 'clang',
-                                'clang-mp-3.5', 'clang-mp-3.4'])
-        if cmd_name is None: raise IOError ('clang not found')
-        self.clangCmd = sea.ExtCmd (cmd_name)
-
-        argv = ['-c', '-emit-llvm', '-D__SEAHORN__', '-fgnu89-inline']
-
-        argv.extend (filter (lambda s : s.startswith ('-D'), extra))
-
-        if args.llvm_asm: argv.append ('-S')
-        argv.append ('-m{0}'.format (args.machine))
-
-        if args.debug_info: argv.append ('-g')
-        
-        
+        out_files = []
         if len(args.in_files) == 1:
-            out_files = [args.out_file]
+            out_files.append (args.out_file)
         else:
             # create private workdir
             workdir = createWorkDir ()
-            out_files = [_remap_file_name (f, '.bc', workdir)
-                         for f in args.in_files]
-        
-        for in_file, out_file in zip(args.in_files, out_files):
-            if out_file is not None:
-                argv.extend (['-o', out_file])
+            for f in args.in_files:
+                if _bc_or_ll_file (f):
+                    out_files.append(f)
+                else:
+                    out_files.append(_remap_file_name (f, '.bc', workdir))
 
-            # clone argv
-            argv1 = list ()
-            argv1.extend (argv)
+        assert (len(out_files) > 0)
+
+        if not all (_bc_or_ll_file (f) for f  in args.in_files): 
+            cmd_name = which (['clang-mp-3.6', 'clang-3.6', 'clang',
+                               'clang-mp-3.5', 'clang-mp-3.4'])
+            if cmd_name is None: raise IOError ('clang not found')
+            self.clangCmd = sea.ExtCmd (cmd_name)
+
+            argv = ['-c', '-emit-llvm', '-D__SEAHORN__', '-fgnu89-inline']
+
+            argv.extend (filter (lambda s : s.startswith ('-D'), extra))
+
+            if args.llvm_asm: argv.append ('-S')
+            argv.append ('-m{0}'.format (args.machine))
+
+            if args.debug_info: argv.append ('-g')
+        
+            for in_file, out_file in zip(args.in_files, out_files):
+                if _bc_or_ll_file (in_file): continue
+
+                if out_file is not None:
+                    argv.extend (['-o', out_file])
+
+                # clone argv
+                argv1 = list ()
+                argv1.extend (argv)
             
-            argv1.append (in_file)
-            ret = self.clangCmd.run (args, argv1)
-            if ret <> 0: return ret
-            
+                argv1.append (in_file)
+                ret = self.clangCmd.run (args, argv1)
+                if ret <> 0: return ret
+        
         if len(out_files) > 1:
             # link
             cmd_name = which (['llvm-link-mp-3.6', 'llvm-link-3.6', 'llvm-link'])
