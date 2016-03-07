@@ -2568,15 +2568,15 @@ namespace seahorn {
                 }
  
                 checks_added++;
-                B.SetInsertPoint (LI);
-
                 if (GetElementPtrInst* gep = dyn_cast<GetElementPtrInst> (ptr)) {
+                  B.SetInsertPoint (abc::getNextInst (gep));
                   Value* offset = instrumented_gep [gep];
-                  if (!offset) 
-                    offset = abc::computeGepOffset (dl, B, gep);                  
+                  if (!offset) offset = abc::computeGepOffset (dl, B, gep);
                   offset = abc::createAdd (B, dl, 
                                            offset, 
                                            abc::createIntCst (intPtrTy, addr_sz));
+
+                  B.SetInsertPoint (LI);
                   Value* base = gep->getPointerOperand ();
                   uint64_t size; //bytes
                   if (abc::getObjectSize(base, size, dl, tli, true)) {
@@ -2591,6 +2591,7 @@ namespace seahorn {
                          B.CreateCall2 (abc_assert_valid_ptr, base, offset));
                   }
                 } else { // ptr is not a gep
+                  B.SetInsertPoint (LI);
                   Value* base = B.CreateBitOrPointerCast (ptr, abc::geti8PtrTy (ctx));
                   abc::update_cg (cg, &F, 
                        B.CreateCall2 (abc_assert_valid_ptr,
@@ -2622,12 +2623,14 @@ namespace seahorn {
                 B.SetInsertPoint (SI);
 
                 if (GetElementPtrInst* gep = dyn_cast<GetElementPtrInst> (ptr)) {
+                  B.SetInsertPoint (abc::getNextInst (gep));
                   Value* offset = instrumented_gep [gep];
-                  if (!offset) 
-                    offset = abc::computeGepOffset (dl, B, gep);                  
+                  if (!offset) offset = abc::computeGepOffset (dl, B, gep);
                   offset = abc::createAdd (B, dl, 
                                            offset, 
                                            abc::createIntCst (intPtrTy, addr_sz));
+
+                  B.SetInsertPoint (SI);
                   Value* base = gep->getPointerOperand ();
                   uint64_t size; //bytes
                   if (abc::getObjectSize(base, size, dl, tli, true)) {
@@ -2642,6 +2645,7 @@ namespace seahorn {
                          B.CreateCall2 (abc_assert_valid_ptr, base, offset));
                   }
                 } else { // ptr is not a gep
+                  B.SetInsertPoint (SI);
                   Value* base = B.CreateBitOrPointerCast (ptr, abc::geti8PtrTy (ctx));
                   abc::update_cg (cg, &F, 
                        B.CreateCall2 (abc_assert_valid_ptr, 
@@ -2656,12 +2660,14 @@ namespace seahorn {
             if (abc::ShouldBeTrackedPtr (MTI->getDest (), F, dsa_count) || 
                 abc::ShouldBeTrackedPtr (MTI->getSource (),F, dsa_count)) {
               mem_accesses+=2;
+              B.SetInsertPoint (MTI); 
 
               Value *len = nullptr;
               if (abc::IsTrivialCheck (dl, tli, MTI->getDest())) {
                 trivial_checks++;
               } else {
-                checks_added++; 
+                checks_added++;
+
                 Value *base = B.CreateBitOrPointerCast (MTI->getDest(), abc::geti8PtrTy(ctx));
                 len = B.CreateZExtOrTrunc (MTI->getLength(), intPtrTy);
                 abc::update_cg (cg, &F, 
@@ -2672,6 +2678,7 @@ namespace seahorn {
                 trivial_checks++;
               } else {
                 checks_added++; 
+
                 if (!len) len = B.CreateZExtOrTrunc (MTI->getLength(), intPtrTy);
                 Value *base = B.CreateBitOrPointerCast (MTI->getSource(), abc::geti8PtrTy(ctx));
                 abc::update_cg (cg, &F, 
@@ -2682,6 +2689,7 @@ namespace seahorn {
               untracked_dsa_checks+=2; 
           } else if (MemSetInst *MSI = dyn_cast<MemSetInst>(I)) {
             Value* ptr = MSI->getDest ();
+            B.SetInsertPoint (MSI); 
             if (abc::ShouldBeTrackedPtr (ptr, F, dsa_count))  {
               mem_accesses++;
 
@@ -2751,10 +2759,10 @@ namespace seahorn {
       } 
       
       errs () << " ========== ABC  ==========\n";
-      errs () << "-- " << mem_accesses - trivial_checks
-              << " Total number of non-trivial memory reads/writes\n"
-              << "-- " << trivial_checks
+      errs () << "-- " << trivial_checks
               << " Total number of trivially safe memory reads/writes (not instrumented)\n"
+              << "-- " << mem_accesses - trivial_checks
+              << " Total number of non-trivial memory reads/writes\n"
               << "-- " << checks_added 
               << " Total number of added buffer overflow/underflow checks\n"; 
       
