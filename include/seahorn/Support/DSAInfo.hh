@@ -1,5 +1,5 @@
-#ifndef __DSA_COUNT__HH__
-#define __DSA_COUNT__HH__
+#ifndef __DSA_INFO__HH__
+#define __DSA_INFO__HH__
 
 #include "llvm/Pass.h"
 #include "llvm/IR/Module.h"
@@ -14,14 +14,14 @@ namespace seahorn
 {
   using namespace llvm;
 
-  class DSACount : public llvm::ModulePass {
+  class DSAInfo : public llvm::ModulePass {
    public:
     static char ID;
-    DSACount () : llvm::ModulePass (ID){ }
+    DSAInfo () : llvm::ModulePass (ID){ }
 
     virtual bool runOnModule (llvm::Module &M) { return false;}
     virtual void getAnalysisUsage (llvm::AnalysisUsage &AU) const{ AU.setPreservesAll ();}
-    virtual const char* getPassName () const {return "DSACount";}
+    virtual const char* getPassName () const {return "DSAInfo";}
   };
 }
 #else
@@ -37,7 +37,7 @@ namespace seahorn
 {
   using namespace llvm;
   
-  class DSACount : public llvm::ModulePass
+  class DSAInfo : public llvm::ModulePass
   {
     typedef std::set <const Value*> ValueSet;
 
@@ -114,7 +114,7 @@ namespace seahorn
  
     static char ID;
     
-    DSACount ();
+    DSAInfo ();
 
     DataStructures * getDSA () { return m_dsa; }
 
@@ -145,7 +145,7 @@ namespace seahorn
 
     virtual bool runOnModule (llvm::Module &M);
     virtual void getAnalysisUsage (llvm::AnalysisUsage &AU) const;
-    virtual const char* getPassName () const {return "DSACount";}
+    virtual const char* getPassName () const {return "DSAInfo";}
 
   };
 }

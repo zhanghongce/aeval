@@ -20,7 +20,7 @@
 
 #include "seahorn/config.h"
 #include "seahorn/Analysis/CanAccessMemory.hh"
-#include "seahorn/Support/DSACount.hh"
+#include "seahorn/Support/DSAInfo.hh"
 
 
 #include "boost/unordered_set.hpp"
@@ -198,7 +198,7 @@ namespace seahorn
       const TargetLibraryInfo* m_tli;
       IRBuilder<> m_B;
       CallGraph* m_cg;
-      DSACount* m_dsa_count;
+      DSAInfo* m_dsa_info;
       ObjectSizeOffsetEvaluator m_eval;
 
       Type *m_IntPtrTy;    
@@ -261,7 +261,7 @@ namespace seahorn
       
       ABCInst (Module& M, 
                const DataLayout* dl, const TargetLibraryInfo* tli,
-               IRBuilder<> B, CallGraph* cg, DSACount* dsa_count,
+               IRBuilder<> B, CallGraph* cg, DSAInfo* dsa_info,
                Function* errorFn, Function* nondetFn,
                Function* nondetPtrFn, Function* assumeFn);
       

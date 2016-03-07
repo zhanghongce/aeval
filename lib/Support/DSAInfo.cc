@@ -1,4 +1,4 @@
-#include "seahorn/Support/DSACount.hh"
+#include "seahorn/Support/DSAInfo.hh"
 
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/InstIterator.h"
@@ -7,19 +7,19 @@
 #include "llvm/Support/CommandLine.h"
 
 static llvm::cl::opt<unsigned int>
-DSNodeThreshold("dsa-count-threshold",
-    llvm::cl::desc ("Only show DSA node stats if its memory accesses exceed the threshold"),
+DSInfoThreshold("dsa-info-threshold",
+    llvm::cl::desc ("Only show DSA node info if its memory accesses exceed the threshold"),
     llvm::cl::init (0),
     llvm::cl::Hidden);
 
 static llvm::cl::opt<bool>
-OnlyArrayAlloca("dsa-count-only-array-alloca",
+DSInfoOnlyArrayAlloca("dsa-info-only-array-alloca",
     llvm::cl::desc ("Only show alloca sites of array type"),
     llvm::cl::init (false),
     llvm::cl::Hidden);
 
 static llvm::cl::opt<bool>
-DSACountPrint("dsa-count-print-stats",
+DSAInfoPrint("dsa-info-print-stats",
     llvm::cl::desc ("Print all DSA and allocation information"),
     llvm::cl::init (false),
     llvm::cl::Hidden);
@@ -33,27 +33,27 @@ namespace seahorn
   using namespace llvm;
 
   
-  DSACount::DSACount () : 
+  DSAInfo::DSAInfo () : 
       llvm::ModulePass (ID), 
       m_dsa (nullptr), m_gDsg (nullptr) { }
 
     
-  unsigned int DSACount::getDSNodeID (const DSNode* n) const {
+  unsigned int DSAInfo::getDSNodeID (const DSNode* n) const {
      auto it = m_nodes.find (n);
      assert (it != m_nodes.end ());
      return it->second.m_id;
   }
 
-  bool DSACount::isAccessed (const DSNode* n) const {
+  bool DSAInfo::isAccessed (const DSNode* n) const {
      auto it = m_nodes.find (n);
      assert (it != m_nodes.end ());
      return it->second.m_accesses > 0;
   }
 
   // Print statistics 
-  void DSACount::write_dsa_info (llvm::raw_ostream& o) {
+  void DSAInfo::write_dsa_info (llvm::raw_ostream& o) {
 
-      o << " ========== DSACount  ==========\n";
+      o << " ========== DSAInfo  ==========\n";
     
       std::vector<WrapperDSNode> nodes_vector;
       nodes_vector.reserve (m_nodes.size ());
@@ -71,7 +71,7 @@ namespace seahorn
                  });
       
       for (auto &n: nodes_vector) {
-        if (n.m_accesses > DSNodeThreshold) {
+        if (n.m_accesses > DSInfoThreshold) {
           if (!has_referrers (n.m_n)) continue;
           const ValueSet& referrers = get_referrers (n.m_n);
           o << "  [Node Id " << n.m_id  << "] ";
@@ -101,7 +101,7 @@ namespace seahorn
   }        
 
   // horribly expensive
-  unsigned int DSACount::findDSNodeForValue (const Value* v) {
+  unsigned int DSAInfo::findDSNodeForValue (const Value* v) {
     for (auto &p: m_referrers_map) {
       for (auto &s: p.second) {
         if (v == s) {
@@ -112,7 +112,7 @@ namespace seahorn
     return 0;
   }
 
-  void DSACount::write_alloca_info (llvm::raw_ostream& o) {
+  void DSAInfo::write_alloca_info (llvm::raw_ostream& o) {
     o << " ========== Allocation sites  ==========\n";
     o << m_alloc_sites.right.size ()  
       << " Total number of allocation sites\n";     
@@ -126,7 +126,7 @@ namespace seahorn
     }
   }
 
-  bool DSACount::runOnModule (llvm::Module &M) {  
+  bool DSAInfo::runOnModule (llvm::Module &M) {  
 
       m_dsa = &getAnalysis<SteensgaardDataStructures> ();
       m_gDsg = m_dsa->getGlobalsGraph ();
@@ -285,7 +285,7 @@ namespace seahorn
               continue;
             if (AI->getAllocatedType ()->isFloatingPointTy ())
               continue;
-            if (OnlyArrayAlloca && !AI->getAllocatedType ()->isArrayTy ())
+            if (DSInfoOnlyArrayAlloca && !AI->getAllocatedType ()->isArrayTy ())
               continue;
             
             unsigned int alloc_site_id; 
@@ -299,7 +299,7 @@ namespace seahorn
         }
       }
 
-      if (DSACountPrint) {
+      if (DSAInfoPrint) {
         write_dsa_info (errs ());
         write_alloca_info (errs ());
       }
@@ -307,7 +307,7 @@ namespace seahorn
       return false;
   }
 
-  void DSACount::getAnalysisUsage (llvm::AnalysisUsage &AU) const {
+  void DSAInfo::getAnalysisUsage (llvm::AnalysisUsage &AU) const {
     AU.setPreservesAll ();
     AU.addRequiredTransitive<llvm::SteensgaardDataStructures> ();
     AU.addRequired<llvm::TargetLibraryInfo>();
@@ -318,12 +318,12 @@ namespace seahorn
 
 namespace seahorn{
  
-  char DSACount::ID = 0;
+  char DSAInfo::ID = 0;
 
-  llvm::Pass* createDSACountPass () { return new DSACount (); }
+  llvm::Pass* createDSAInfoPass () { return new DSAInfo (); }
 
-  static llvm::RegisterPass<DSACount> 
-  X ("dsa-count", "Count DSA Nodes");
+  static llvm::RegisterPass<DSAInfo> 
+  X ("dsa-info", "Show information about DSA Nodes");
 
 } 
 

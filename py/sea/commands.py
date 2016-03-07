@@ -212,7 +212,7 @@ class Seapp(sea.LimitedCmd):
         if args.abc:
             argv.append ('--abc={id}'.format(id=args.abc))
             if args.abc_dsa or args.abc_site:
-                argv.append ('--dsa-count-print-stats')
+                argv.append ('--dsa-info-print-stats')
             argv.append ('--abc-dsa-node={n}'.format (n=args.abc_dsa))
             argv.append ('--abc-alloc-site={n}'.format (n=args.abc_site))
             if args.abc_no_under: argv.append ('--abc-disable-underflow') 
