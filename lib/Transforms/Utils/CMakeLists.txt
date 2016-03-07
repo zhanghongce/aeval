@@ -6,6 +6,7 @@ add_llvm_library(SeaTransformsUtils
   RemoveUnreachableBlocksPass.cc
   DummyMainFunction.cc
   ExternalizeAddressTakenFunctions.cc
+  ExternalizeFunctions.cc
   DevirtFunctions.cc
   Mem2Reg.cc
   SliceFunctions.cc

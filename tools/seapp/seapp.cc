@@ -32,8 +32,6 @@
 
 #include "seahorn/Transforms/Scalar/PromoteVerifierCalls.hh"
 #include "seahorn/Transforms/Utils/RemoveUnreachableBlocksPass.hh"
-#include "seahorn/Transforms/Utils/DummyMainFunction.hh"
-#include "seahorn/Transforms/Utils/SliceFunctions.hh"
 #include "seahorn/Transforms/Scalar/LowerGvInitializers.hh"
 
 #include "seahorn/Analysis/CanAccessMemory.hh"
@@ -212,11 +210,14 @@ int main(int argc, char **argv) {
   }
   if (dl) pass_manager.add (new llvm::DataLayoutPass ());
 
+  // -- Externalize some user-selected functions
+  pass_manager.add (seahorn::createExternalizeFunctionsPass ());
+
   // -- Enable function slicing
-  pass_manager.add (new seahorn::SliceFunctions ());
+  pass_manager.add (seahorn::createSliceFunctionsPass ());
 
   // -- Create a main function if we do not have one.
-  pass_manager.add (new seahorn::DummyMainFunction ());
+  pass_manager.add (seahorn::createDummyMainFunctionPass ());
  
   // -- promote verifier specific functions to special names
   pass_manager.add (new seahorn::PromoteVerifierCalls ());
