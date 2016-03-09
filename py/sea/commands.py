@@ -83,13 +83,13 @@ class Clang(sea.LimitedCmd):
             for in_file, out_file in zip(args.in_files, out_files):
                 if _bc_or_ll_file (in_file): continue
 
-                if out_file is not None:
-                    argv.extend (['-o', out_file])
-
                 # clone argv
                 argv1 = list ()
                 argv1.extend (argv)
-            
+
+                if out_file is not None:
+                    argv1.extend (['-o', out_file])
+
                 argv1.append (in_file)
                 ret = self.clangCmd.run (args, argv1)
                 if ret <> 0: return ret
