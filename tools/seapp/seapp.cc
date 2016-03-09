@@ -314,11 +314,13 @@ int main(int argc, char **argv) {
 
   if (ArrayBoundsChecks > 0)
   { 
-    pass_manager.add (new seahorn::LowerCstExprPass ());
-    pass_manager.add (new seahorn::CanAccessMemory ());
+    //pass_manager.add (new seahorn::CanAccessMemory ());
+
+    // XXX: probably this is a pass that we should always run
     pass_manager.add (seahorn::createSimplifyPointerLoopsPass ());
     switch (ArrayBoundsChecks) {
       case 1: 
+        pass_manager.add (new seahorn::LowerCstExprPass ());
         pass_manager.add (new seahorn::ABC1 ());
         // -- Turn undef into nondet (undef might be created by ABC1)
         pass_manager.add (seahorn::createNondetInitPass ());
