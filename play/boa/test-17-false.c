@@ -1,3 +1,5 @@
+extern int nd ();
+
 int main() 
 {
   int i;
@@ -6,5 +8,6 @@ int main()
   {
     a[i] = 89;
   }
-  return a[i];
+  // trick llvm so that it cannot detect overflow
+  return a[nd()>0?i:i+1];
 }

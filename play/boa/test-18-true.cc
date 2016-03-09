@@ -14,9 +14,11 @@ int main (){
     a.push_back (77);
   }
 
+  #ifndef SHORT
   for(std::vector<int>::iterator it=a.begin(), et=a.end(); it!=et; ++it){
     do_something (*it);
   }
+  #endif 
 
   return 42;
 }

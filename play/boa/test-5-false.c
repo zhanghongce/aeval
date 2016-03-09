@@ -1,4 +1,6 @@
-// SAFE
+// UNSAFE
+
+extern int nd ();
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,7 +12,8 @@ int bar(int *a, int sz)
   {
     a[i] = i;
   }
-  printf("%d\n", a[i]);
+  // trick llvm so that it cannot detect overflow
+  printf("%d\n", a[(nd () > 0 ? i-1 : i)]);
   return 42;
 }
 
