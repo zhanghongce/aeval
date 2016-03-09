@@ -10,7 +10,7 @@ static llvm::cl::opt<bool>
 ReduceFalse ("horn-reduce-constraints",
              llvm::cl::desc
              ("Reduce false constraints"),
-             llvm::cl::init (true));
+             llvm::cl::init (false));
 static llvm::cl::opt<bool>
 FlattenBody ("horn-flatten",
              llvm::cl::desc
