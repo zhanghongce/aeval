@@ -5,8 +5,14 @@
 #include "llvm/ADT/GraphTraits.h"
 #include "llvm/Support/DOTGraphTraits.h"
 #include "llvm/Support/GraphWriter.h"
+#include "llvm/Support/CommandLine.h"
 
 #include "seahorn/Support/CFGPrinter.hh"
+
+static llvm::cl::opt<bool>
+HideShadows("cfg-hide-shadows",
+            llvm::cl::desc ("Hide shadow functions and variables"),
+            llvm::cl::init (false));
 
 using namespace llvm;
 
@@ -34,7 +40,7 @@ namespace seahorn {
       std::error_code EC;
       raw_fd_ostream File(Filename, EC, sys::fs::F_Text);
 
-      FunctionWrapper FW ((const Function*)&F, &LI);
+      FunctionWrapper FW ((const Function*)&F, &LI, HideShadows);
 
       if (!EC) {
         errs() << "Writing '" << Filename << "'...";

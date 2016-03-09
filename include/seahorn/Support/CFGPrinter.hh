@@ -3,6 +3,7 @@
 
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/CFGPrinter.h"
+#include "llvm/IR/CallSite.h"
 #include "llvm/Pass.h"
 #include "llvm/ADT/GraphTraits.h"
 #include "llvm/Support/DOTGraphTraits.h"
@@ -13,8 +14,11 @@ namespace seahorn {
   struct FunctionWrapper {
     const llvm::Function* m_F; 
     const llvm::LoopInfo* m_LI;
-    FunctionWrapper (const llvm::Function* F, const llvm::LoopInfo* LI): 
-        m_F (F), m_LI(LI) { }
+    bool m_HideShadows;
+    FunctionWrapper (const llvm::Function* F, 
+                     const llvm::LoopInfo* LI,
+                     bool HideShadows = false): 
+        m_F (F), m_LI(LI), m_HideShadows (HideShadows) { }
   };
 } // end namespace 
 
@@ -66,7 +70,7 @@ namespace llvm {
     }
     
     static std::string getCompleteNodeLabel(const BasicBlock *Node,
-                                            const seahorn::FunctionWrapper *) {
+                                            const seahorn::FunctionWrapper *FW) {
       enum { MaxColumns = 80 };
       std::string Str;
       raw_string_ostream OS(Str);
@@ -76,7 +80,24 @@ namespace llvm {
         OS << ":";
       }
       
-      OS << *Node;
+      if (!FW->m_HideShadows) {
+        OS << *Node;
+      } else {
+        Node->printAsOperand(OS, false);
+        OS << ":\n";
+        for (auto const &I : *Node) {
+          if (const CallInst* CI = dyn_cast<const CallInst> (&I)) {
+            CallSite CS (const_cast<CallInst*> (CI));
+            Function* callee = CS.getCalledFunction ();
+            if (callee && 
+                (callee->getName().startswith ("seahorn.") ||
+                 callee->getName().startswith ("shadow."))) continue; 
+          } else if (isa<PHINode> (&I) && I.getName ().startswith ("shadow.")) 
+            continue;
+          OS << I << "\n";
+        }
+      }
+
       std::string OutStr = OS.str();
       if (OutStr[0] == '\n') OutStr.erase(OutStr.begin());
       
