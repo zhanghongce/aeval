@@ -137,7 +137,16 @@ class Seapp(sea.LimitedCmd):
                          dest='abc', help='Insert array bounds checks',
                          type=int, default=0, metavar='ENCODING')
         ap.add_argument ('--abc-disable-underflow', dest='abc_no_under',
-                         help='Insert only overflow bounds checks',
+                         help='Do not instrument for underflow checks',
+                         default=False, action='store_true')
+        ap.add_argument ('--abc-disable-reads', dest='abc_no_reads',
+                         help='Do not instrument memory reads',
+                         default=False, action='store_true')
+        ap.add_argument ('--abc-disable-writes', dest='abc_no_writes',
+                         help='Do not instrument memory writes',
+                         default=False, action='store_true')
+        ap.add_argument ('--abc-disable-mem-intrinsics', dest='abc_no_intrinsics',
+                         help='Do not instrument memcpy, memmove, and memset',
                          default=False, action='store_true')
         ap.add_argument ('--abc-escape-ptr', dest='abc_escape_ptr',
                          help='Keep track whether a pointer escapes',
@@ -215,7 +224,10 @@ class Seapp(sea.LimitedCmd):
                 argv.append ('--dsa-info-print-stats')
             argv.append ('--abc-dsa-node={n}'.format (n=args.abc_dsa))
             argv.append ('--abc-alloc-site={n}'.format (n=args.abc_site))
-            if args.abc_no_under: argv.append ('--abc-disable-underflow') 
+            if args.abc_no_under: argv.append ('--abc-instrument-underflow=false') 
+            if args.abc_no_reads: argv.append ('--abc-instrument-reads=false') 
+            if args.abc_no_writes: argv.append ('--abc-instrument-writes=false') 
+            if args.abc_no_intrinsics: argv.append ('--abc-instrument-mem-intrinsics=false') 
             if args.abc_escape_ptr: argv.append ('--abc-escape-ptr') 
             if args.abc_use_deref: argv.append ('--abc-use-deref') 
             if args.abc_track_base_only: argv.append ('--abc-track-base-only') 

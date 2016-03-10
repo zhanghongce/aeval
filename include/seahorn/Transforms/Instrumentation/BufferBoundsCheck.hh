@@ -222,7 +222,7 @@ namespace seahorn
       unsigned m_checks_added;   
       unsigned m_trivial_checks; 
       unsigned m_mem_accesses;
-      
+
       unsigned m_intrinsics_checks_added;
       unsigned m_gep_known_size_and_offset_checks_added;
       unsigned m_gep_known_size_checks_added;
@@ -256,7 +256,24 @@ namespace seahorn
       void doGepOffsetCheck (GetElementPtrInst* gep, uint64_t size, Instruction* insertPt);
       void doGepPtrCheck (GetElementPtrInst* gep, Instruction* insertPt);
       void doPtrCheck (Value* ptr, Value* n, Instruction* insertPt);
-      
+
+      bool globalGeneratedBySeaHorn (Value* V) {
+        return (V == m_tracked_base || V == m_tracked_ptr ||
+                V == m_tracked_offset || V == m_tracked_size || 
+                V == m_tracked_escaped_ptr);
+      }
+        
+      std::string mkBBName (const Twine& Prefix, Value* V) {
+        if (V && V->hasName ()) {
+          Twine name = Prefix + "_" + V->getName () + "_bb";
+          return name.str();
+        }
+        else  { 
+          Twine name = Prefix + "_bb"; 
+          return name.str ();
+        }
+      }
+
      public:
       
       ABCInst (Module& M, 
@@ -301,6 +318,7 @@ namespace seahorn
   */
   class ABC3 : public llvm::ModulePass
   {
+
    public:
     static char ID;
     ABC3 ():  llvm::ModulePass (ID) { }
