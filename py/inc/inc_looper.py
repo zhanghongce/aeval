@@ -52,8 +52,7 @@ def createWorkDir (dname = None, save = False):
     return workdir
 
 def getSea ():
-    seahorn = os.path.join (root, "inc_build/run/bin/sea")
-    print seahorn
+    seahorn = os.path.join (root, "../../bin/sea")
     if not isexec (seahorn):
         raise IOError ("Cannot find sea")
     return seahorn
@@ -93,7 +92,7 @@ def run (workdir, fname, finfo, num_blks):
     all_funcs = {}
     if "INC_INFO" in result_info:
 
-        print 'Generated Functions info ... '
+        print 'Functions info ...  OK'
         for info in result_info.split('\n'):
             if "INC_INFO" in info: continue
             elif "INC" in info:
@@ -103,7 +102,7 @@ def run (workdir, fname, finfo, num_blks):
         print 'Total number of functions ... ' + str(len(all_funcs))
         run_inc(all_funcs, fname, num_blks)
     else:
-        print 'No generated functions info ...'
+        print 'Functions info ... KO'
     return
 
 def run_inc(all_funcs, fname, num_blks):
@@ -113,13 +112,14 @@ def run_inc(all_funcs, fname, num_blks):
     for func,v in all_funcs.iteritems():
         if int(v['blks']) > num_blks:
             print 'Running Function ... ' + func + '| BLK ...' + v['blks']
-            info = '--slice-function=\"' + func.strip() + '"'
-            cmd = [sea_cmd, 'inc', info, '--horn-no-verif', '--step=incsmall', fname]
+            info = '--slice-function=' + func.strip()
+            cmd = [sea_cmd, 'inc', info, '--horn-no-verif', '--lower-invoke',
+                   '--devirt-functions', '--step=incsmall', '--inc_verbose', fname]
             analyzed.update({func:v})
             print cmd
-            # p = sub.Popen(cmd, shell=False, stdout=sub.PIPE, stderr=sub.STDOUT)
-            # result, _ = p.communicate()
-            # print result
+            p = sub.Popen(cmd, shell=False, stdout=sub.PIPE, stderr=sub.STDOUT)
+            result, _ = p.communicate()
+            print result
     print 'Analyzed functions ... ' + str(len(analyzed))
     return
 
