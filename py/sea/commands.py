@@ -276,9 +276,14 @@ class MixedSem(sea.LimitedCmd):
         ap.add_argument ('--no-reduce-main', dest='reduce_main',
                          help='Do not reduce main to return paths only',
                          default=True, action='store_false')
+        # some passes only after mixed semantics
         ap.add_argument ('--symbolize-constant-loop-bounds', dest='sym_bounds', 
                          help='Convert constant loop bounds into symbolic ones',
                          default=False, action='store_true')
+        ap.add_argument ('--slice-functions-after-mixed-sem', 
+                         help='Slice program keeping these functions after mixed semantics',
+                         dest='slice_functions_after_mixed', type=str)
+
         add_in_out_args (ap)
         _add_S_arg (ap)
         return ap
@@ -293,6 +298,9 @@ class MixedSem(sea.LimitedCmd):
         if not args.ms_skip: argv.append ('--horn-mixed-sem')
         if args.reduce_main: argv.append ('--ms-reduce-main')
         if args.sym_bounds: argv.append ('--horn-symbolize-loops')
+        if args.slice_functions_after_mixed:
+            for f in args.slice_functions_after_mixed.split(','):
+                argv.append ('--slice-function={0}'.format(f))
             
         if args.llvm_asm: argv.append ('-S')
         argv.extend (args.in_files)

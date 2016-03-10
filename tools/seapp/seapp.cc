@@ -213,9 +213,6 @@ int main(int argc, char **argv) {
   // -- Externalize some user-selected functions
   pass_manager.add (seahorn::createExternalizeFunctionsPass ());
 
-  // -- Enable function slicing
-  pass_manager.add (seahorn::createSliceFunctionsPass ());
-
   // -- Create a main function if we do not have one.
   pass_manager.add (seahorn::createDummyMainFunctionPass ());
  
@@ -356,6 +353,9 @@ int main(int argc, char **argv) {
     pass_manager.add (seahorn::createPromoteMallocPass ());
   }
 
+  // -- Enable function slicing
+  pass_manager.add (seahorn::createSliceFunctionsPass ());
+
   if (SymbolizeLoops) 
   {
     pass_manager.add (seahorn::createSymbolizeConstantLoopBoundsPass ());
@@ -368,8 +368,7 @@ int main(int argc, char **argv) {
     pass_manager.add (seahorn::createCutLoopsPass ());
     // pass_manager.add (new seahorn::RemoveUnreachableBlocksPass ());
   }
-  
-  
+    
   pass_manager.add (llvm::createVerifierPass());
     
   if (!OutputFilename.empty ()) 
