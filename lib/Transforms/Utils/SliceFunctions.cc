@@ -13,6 +13,13 @@
 #include <set>
 #include <vector>
 
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <sstream>
+
+using namespace std;
+
 static llvm::cl::list<std::string>
     FunctionNames("slice-function-names",
                   llvm::cl::desc("Slice program onto these functions"),
@@ -30,9 +37,10 @@ bool SliceFunctions::runOnModule(Module &M) {
   for (std::string fname : FunctionNames) {
     Function *F = M.getFunction(fname);
     if (!F) {
-      errs() << "Warning: " << fname
-             << " not found. No functions will be removed.\n";
-      printFunctionsInfo(M);
+      // errs() << "Warning: " << fname
+      //        << " not found. No functions will be removed.\n";
+      errs() << "INC_INFO";
+      printFunctionsInfo(M, fname);
       return false;
     }
     funcs.insert(F);
@@ -86,10 +94,13 @@ void SliceFunctions::getAnalysisUsage(AnalysisUsage &AU) {
   AU.addRequired<llvm::CallGraphWrapperPass>();
 }
 
-void SliceFunctions::printFunctionsInfo(Module &M) {
+void SliceFunctions::printFunctionsInfo(Module &M, string fname) {
 
   CallGraphWrapperPass *cgwp = getAnalysisIfAvailable<CallGraphWrapperPass>();
   CallGraph *CG = cgwp ? &cgwp->getCallGraph() : nullptr;
+  ofstream file_out;
+  file_out.open(fname+"_info.txt");
+  std::stringstream info;
 
   if (CG) {
     // errs () << "==== Recursive functions ==== \n";
@@ -109,9 +120,11 @@ void SliceFunctions::printFunctionsInfo(Module &M) {
 
     typedef std::pair<Function *, std::pair<unsigned, unsigned>> func_ty;
     std::vector<func_ty> funcs;
-    errs() << "=== Call graph and function information === \n";
-    errs() << "TOTAL NUM of FUNCTIONS=" << std::distance(M.begin(), M.end())
-           << "\n";
+    // errs() << "=== Call graph and function information === \n";
+    // errs() << "TOTAL NUM of FUNCTIONS=" << std::distance(M.begin(), M.end())
+    //        << "\n";
+    info << "FUNS_INFO :  \n\t{";
+    info << "\t NUM_FUNCS: " << std::to_string(std::distance(M.begin(), M.end())) << ",";
     for (auto it = scc_begin(CG); !it.isAtEnd(); ++it) {
       auto &scc = *it;
       for (CallGraphNode *cgn : scc) {
@@ -132,22 +145,38 @@ void SliceFunctions::printFunctionsInfo(Module &M) {
     for (auto &p : funcs) {
       Function *F = p.first;
       unsigned numInsts = std::distance(inst_begin(F), inst_end(F));
-      errs() << F->getName() << " --- NUM INST=" << numInsts
-             << " CALLERS=" << p.second.first << " CALLEES=" << p.second.second
-             << "\n";
+      // errs() << "\t" << F->getName() << " --- NUM INST=" << numInsts
+      //        << " CALLERS=" << p.second.first << " CALLEES=" << p.second.second
+      //        << "\n";
+      std::string fn = F->getName();
+      info << "\t" << fn << ": {INST: " + std::to_string(numInsts)
+             << ", CALLERS: " << std::to_string(p.second.first)
+             << ", CALLEES:" << std::to_string(p.second.second)
+             << "},\n";
     }
   } else {
     // errs () << "Call graph not found.\n";
-    errs() << "=== Function information === \n";
-    errs() << "TOTAL NUM of FUNCTIONS=" << std::distance(M.begin(), M.end())
-           << "\n";
+    info << "{FUNCS_INFO : \n\t{";
+    // errs() << "=== Function information === \n";
+    // errs() << "TOTAL NUM of FUNCTIONS=" << std::distance(M.begin(), M.end())
+    //        << "\n";
+    info << "\t NUM_FUNCS: " << std::to_string(std::distance(M.begin(), M.end())) << ",\n";
     for (auto &F : M) {
       unsigned numInsts = std::distance(inst_begin(&F), inst_end(&F));
-      errs() << F.getName()
-             << "--- NUM BLOCKS=" << std::distance(F.begin(), F.end())
-             << " NUM INST=" << numInsts << "\n";
+      std::string fn = F.getName();
+      errs() << "INC | " << F.getName()
+             << " | " << std::distance(F.begin(), F.end())
+             << " | " << numInsts << "\n";
+      info << "\t" << fn
+           << ":{ BLOCKS: " << std::to_string(std::distance(F.begin(), F.end()))
+           << ", INST: " << std::to_string(numInsts) + "},\n";
     }
   }
+  info << "\t}\n}";
+  std::string info_s = info.str();
+  file_out << info_s;
+  file_out.close();
+
 }
 
 char SliceFunctions::ID = 0;

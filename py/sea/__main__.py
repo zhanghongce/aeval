@@ -21,6 +21,7 @@ cmds = [sea.commands.Clang(),
         sea.commands.Clp,
         sea.commands.feCrab,
         sea.commands.seaTerm,
+        sea.commands.funcInfo,
         sea.commands.seaInc]
 
 

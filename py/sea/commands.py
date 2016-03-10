@@ -202,6 +202,7 @@ class Seapp(sea.LimitedCmd):
 
         if args.llvm_asm: argv.append ('-S')
         argv.extend (args.in_files)
+        print 'Inside seapp'
         return self.seappCmd.run (args, argv)
 
 class MixedSem(sea.LimitedCmd):
@@ -739,4 +740,5 @@ Bpf = sea.SeqCmd ('bpf', 'alias for fe|unroll|cut-loops|opt|horn --solve',
                   FrontEnd.cmds + [Unroll(), CutLoops(), Seaopt(), Seahorn(solve=True)])
 feCrab = sea.SeqCmd ('fe-crab', 'alias for fe|crab', FrontEnd.cmds + [Crab()])
 seaTerm = sea.SeqCmd ('term', 'SeaHorn Termination analysis', Smt.cmds + [SeaTerm()])
+funcInfo = sea.SeqCmd ('finfo', 'Functions info for Inconsistency analysis', [Clang(), Seapp()])
 seaInc = sea.SeqCmd ('inc', 'SeaHorn Inconsistency analysis', Smt.cmds + [SeaInc()])
