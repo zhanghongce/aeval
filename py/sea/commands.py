@@ -202,7 +202,6 @@ class Seapp(sea.LimitedCmd):
 
         if args.llvm_asm: argv.append ('-S')
         argv.extend (args.in_files)
-        print 'Inside seapp'
         return self.seappCmd.run (args, argv)
 
 class MixedSem(sea.LimitedCmd):

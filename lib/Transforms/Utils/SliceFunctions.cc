@@ -172,10 +172,10 @@ void SliceFunctions::printFunctionsInfo(Module &M, string fname) {
            << ", INST: " << std::to_string(numInsts) + "},\n";
     }
   }
-  info << "\t}\n}";
-  std::string info_s = info.str();
-  file_out << info_s;
-  file_out.close();
+  // info << "\t}\n}";
+  // std::string info_s = info.str();
+  // file_out << info_s;
+  // file_out.close();
 
 }
 

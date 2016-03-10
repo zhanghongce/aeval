@@ -100,6 +100,7 @@ def run (workdir, fname, finfo, num_blks):
                 raw = info.split('|')
                 f = {raw[1] : {'blks': raw[2], 'instr':raw[3]}}
                 all_funcs.update(f)
+        print 'Total number of functions ... ' + str(len(all_funcs))
         run_inc(all_funcs, fname, num_blks)
     else:
         print 'No generated functions info ...'
@@ -108,14 +109,18 @@ def run (workdir, fname, finfo, num_blks):
 def run_inc(all_funcs, fname, num_blks):
     sea_cmd = getSea()
     name = os.path.splitext (os.path.basename (fname))[0]
+    analyzed = {}
     for func,v in all_funcs.iteritems():
         if int(v['blks']) > num_blks:
-            print 'Running Function ... ' + func
+            print 'Running Function ... ' + func + '| BLK ...' + v['blks']
             info = '--slice-function=\"' + func.strip() + '"'
             cmd = [sea_cmd, 'inc', info, '--horn-no-verif', '--step=incsmall', fname]
-            p = sub.Popen(cmd, shell=False, stdout=sub.PIPE, stderr=sub.STDOUT)
-            result, _ = p.communicate()
-            print result
+            analyzed.update({func:v})
+            print cmd
+            # p = sub.Popen(cmd, shell=False, stdout=sub.PIPE, stderr=sub.STDOUT)
+            # result, _ = p.communicate()
+            # print result
+    print 'Analyzed functions ... ' + str(len(analyzed))
     return
 
 
