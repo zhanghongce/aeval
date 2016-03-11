@@ -186,11 +186,11 @@ class Seapp(sea.LimitedCmd):
                          'by non-determinism', default=False, action='store_true',
                          dest='strip_external')
         ap.add_argument ('--slice-functions', 
-                         help='Slice program keeping these functions',
-                         dest='slice_functions', type=str)
+                         help='Slice program onto these functions',
+                         dest='slice_funcs', type=str)
         ap.add_argument ('--externalize-functions',
                          help='Externalize these functions',
-                         dest='extern_functions', type=str)
+                         dest='extern_funcs', type=str)
         add_in_out_args (ap)
         _add_S_arg (ap)
         return ap
@@ -235,12 +235,12 @@ class Seapp(sea.LimitedCmd):
         if args.ioc: argv.append ('--overflow-check')
         if args.ndc: argv.append ('--null-check')
 
-        if args.extern_functions:
-            for f in args.extern_functions.split(','):
+        if args.extern_funcs:
+            for f in args.extern_funcs.split(','):
                 argv.append ('--externalize-function={0}'.format(f))
 
-        if args.slice_functions:
-            for f in args.slice_functions.split(','):
+        if args.slice_funcs:
+            for f in args.slice_funcs.split(','):
                 argv.append ('--slice-function={0}'.format(f))
                 
         if args.entry is not None:
@@ -280,9 +280,9 @@ class MixedSem(sea.LimitedCmd):
         ap.add_argument ('--symbolize-constant-loop-bounds', dest='sym_bounds', 
                          help='Convert constant loop bounds into symbolic ones',
                          default=False, action='store_true')
-        ap.add_argument ('--slice-functions-after-mixed-sem', 
-                         help='Slice program keeping these functions after mixed semantics',
-                         dest='slice_functions_after_mixed', type=str)
+        ap.add_argument ('--ms-slice-functions', 
+                         help='Slice program onto these functions after mixed semantics',
+                         dest='ms_slice_funcs', type=str)
 
         add_in_out_args (ap)
         _add_S_arg (ap)
@@ -298,8 +298,8 @@ class MixedSem(sea.LimitedCmd):
         if not args.ms_skip: argv.append ('--horn-mixed-sem')
         if args.reduce_main: argv.append ('--ms-reduce-main')
         if args.sym_bounds: argv.append ('--horn-symbolize-loops')
-        if args.slice_functions_after_mixed:
-            for f in args.slice_functions_after_mixed.split(','):
+        if args.ms_slice_funcs:
+            for f in args.ms_slice_funcs.split(','):
                 argv.append ('--slice-function={0}'.format(f))
             
         if args.llvm_asm: argv.append ('-S')
