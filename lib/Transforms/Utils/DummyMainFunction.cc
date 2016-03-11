@@ -13,6 +13,7 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 
+#include "avy/AvyDebug.h"
 #include "boost/format.hpp"
 
 using namespace llvm;
@@ -59,64 +60,88 @@ namespace seahorn
 
     bool runOnModule (Module &M)
     {
-      if (EntryPoint == "" || M.getFunction ("main")) 
+
+      if (M.getFunction ("main")) { 
+        LOG ("dummy-main", 
+             errs () << "DummyMainFunction: Main already exists.\n");
+
         return false;
+      }      
+
+      Function* Entry = nullptr;
+      if (EntryPoint != "")
+        Entry = M.getFunction (EntryPoint);
       
-      Function* F = M.getFunction (EntryPoint);
-      if (!F)  {
-        errs () << "DummyMainFunction: " << EntryPoint << " not found.\n";
-        errs () << M << "\n";
-        return false;
-      }
-      
+      // --- Create main
       LLVMContext &ctx = M.getContext ();
       Type* intTy = Type::getInt32Ty (ctx);
       
       ArrayRef <Type*> params;
       Function *main = Function::Create (FunctionType::get (intTy, params, false), 
-                                         GlobalValue::LinkageTypes::InternalLinkage, 
+                                         GlobalValue::LinkageTypes::ExternalLinkage, 
                                          "main", &M);
-      //main->copyAttributesFrom (F);
-      
+
       IRBuilder<> B (ctx);
       BasicBlock *BB = BasicBlock::Create (ctx, "", main);
       B.SetInsertPoint (BB, BB->begin ());
-      SmallVector<Value*, 16> Args;
-      for (auto &A : F->args ()) {
-        Constant *ndf = getNondetFn (A.getType (), M);
-        Args.push_back (B.CreateCall (ndf));
+
+      std::vector<Function*> FunctionsToCall;
+      if (Entry) {  
+        FunctionsToCall.push_back (Entry);
+      } else { 
+        // --- if no selected entry found then we call to all
+        //     non-declaration functions.
+        for (auto &F: M) {
+          if (F.getName () == "main") // avoid recursive call to main
+            continue;
+          if (F.isDeclaration ())
+            continue;
+          FunctionsToCall.push_back (&F);
+        }
       }
-      
-      B.CreateCall (F, Args);
+
+      for (auto F: FunctionsToCall) {
+        // -- create a call with non-deterministic actual parameters
+        SmallVector<Value*, 16> Args;
+        for (auto &A : F->args ()) {
+          Constant *ndf = getNondetFn (A.getType (), M);
+          Args.push_back (B.CreateCall (ndf));
+        }
+        CallInst* CI = B.CreateCall (F, Args);
+        LOG ("dummy-main",
+             errs () << "DummyMainFunction: created a call " << *CI << "\n");
+      }
+
+      // -- return of main
       // our favourite exit code
       B.CreateRet ( ConstantInt::get (intTy, 42));
+
       
-      GlobalVariable *LLVMUsed = M.getGlobalVariable("llvm.used");
-      std::vector<Constant*> MergedVars;
-      if (LLVMUsed) {
-        // Collect the existing members of llvm.used except sea
-        // functions
-        ConstantArray *Inits = cast<ConstantArray>(LLVMUsed->getInitializer());
-        for (unsigned I = 0, E = Inits->getNumOperands(); I != E; ++I) {
-          Value* V = Inits->getOperand(I)->stripPointerCasts();
-          MergedVars.push_back(Inits->getOperand(I));
-        }
-        LLVMUsed->eraseFromParent();
-      }
+      // GlobalVariable *LLVMUsed = M.getGlobalVariable("llvm.used");
+      // std::vector<Constant*> MergedVars;
+      // if (LLVMUsed) {
+      //   // Collect the existing members of llvm.used
+      //   ConstantArray *Inits = cast<ConstantArray>(LLVMUsed->getInitializer());
+      //   for (unsigned I = 0, E = Inits->getNumOperands(); I != E; ++I) {
+      //     Value* V = Inits->getOperand(I)->stripPointerCasts();
+      //     MergedVars.push_back(Inits->getOperand(I));
+      //   }
+      //   LLVMUsed->eraseFromParent();
+      // }
       
-      Type *i8PTy = Type::getInt8PtrTy(ctx);
-      // Add uses for our data
-      MergedVars.push_back (ConstantExpr::getBitCast(cast<llvm::Constant>(F), i8PTy));
-      // XXX: this shouldn't be necessary but for some reason DCE
-      // deletes main
-      MergedVars.push_back (ConstantExpr::getBitCast(cast<llvm::Constant>(main), i8PTy));
+      // Type *i8PTy = Type::getInt8PtrTy(ctx);
+      // // Add uses for our data
+      // //MergedVars.push_back (ConstantExpr::getBitCast(cast<llvm::Constant>(F), i8PTy));
+      // // XXX: this shouldn't be necessary but for some reason DCE
+      // //       does not like my main and deletes it
+      // MergedVars.push_back (ConstantExpr::getBitCast(cast<llvm::Constant>(main), i8PTy));
       
-      // Recreate llvm.used.
-      ArrayType *ATy = ArrayType::get(i8PTy, MergedVars.size());
-      LLVMUsed = new llvm::GlobalVariable(
-          M, ATy, false, llvm::GlobalValue::AppendingLinkage,
-          llvm::ConstantArray::get(ATy, MergedVars), "llvm.used");
-      LLVMUsed->setSection("llvm.metadata");
+      // // Recreate llvm.used.
+      // ArrayType *ATy = ArrayType::get(i8PTy, MergedVars.size());
+      // LLVMUsed = new llvm::GlobalVariable(
+      //     M, ATy, false, llvm::GlobalValue::AppendingLinkage,
+      //     llvm::ConstantArray::get(ATy, MergedVars), "llvm.used");
+      // LLVMUsed->setSection("llvm.metadata");
       
       return true;
     }
