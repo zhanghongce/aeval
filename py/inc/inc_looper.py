@@ -135,8 +135,9 @@ def run_inc(all_funcs, fname, num_blks):
             res = (tmp_split[0]).split('|')[2]
             cons = (tmp_split[1]).split('|')[2]
             incs = (tmp_split[2]).split('|')[2]
-            all_result += func + " , " + v['blks'] + " , " + res + " , " + cons + " , " + incs + "\n"
-            print all_result
+            new_result = func + " , " + v['blks'] + " , " + res + " , " + cons + " , " + incs + "\n"
+            all_result += new_result
+            print new_result
     f_result.write(all_result)
     f_result.close()
     print 'Analyzed functions ... ' + str(len(analyzed))
