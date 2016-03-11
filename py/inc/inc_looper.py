@@ -112,7 +112,7 @@ def run_inc(all_funcs, fname, num_blks):
     bash_script = ""
     f_script = open (fname+"_script.sh", "w")
     f_result = open (fname+"_result.txt", "w")
-    all_result = "FUNCTION, NUM_BLKS, RESULT, FEASIBLE, INFEASIBLE\n"
+    all_result = "FUNCTION, NUM_BLKS, RESULT, FEASIBLE, INFEASIBLE, ROUNDS, QUERY_TIME\n"
     for func,v in all_funcs.iteritems():
         if int(v['blks']) > num_blks:
             print 'Running Function ... ' + func + '| BLK ...' + v['blks']
@@ -135,7 +135,9 @@ def run_inc(all_funcs, fname, num_blks):
             res = (tmp_split[0]).split('|')[2]
             cons = (tmp_split[1]).split('|')[2]
             incs = (tmp_split[2]).split('|')[2]
-            new_result = func + " , " + v['blks'] + " , " + res + " , " + cons + " , " + incs + "\n"
+            rounds = (tmp_split[3]).split('|')[2]
+            query = (tmp_split[4]).split('|')[2]
+            new_result = func + " , " + v['blks'] + " , " + res + " , " + cons + " , " + incs + " , " + rounds + " , " + query + "\n"
             all_result += new_result
             print new_result
     f_result.write(all_result)
