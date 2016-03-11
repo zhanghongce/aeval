@@ -351,10 +351,13 @@ int main(int argc, char **argv) {
     pass_manager.add (new seahorn::MixedSemantics ());
     pass_manager.add (new seahorn::RemoveUnreachableBlocksPass ());
     pass_manager.add (seahorn::createPromoteMallocPass ());
+    pass_manager.add (llvm::createGlobalDCEPass ()); // kill unused internal global    
   }
 
   // -- Enable function slicing
   pass_manager.add (seahorn::createSliceFunctionsPass ());
+  // -- Create a main function if we sliced it away
+  pass_manager.add (seahorn::createDummyMainFunctionPass ());
 
   if (SymbolizeLoops) 
   {
