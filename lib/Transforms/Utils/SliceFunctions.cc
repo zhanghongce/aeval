@@ -30,9 +30,6 @@ using namespace llvm;
 
 bool SliceFunctions::runOnModule(Module &M) {
 
-  if (FunctionNames.begin() == FunctionNames.end())
-    return false;
-
   std::set<Function *> funcs;
   for (std::string fname : FunctionNames) {
     Function *F = M.getFunction(fname);
@@ -45,6 +42,10 @@ bool SliceFunctions::runOnModule(Module &M) {
     }
     funcs.insert(F);
   }
+
+  if (funcs.empty ())
+    return false;
+
   bool Change = false;
   // Delete function bodies and set external linkage
   for (Function &F : M) {
