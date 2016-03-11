@@ -36,10 +36,10 @@ class bcolors:
 
 out_message = ("""
 FUNCTION NAME = %s
-RESULT = %s
+INC_STAT|RESULT|%s
 SET OF INVARIANTS = %s
-CONSISTENT FLAGS  = %s
-INCONSISTENT FLAGS = %s
+INC_STAT|CONSISTENT_FLAGS|%s
+INC_STAT|INCONSISTENT_FLAGS|%s
 ROUNDS = %s
 QUERY TIME = %s
 """)
@@ -375,7 +375,7 @@ class JobsSpanner(object):
                         out = out_message % (function_name, "TIMEOUT", "", "", "", "", "")
                         out = bcolors.WARNING + out + bcolors.ENDC
                         if bench: print out
-                        all_results += out + "\n-----------------------\n"
+                        all_results += out + "\n------- ----------------\n"
                 pool_jobs.close()
                 pool_jobs.terminate()
                 pool_jobs.join()

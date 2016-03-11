@@ -100,7 +100,7 @@ void SliceFunctions::printFunctionsInfo(Module &M, string fname) {
   CallGraphWrapperPass *cgwp = getAnalysisIfAvailable<CallGraphWrapperPass>();
   CallGraph *CG = cgwp ? &cgwp->getCallGraph() : nullptr;
   ofstream file_out;
-  file_out.open(fname+"_info.txt");
+  // file_out.open(fname+"_info.txt");
   std::stringstream info;
 
   if (CG) {

@@ -109,17 +109,36 @@ def run_inc(all_funcs, fname, num_blks):
     sea_cmd = getSea()
     name = os.path.splitext (os.path.basename (fname))[0]
     analyzed = {}
+    bash_script = ""
+    f_script = open (fname+"_script.sh", "w")
+    f_result = open (fname+"_result.txt", "w")
+    all_result = "FUNCTION, NUM_BLKS, RESULT, FEASIBLE, INFEASIBLE\n"
     for func,v in all_funcs.iteritems():
         if int(v['blks']) > num_blks:
             print 'Running Function ... ' + func + '| BLK ...' + v['blks']
             info = '--slice-function=' + func.strip()
             cmd = [sea_cmd, 'inc', info, '--horn-no-verif', '--lower-invoke',
-                   '--devirt-functions', '--step=incsmall', '--inc_verbose', fname]
+                   '--devirt-functions', '--step=incsmall', '--inc_verbose',
+                   '--save', '--timeout=60.0', fname]
+            cmd_sc = [sea_cmd, ' inc ', info, ' --horn-no-verif ', '--lower-invoke ',
+                   '--devirt-functions ', '--step=incsmall ', '--inc_verbose ',
+                   '--save ', '--timeout=60.0 ', fname]
             analyzed.update({func:v})
-            print cmd
+            bash_script += ''.join(cmd_sc) + '\n'
+            f_script.write(bash_script)
             p = sub.Popen(cmd, shell=False, stdout=sub.PIPE, stderr=sub.STDOUT)
             result, _ = p.communicate()
-            print result
+            func_res = ""
+            for r in result.split('\n'):
+                if 'INC_STAT' in r: func_res += r + "\n"
+            tmp_split = func_res.split("\n")
+            res = (tmp_split[0]).split('|')[2]
+            cons = (tmp_split[1]).split('|')[2]
+            incs = (tmp_split[2]).split('|')[2]
+            all_result += func + " , " + v['blks'] + " , " + res + " , " + cons + " , " + incs + "\n"
+            print all_result
+    f_result.write(all_result)
+    f_result.close()
     print 'Analyzed functions ... ' + str(len(analyzed))
     return
 
