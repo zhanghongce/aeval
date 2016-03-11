@@ -36,6 +36,7 @@ def parseOpt (argv):
                        default=None)
     parser.add_option ('--finfo', dest='finfo', help='Funcs Info file', default='finfo_inc')
     parser.add_option ('--num_blks', dest='num_blks', help='Number of Basic Blocks', default=3, type=int)
+    parser.add_option ('--timeout', dest='timeout', help='Timeout per function', default=10.00, type=float)
 
     (options, args) = parser.parse_args (argv)
     return (options, args)
@@ -82,7 +83,7 @@ def getAnswer(out_file):
         return None
 
 
-def run (workdir, fname, finfo, num_blks):
+def run (workdir, fname, finfo, num_blks, timeout):
     sea_cmd = getSea()
     name = os.path.splitext (os.path.basename (fname))[0]
     info = '--slice-function=\"' + finfo + '"'
@@ -100,12 +101,12 @@ def run (workdir, fname, finfo, num_blks):
                 f = {raw[1] : {'blks': raw[2], 'instr':raw[3]}}
                 all_funcs.update(f)
         print 'Total number of functions ... ' + str(len(all_funcs))
-        run_inc(all_funcs, fname, num_blks)
+        run_inc(all_funcs, fname, num_blks, timeout)
     else:
         print 'Functions info ... KO'
     return
 
-def run_inc(all_funcs, fname, num_blks):
+def run_inc(all_funcs, fname, num_blks, timeout):
     sea_cmd = getSea()
     name = os.path.splitext (os.path.basename (fname))[0]
     analyzed = {}
@@ -117,18 +118,20 @@ def run_inc(all_funcs, fname, num_blks):
         if int(v['blks']) > num_blks:
             print 'Running Function ... ' + func + '| BLK ...' + v['blks']
             info = '--slice-function=' + func.strip()
+            my_timeout = '--timeout=' + str(timeout)
             cmd = [sea_cmd, 'inc', info, '--horn-no-verif', '--lower-invoke',
                    '--devirt-functions', '--step=incsmall', '--inc_verbose',
-                   '--save', '--timeout=60.0', fname]
+                   my_timeout, fname]
             cmd_sc = [sea_cmd, ' inc ', info, ' --horn-no-verif ', '--lower-invoke ',
                    '--devirt-functions ', '--step=incsmall ', '--inc_verbose ',
-                   '--save ', '--timeout=60.0 ', fname]
+                   my_timeout, fname]
             analyzed.update({func:v})
             bash_script += ''.join(cmd_sc) + '\n'
             f_script.write(bash_script)
             p = sub.Popen(cmd, shell=False, stdout=sub.PIPE, stderr=sub.STDOUT)
             result, _ = p.communicate()
             func_res = ""
+            print result
             for r in result.split('\n'):
                 if 'INC_STAT' in r: func_res += r + "\n"
             tmp_split = func_res.split("\n")
@@ -154,7 +157,8 @@ def main (argv):
     fname = args[1]
     finfo = opt.finfo
     num_blks = opt.num_blks
-    run(workdir, fname, finfo, num_blks)
+    timeout= opt.timeout
+    run(workdir, fname, finfo, num_blks, timeout)
     return returnvalue
 
 
