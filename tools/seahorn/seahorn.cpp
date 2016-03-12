@@ -257,7 +257,10 @@ int main(int argc, char **argv) {
   // --- verify if an undefined value can be read
   pass_manager.add (seahorn::createCanReadUndefPass ());
 
-  if (!Bmc)
+  if (!Solve) // for inc
+    pass_manager.add (seahorn::createReduceToReturnPathsPass ());
+
+  if (!Bmc) 
     pass_manager.add (new seahorn::HornifyModule ());
   if (!AsmOutputFilename.empty ()) 
   {
