@@ -114,6 +114,7 @@ def run_inc(all_funcs, fname, num_blks, timeout):
     f_script = open (fname+"_script.sh", "w")
     f_result = open (fname+"_result.txt", "w")
     all_result = "FUNCTION, NUM_BLKS, RESULT, FEASIBLE, INFEASIBLE, ROUNDS, QUERY_TIME\n"
+    f_result.write(all_result)
     for func,v in all_funcs.iteritems():
         if int(v['blks']) > num_blks:
             print 'Running Function ... ' + func + '| BLK ...' + v['blks']
@@ -131,7 +132,6 @@ def run_inc(all_funcs, fname, num_blks, timeout):
             p = sub.Popen(cmd, shell=False, stdout=sub.PIPE, stderr=sub.STDOUT)
             result, _ = p.communicate()
             func_res = ""
-            print result
             for r in result.split('\n'):
                 if 'INC_STAT' in r: func_res += r + "\n"
             tmp_split = func_res.split("\n")
@@ -143,7 +143,7 @@ def run_inc(all_funcs, fname, num_blks, timeout):
             new_result = func + " , " + v['blks'] + " , " + res + " , " + cons + " , " + incs + " , " + rounds + " , " + query + "\n"
             all_result += new_result
             print new_result
-    f_result.write(all_result)
+            f_result.write(new_result)
     f_result.close()
     print 'Analyzed functions ... ' + str(len(analyzed))
     return
