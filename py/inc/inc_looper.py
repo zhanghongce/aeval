@@ -134,12 +134,16 @@ def run_inc(all_funcs, fname, num_blks, timeout):
             func_res = ""
             for r in result.split('\n'):
                 if 'INC_STAT' in r: func_res += r + "\n"
+            res, cons, incs, rounds, query = "","","","",""
             tmp_split = func_res.split("\n")
-            res = (tmp_split[0]).split('|')[2]
-            cons = (tmp_split[1]).split('|')[2]
-            incs = (tmp_split[2]).split('|')[2]
-            rounds = (tmp_split[3]).split('|')[2]
-            query = (tmp_split[4]).split('|')[2]
+            try:
+                res = (tmp_split[0]).split('|')[2]
+                cons = (tmp_split[1]).split('|')[2]
+                incs = (tmp_split[2]).split('|')[2]
+                rounds = (tmp_split[3]).split('|')[2]
+                query = (tmp_split[4]).split('|')[2]
+            except Exception as e:
+                print 'WARNING: wrong format \n' + func_res
             new_result = func + " , " + v['blks'] + " , " + res + " , " + cons + " , " + incs + " , " + rounds + " , " + query + "\n"
             all_result += new_result
             print new_result
