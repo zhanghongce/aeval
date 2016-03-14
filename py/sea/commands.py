@@ -157,12 +157,22 @@ class Seapp(sea.LimitedCmd):
         ap.add_argument ('--abc-track-base-only', dest='abc_track_base_only',
                          help='Track only accesses to base pointers',
                          default=False, action='store_true')
+        ap.add_argument ('--abc-print-dsa-info', dest='abc_print_dsa_info',
+                         help='Print information about DSA nodes and allocation sites',
+                         default=False, action='store_true')
         ap.add_argument ('--abc-dsa-node', dest='abc_dsa', 
-                         help='Insert array bounds checks only if a pointer belongs to the DSA node',
+                         help='Instrument only pointers that belong to this DSA node',
                          type=int, default=0, metavar='ID')
         ap.add_argument ('--abc-alloc-site', dest='abc_site', 
-                         help='Insert array bounds checks only if a pointer belongs to the allocation site',
+                         help='Instrument only pointers  that belong to this allocation site',
                          type=int, default=0, metavar='ID')
+        ap.add_argument ('--abc-instrument-only-types', 
+                         help='Instrument only pointers of these user-defined types',
+                         dest='abc_only_types', type=str)
+        ap.add_argument ('--abc-instrument-except-types', 
+                         help='Do not instrument a pointer if it is not of these user-defined types',
+                         dest='abc_except_types', type=str)
+
 
         ap.add_argument ('--overflow-check', dest='ioc', help='Insert signed integer overflow checks',
                          default=False, action='store_true')
@@ -220,10 +230,15 @@ class Seapp(sea.LimitedCmd):
 
         if args.abc:
             argv.append ('--abc={id}'.format(id=args.abc))
-            if args.abc_dsa or args.abc_site:
-                argv.append ('--dsa-info-print-stats')
+            if args.abc_print_dsa_info: argv.append ('--dsa-info-print-stats')
             argv.append ('--abc-dsa-node={n}'.format (n=args.abc_dsa))
             argv.append ('--abc-alloc-site={n}'.format (n=args.abc_site))
+            if args.abc_only_types: 
+                for t in args.abc_only_types.split(','):
+                    argv.append ('--abc-instrument-only-type={0}'.format(t))
+            if args.abc_except_types: 
+                for t in args.abc_except_types.split(','):
+                    argv.append ('--abc-instrument-except-type={0}'.format (t))
             if args.abc_no_under: argv.append ('--abc-instrument-underflow=false') 
             if args.abc_no_reads: argv.append ('--abc-instrument-reads=false') 
             if args.abc_no_writes: argv.append ('--abc-instrument-writes=false') 

@@ -77,6 +77,18 @@ InstrumentMemIntrinsics("abc-instrument-mem-intrinsics",
                         llvm::cl::desc ("Instrument memcpy, memmove, and memset"),
                         llvm::cl::init (true));
 
+// Consider only user-defined types
+static llvm::cl::list<std::string>
+InstrumentOnlyType("abc-instrument-only-type",
+        llvm::cl::desc ("Only instrument pointers of this user-defined type"),
+        llvm::cl::ZeroOrMore);
+
+// Consider only user-defined types
+static llvm::cl::list<std::string>
+InstrumentExceptType("abc-instrument-except-type",
+        llvm::cl::desc ("Instrument all pointers except those from this user-defined type"),
+        llvm::cl::ZeroOrMore);
+
 namespace seahorn {
 
    // common helpers to all ABC encodings
@@ -494,12 +506,52 @@ namespace seahorn {
      }
    } 
 
+   Type* stripPointerType (Type* Ty) {
+     if (!Ty->isPointerTy ()) return Ty;
+     SequentialType * STy = cast<SequentialType> (Ty);
+     return stripPointerType (STy->getElementType());
+   }
+
+   bool isInterestingType (Type* Ty) {
+     if (InstrumentOnlyType.begin () == InstrumentOnlyType.end () &&
+         InstrumentExceptType.begin () == InstrumentExceptType.end ()) {
+       //errs () << "Instrumented type " << *Ty << "\n";
+       return true;
+     }
+     
+     Ty = stripPointerType (Ty);
+
+     if (InstrumentExceptType.begin () != InstrumentExceptType.end ()) {
+       if (!Ty->isStructTy ()) return true;
+       std::string name = Ty->getStructName().str();
+       bool res = (std::find(InstrumentExceptType.begin(),
+                             InstrumentExceptType.end(),name) != 
+                   InstrumentExceptType.end());
+       if (res) return false;  
+     }
+
+     if (InstrumentOnlyType.begin () != InstrumentOnlyType.end ()) {
+       if (!Ty->isStructTy ()) return false;
+       std::string name = Ty->getStructName().str();
+       bool res = (std::find(InstrumentOnlyType.begin(),
+                             InstrumentOnlyType.end(),name) != 
+                   InstrumentOnlyType.end());
+       if (!res) return false;
+     }
+
+     //errs () << "Instrumented type " << *Ty << "\n";
+     return true;
+   }
+
    // Check if we want (and can) handle this alloca.
    bool isInterestingAlloca(const DataLayout* DL, AllocaInst &AI) {
      if (!AI.getAllocatedType()->isSized()) return false;
 
      // alloca() may be called with 0 size, ignore it.
      Type *Ty = AI.getAllocatedType();
+
+     if (!isInterestingType (Ty)) return false;
+
      uint64_t SizeInBytes = DL->getTypeAllocSize(Ty);
      return (SizeInBytes > 0);
    }
@@ -510,12 +562,16 @@ namespace seahorn {
 
      if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
        if (!InstrumentReads) return nullptr;
+       if (!isInterestingType (LI->getPointerOperand()->getType())) return nullptr;
+
        *IsWrite = false;
        *Alignment = LI->getAlignment();
        return LI->getPointerOperand();
      }
      if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
        if (!InstrumentWrites) return nullptr;
+       if (!isInterestingType (SI->getPointerOperand()->getType())) return nullptr;
+
        *IsWrite = true;
        *Alignment = SI->getAlignment();
        return SI->getPointerOperand();
@@ -2066,8 +2122,6 @@ namespace seahorn {
     // }
 
     void ABC2::ABCInst::visit (AllocaInst *I) {
-
-      if (!abc::isInterestingAlloca (m_dl, *I)) return;
       SizeOffsetEvalType Data = m_eval.compute (I);
       if (Value* size = Data.first) 
         doAllocaSite (I, size, abc::getNextInst (I));
@@ -2292,14 +2346,18 @@ namespace seahorn {
             
             if (GetElementPtrInst* GEP  = dyn_cast<GetElementPtrInst> (I)) {
               Value *ptr = GEP->getPointerOperand ();            
-              if (abc::ShouldBeTrackedPtr (ptr, F, m_dsa_info) && abc::canEscape (GEP))
+              if (abc::isInterestingType (ptr->getType()) && 
+                  abc::ShouldBeTrackedPtr (ptr, F, m_dsa_info) && 
+                  abc::canEscape (GEP)) {
                 ToInstrument.push_back (I);
+              }
             } else if (Value *Addr = abc::isInterestingMemoryAccess(I, &IsWrite, &Aligment)) {
-              if (!TempsToInstrument.insert(Addr).second)
-                continue;  // We've seen this temp in the current BB.
-              
-              if (abc::ShouldBeTrackedPtr (Addr, F, m_dsa_info))
+              // We've seen this temp in the current BB.
+              if (!TempsToInstrument.insert(Addr).second) continue;  
+
+              if (abc::ShouldBeTrackedPtr (Addr, F, m_dsa_info)) {
                 ToInstrument.push_back (I);
+              }
               else
                 untracked_dsa_checks++; 
             } else if (MemTransferInst *MTI = dyn_cast<MemTransferInst>(I)) {
@@ -2316,15 +2374,14 @@ namespace seahorn {
                 ToInstrument.push_back (I);
               else 
                 untracked_dsa_checks++; 
-            } else {
-              
-              if (isa<AllocaInst>(I) && abc::ShouldBeTrackedPtr (I, F, m_dsa_info))
+            } else if (AllocaInst* AI = dyn_cast<AllocaInst>(I)) {
+              if (abc::isInterestingAlloca (dl, *AI) && 
+                  abc::ShouldBeTrackedPtr (I, F, m_dsa_info))
                 ToInstrument.push_back (I);
-              
+            } else {
               CallSite CS (I);
-              if (CS) {
-                if (abc::ShouldBeTrackedPtr (I, F, m_dsa_info))
-                  ToInstrument.push_back (I);
+              if (CS && abc::ShouldBeTrackedPtr (I, F, m_dsa_info)) {
+                ToInstrument.push_back (I);
                 // XXX: do we really need to do this?
                 //if (CS.getCalledFunction ()) 
                 //  TempsToInstrument.clear();
@@ -2582,20 +2639,21 @@ namespace seahorn {
             Instruction *I = &i;
             if (GetElementPtrInst* GEP  = dyn_cast<GetElementPtrInst> (I)) {
               Value *base = GEP->getPointerOperand ();            
-              if (abc::ShouldBeTrackedPtr (base, F, dsa_info) && abc::canEscape (GEP)) 
-              {
-                if (!abc::IsTrivialCheck (dl, tli, dyn_cast<Value> (I))) {
+              if (abc::ShouldBeTrackedPtr (base, F, dsa_info) && 
+                  abc::isInterestingType (base->getType()) && 
+                  abc::canEscape (GEP) && 
+                  !abc::IsTrivialCheck (dl, tli, dyn_cast<Value> (I))) {
+                
                   B.SetInsertPoint (GEP); 
                   Value* offset = abc::computeGepOffset (dl, B, GEP);                  
                   instrumented_gep [GEP] = offset;
                   Value* base8Ptr = B.CreateBitOrPointerCast (base, abc::geti8PtrTy (ctx));
                   abc::update_cg (cg,&F,B.CreateCall2 (abc_log_ptr, base8Ptr, offset));  
                 }
-              }
             } else if (Value *ptr = abc::isInterestingMemoryAccess(I, &IsWrite, &Aligment)) {
               
-              if (!TempsToInstrument.insert(ptr).second)
-                continue;  // We've seen this temp in the current BB.
+              // We've seen this temp in the current BB.
+              if (!TempsToInstrument.insert(ptr).second) continue;  
 
               if (ptr->getName ().startswith ("sea_")) continue;
               if (abc::ShouldBeTrackedPtr (ptr, F, dsa_info)) { 
