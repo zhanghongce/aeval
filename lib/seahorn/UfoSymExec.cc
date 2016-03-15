@@ -993,7 +993,8 @@ namespace seahorn
     
   Expr UfoSmallSymExec::symb (const Value &I)
   {
-    assert (!isa<UndefValue>(&I));
+    if (isa<UndefValue> (&I)) return Expr(0);
+    // assert (!isa<UndefValue>(&I));
 
     // -- basic blocks are mapped to Bool constants
     if (const BasicBlock *bb = dyn_cast<const BasicBlock> (&I))
@@ -1074,6 +1075,8 @@ namespace seahorn
   bool UfoSmallSymExec::isTracked (const Value &v) 
   {
     const Value* scalar;
+
+    if (isa<UndefValue> (v)) return false;
     
     // -- shadow values represent memory regions
     // -- only track them when memory is tracked
