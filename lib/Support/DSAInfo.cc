@@ -6,23 +6,28 @@
 #include "llvm/Analysis/MemoryBuiltins.h"
 #include "llvm/Support/CommandLine.h"
 
-static llvm::cl::opt<unsigned int>
-DSInfoThreshold("dsa-info-threshold",
-    llvm::cl::desc ("Only show DSA node info if its memory accesses exceed the threshold"),
-    llvm::cl::init (0),
-    llvm::cl::Hidden);
+// // static llvm::cl::opt<unsigned int>
+// DSInfoThreshold("dsa-info-threshold",
+//     llvm::cl::desc ("Only show DSA node info if its memory accesses exceed the threshold"),
+//     llvm::cl::init (0),
+//     llvm::cl::Hidden);
 
-static llvm::cl::opt<bool>
-DSInfoOnlyArrayAlloca("dsa-info-only-array-alloca",
-    llvm::cl::desc ("Only show alloca sites of array type"),
-    llvm::cl::init (false),
-    llvm::cl::Hidden);
+// static llvm::cl::opt<bool>
+// DSInfoOnlyArrayAlloca("dsa-info-only-array-alloca",
+//     llvm::cl::desc ("Only show alloca sites of array type"),
+//     llvm::cl::init (false),
+//     llvm::cl::Hidden);
 
 static llvm::cl::opt<bool>
 DSAInfoPrint("dsa-info-print-stats",
     llvm::cl::desc ("Print all DSA and allocation information"),
     llvm::cl::init (false),
     llvm::cl::Hidden);
+
+// static llvm::cl::list<std::string> 
+// DSAOnlyPrint("dsa-dot-only", 
+//              llvm::cl::desc("Print only DSA graph of this function"),
+//              llvm::cl::ZeroOrMore);
 
 #ifdef HAVE_DSA
 #include "boost/range.hpp"
@@ -65,38 +70,66 @@ namespace seahorn
       o << nodes_vector.size ()  
         << " Total number of read/written DS nodes\n";     
 
+      unsigned int total_accesses = 0;
+      for (auto &n: nodes_vector) 
+        total_accesses += n.m_accesses;
+
+      o << total_accesses
+        << " Total number of DS node reads and writes\n";     
+
+      //  Print a summary
+      unsigned int sum_size = 5;
+      o << "Summary of the " << sum_size  << " most accessed DS nodes\n";
+      std::vector<WrapperDSNode> tmp_nodes_vector (nodes_vector);
+      std::sort (tmp_nodes_vector.begin (), tmp_nodes_vector.end (),
+                 [](WrapperDSNode n1, WrapperDSNode n2){
+                   return (n1.m_accesses > n2.m_accesses);
+                 });
+      if (total_accesses > 0) {
+        for (auto &n: tmp_nodes_vector) {
+          if (sum_size <= 0) break;
+          sum_size--;
+          o << "  [Node Id " << n.m_id  << "] " 
+            << (int) (n.m_accesses * 100 / total_accesses) 
+            << "% of total memory accesses\n" ;
+        }
+        o << "  ...\n";
+      }
+
+      if (!DSAInfoPrint) return;
+
+      o << "Detailed information about all DS nodes\n";
+      // Print detailed information about each DSA node
       std::sort (nodes_vector.begin (), nodes_vector.end (),
                  [](WrapperDSNode n1, WrapperDSNode n2){
                    return (n1.m_id < n2.m_id);
                  });
       
       for (auto &n: nodes_vector) {
-        if (n.m_accesses > DSInfoThreshold) {
-          if (!has_referrers (n.m_n)) continue;
-          const ValueSet& referrers = get_referrers (n.m_n);
-          o << "  [Node Id " << n.m_id  << "] ";
-
-          if (n.m_rep_name != "") {
-            if (n.m_n->getUniqueScalar ()) {
+        if (!has_referrers (n.m_n)) continue;
+        const ValueSet& referrers = get_referrers (n.m_n);
+        o << "  [Node Id " << n.m_id  << "] ";
+        
+        if (n.m_rep_name != "") {
+          if (n.m_n->getUniqueScalar ()) {
               o << " singleton={" << n.m_rep_name << "}";
-            } else {
+          } else {
               o << " non-singleton={" << n.m_rep_name << ",...}";
-            }
           }
-
-          o << "  with " << n.m_accesses << " memory accesses \n";
-
-          LOG("dsa-count", /*n.m_n->dump ();*/ 
-              o << "\tReferrers={";
-              for (auto const& r : referrers) {
-                if (r->hasName ())
-                  o << r->getName ();
-                else 
-                  o << *r; 
-                o << ";";
-              }
-              o << "}\n";);
         }
+        
+        o << "  with " << n.m_accesses << " memory accesses \n";
+        
+        LOG("dsa-count", /*n.m_n->dump ();*/ 
+            o << "\tReferrers={";
+            for (auto const& r : referrers) {
+              if (r->hasName ())
+                o << r->getName ();
+              else 
+                o << *r; 
+              o << ";";
+            }
+            o << "}\n";);
       }
   }        
 
@@ -117,6 +150,8 @@ namespace seahorn
     o << m_alloc_sites.right.size ()  
       << " Total number of allocation sites\n";     
     
+    if (!DSAInfoPrint) return;
+
     for (auto p: m_alloc_sites.right) {
       unsigned NodeId = findDSNodeForValue (p.second);
       o << "  [Alloc site Id " << p.first << " DSNode Id "; 
@@ -148,7 +183,7 @@ namespace seahorn
 
         DSGraph* dsg = m_dsa->getDSGraph (F);
         if (!dsg) continue;
-        
+
         DSScalarMap &SM = dsg->getScalarMap ();
         for (auto const &kv : boost::make_iterator_range (SM.begin (), 
                                                           SM.end ())){
@@ -285,8 +320,8 @@ namespace seahorn
               continue;
             if (AI->getAllocatedType ()->isFloatingPointTy ())
               continue;
-            if (DSInfoOnlyArrayAlloca && !AI->getAllocatedType ()->isArrayTy ())
-              continue;
+            //if (DSInfoOnlyArrayAlloca && !AI->getAllocatedType ()->isArrayTy ())
+            //  continue;
             
             unsigned int alloc_site_id; 
             add_alloc_site (AI, alloc_site_id);
@@ -299,11 +334,21 @@ namespace seahorn
         }
       }
 
-      if (DSAInfoPrint) {
-        write_dsa_info (errs ());
-        write_alloca_info (errs ());
-      }
+      // Dot printing of the DSA graphs
+      // for (auto&F : M) {
+      //   DSGraph* dsg = m_dsa->getDSGraph (F);
+      //   if (!dsg) continue;
 
+      //   if (std::find (DSAOnlyPrint.begin (), DSAOnlyPrint.end (),
+      //                  F.getName().str()) != DSAOnlyPrint.end ())
+      //     dsg->writeGraphToFile (errs () , F.getName ().str());
+        
+      //   //errs () << F.getName () << " DSGraph size=" << dsg->getGraphSize() << "\n";
+      // }
+
+      write_dsa_info (errs ());
+      write_alloca_info (errs ());
+      
       return false;
   }
 
