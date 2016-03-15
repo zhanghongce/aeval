@@ -131,11 +131,17 @@ class Seapp(sea.LimitedCmd):
         ap = super (Seapp, self).mk_arg_parser (ap)
         ap.add_argument ('--inline', dest='inline', help='Inline all functions',
                          default=False, action='store_true')
-        ap.add_argument ('--entry', dest='entry', help='Entry point if main does not exist',
-                         default=None, metavar='FUNCTION')
+        ap.add_argument ('--inline-alloc-only', dest='inline_alloc', 
+                         help='Inline only functions that (re)allocate memory',
+                         default=False, action='store_true')
+        ap.add_argument ('--inline-alloc-levels', dest='inline_alloc_levels', 
+                         help='Inline up to N callers',
+                         type=int, default=1, metavar='N')
+        ap.add_argument ('--entry', dest='entry', help='Make entry point if main does not exist',
+                         default=None, metavar='str')
         ap.add_argument ('--abc', 
-                         dest='abc', help='Insert array bounds checks',
-                         type=int, default=0, metavar='ENCODING')
+                         dest='abc', help='Insert array bounds checks using encoding N',
+                         type=int, default=0, metavar='N')
         ap.add_argument ('--abc-disable-underflow', dest='abc_no_under',
                          help='Do not instrument for underflow checks',
                          default=False, action='store_true')
@@ -161,22 +167,22 @@ class Seapp(sea.LimitedCmd):
                          help='Print information about DSA nodes and allocation sites',
                          default=False, action='store_true')
         ap.add_argument ('--abc-dsa-node', dest='abc_dsa', 
-                         help='Instrument only pointers that belong to this DSA node',
-                         type=int, default=0, metavar='ID')
+                         help='Instrument only pointers that belong to this DSA node N',
+                         type=int, default=0, metavar='N')
         ap.add_argument ('--abc-alloc-site', dest='abc_site', 
-                         help='Instrument only pointers  that belong to this allocation site',
-                         type=int, default=0, metavar='ID')
+                         help='Instrument only pointers  that belong to this allocation site N',
+                         type=int, default=0, metavar='N')
         ap.add_argument ('--abc-instrument-only-types', 
                          help='Instrument only pointers of these user-defined types',
-                         dest='abc_only_types', type=str)
+                         dest='abc_only_types', type=str,metavar='str,...')
         ap.add_argument ('--abc-instrument-except-types', 
                          help='Do not instrument a pointer if it is not of these user-defined types',
-                         dest='abc_except_types', type=str)
+                         dest='abc_except_types', type=str,metavar='str,...')
 
 
-        ap.add_argument ('--overflow-check', dest='ioc', help='Insert signed integer overflow checks',
+        ap.add_argument ('--overflow-check', dest='ioc', help='Insert signed integer overflow checks (OBSOLETE)',
                          default=False, action='store_true')
-        ap.add_argument ('--null-check', dest='ndc', help='Insert null dereference checks',
+        ap.add_argument ('--null-check', dest='ndc', help='Insert null dereference checks (OBSOLETE)',
                          default=False, action='store_true')
         ap.add_argument ('--externalize-addr-taken-functions',
                          help='Externalize uses of address-taken functions',
@@ -197,10 +203,10 @@ class Seapp(sea.LimitedCmd):
                          dest='strip_external')
         ap.add_argument ('--slice-functions', 
                          help='Slice program onto these functions',
-                         dest='slice_funcs', type=str)
+                         dest='slice_funcs', type=str, metavar='str,...')
         ap.add_argument ('--externalize-functions',
                          help='Externalize these functions',
-                         dest='extern_funcs', type=str)
+                         dest='extern_funcs', type=str, metavar='str,...')
         add_in_out_args (ap)
         _add_S_arg (ap)
         return ap
@@ -213,6 +219,9 @@ class Seapp(sea.LimitedCmd):
         argv = list()
         if args.out_file is not None: argv.extend (['-o', args.out_file])
         if args.inline: argv.append ('--horn-inline-all')
+        elif args.inline_alloc: 
+            argv.append ('--horn-inline-alloc-only')
+            argv.append ('--horn-inline-alloc-levels={n}'.format(n=args.inline_alloc_levels))
 
         if args.strip_external:
             argv.append ('--strip-extern=true')

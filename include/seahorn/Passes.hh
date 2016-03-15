@@ -26,6 +26,7 @@ DM-0002198
 namespace seahorn
 {
   llvm::Pass* createMarkInternalInlinePass ();
+  llvm::Pass* createMarkInternalAllocationInlinePass ();
   llvm::Pass* createNondetInitPass ();
   llvm::Pass* createDeadNondetElimPass ();
   llvm::Pass* createDummyExitBlockPass ();

@@ -74,6 +74,11 @@ InlineAll ("horn-inline-all", llvm::cl::desc ("Inline all functions"),
            llvm::cl::init (false));
 
 static llvm::cl::opt<bool>
+InlineAllocFn ("horn-inline-alloc-only", 
+               llvm::cl::desc ("Inline only functions that (re)allocate memory"),
+               llvm::cl::init (false));
+
+static llvm::cl::opt<bool>
 CutLoops ("horn-cut-loops", llvm::cl::desc ("Cut all natural loops"),
            llvm::cl::init (false));
 
@@ -294,9 +299,13 @@ int main(int argc, char **argv) {
   // lower arithmetic with overflow intrinsics
   pass_manager.add(seahorn::createLowerArithWithOverflowIntrinsicsPass ());
   
-  if (InlineAll)
+  if (InlineAll || InlineAllocFn)
   {
-    pass_manager.add (seahorn::createMarkInternalInlinePass ());
+    if (InlineAll)
+      pass_manager.add (seahorn::createMarkInternalInlinePass ());
+    else if (InlineAllocFn)
+      pass_manager.add (seahorn::createMarkInternalAllocationInlinePass ());
+
     pass_manager.add (llvm::createAlwaysInlinerPass ());
     pass_manager.add (llvm::createGlobalDCEPass ()); // kill unused internal global
     pass_manager.add (seahorn::createPromoteMallocPass ());
