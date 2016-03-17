@@ -41,6 +41,7 @@ namespace seahorn
   {
     typedef std::set <const Value*> ValueSet;
 
+   public:
     struct WrapperDSNode {
       const DSNode* m_n;
       unsigned m_id;
@@ -54,6 +55,8 @@ namespace seahorn
          return m_n == o.m_n;
       }
     };
+
+   private:
 
     DataStructures *m_dsa;
     DSGraph* m_gDsg;
@@ -106,9 +109,9 @@ namespace seahorn
 
     unsigned int findDSNodeForValue (const Value* v);
 
-    void write_dsa_info (llvm::raw_ostream& o);
+    void WriteDSInfo (llvm::raw_ostream& o);
 
-    void write_alloca_info (llvm::raw_ostream& o);
+    void WriteAllocaInfo (llvm::raw_ostream& o);
 
   public:
  

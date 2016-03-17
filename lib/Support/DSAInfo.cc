@@ -1,22 +1,5 @@
 #include "seahorn/Support/DSAInfo.hh"
-
-#include "llvm/IR/IntrinsicInst.h"
-#include "llvm/IR/InstIterator.h"
-#include "llvm/Target/TargetLibraryInfo.h"
-#include "llvm/Analysis/MemoryBuiltins.h"
 #include "llvm/Support/CommandLine.h"
-
-// // static llvm::cl::opt<unsigned int>
-// DSInfoThreshold("dsa-info-threshold",
-//     llvm::cl::desc ("Only show DSA node info if its memory accesses exceed the threshold"),
-//     llvm::cl::init (0),
-//     llvm::cl::Hidden);
-
-// static llvm::cl::opt<bool>
-// DSInfoOnlyArrayAlloca("dsa-info-only-array-alloca",
-//     llvm::cl::desc ("Only show alloca sites of array type"),
-//     llvm::cl::init (false),
-//     llvm::cl::Hidden);
 
 static llvm::cl::opt<bool>
 DSAInfoPrint("dsa-info-print-stats",
@@ -24,12 +7,12 @@ DSAInfoPrint("dsa-info-print-stats",
     llvm::cl::init (false),
     llvm::cl::Hidden);
 
-// static llvm::cl::list<std::string> 
-// DSAOnlyPrint("dsa-dot-only", 
-//              llvm::cl::desc("Print only DSA graph of this function"),
-//              llvm::cl::ZeroOrMore);
-
 #ifdef HAVE_DSA
+#include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/InstIterator.h"
+#include "llvm/Target/TargetLibraryInfo.h"
+#include "llvm/Analysis/MemoryBuiltins.h"
+
 #include "boost/range.hpp"
 #include "avy/AvyDebug.h"
 
@@ -37,7 +20,30 @@ namespace seahorn
 {
   using namespace llvm;
 
-  
+  inline bool IsStaticallyKnown (const DataLayout* dl, 
+                                 const TargetLibraryInfo* tli,
+                                 const Value* V) {
+    uint64_t Size;
+    if (getObjectSize (V, Size, dl, tli, true))
+      return (Size > 0);
+    
+    return false; 
+  }
+   
+  inline void countAccesses (const DataLayout* dl,
+                             const TargetLibraryInfo* tli,
+                             DSGraph* dsg, DSGraph* gDsg,
+                             DenseMap<const DSNode*, DSAInfo::WrapperDSNode>& nodes,
+                             Value* V) {    
+    const DSNode* n = dsg->getNodeForValue (V).getNode ();
+    if (!n) n = gDsg->getNodeForValue (V).getNode ();
+    if (!n) return;
+
+    auto It = nodes.find (n);
+    if (It != nodes.end () && !IsStaticallyKnown (dl, tli, V))
+      It->second.m_accesses++;
+  }        
+
   DSAInfo::DSAInfo () : 
       llvm::ModulePass (ID), 
       m_dsa (nullptr), m_gDsg (nullptr) { }
@@ -56,7 +62,7 @@ namespace seahorn
   }
 
   // Print statistics 
-  void DSAInfo::write_dsa_info (llvm::raw_ostream& o) {
+  void DSAInfo::WriteDSInfo (llvm::raw_ostream& o) {
 
       o << " ========== DSAInfo  ==========\n";
     
@@ -66,20 +72,25 @@ namespace seahorn
         if (kv.second.m_accesses > 0)
           nodes_vector.push_back (kv.second); 
       }
-      
+
+      //o << m_nodes.size () 
+      //  << " Total number of DS nodes.\n";     
+
+      // -- Some DSNodes are never read or written because after they
+      //    are created they are only passed to external calls.
       o << nodes_vector.size ()  
-        << " Total number of read/written DS nodes\n";     
+        << " Total number of accessed (read/written) DS nodes.\n";     
 
       unsigned int total_accesses = 0;
       for (auto &n: nodes_vector) 
         total_accesses += n.m_accesses;
 
       o << total_accesses
-        << " Total number of DS node reads and writes\n";     
+        << " Total number of accessed DS nodes.\n";     
 
       //  Print a summary
       unsigned int sum_size = 5;
-      o << "Summary of the " << sum_size  << " most accessed DS nodes\n";
+      o << "Summary of the " << sum_size  << " most accessed DS nodes:\n";
       std::vector<WrapperDSNode> tmp_nodes_vector (nodes_vector);
       std::sort (tmp_nodes_vector.begin (), tmp_nodes_vector.end (),
                  [](WrapperDSNode n1, WrapperDSNode n2){
@@ -120,44 +131,56 @@ namespace seahorn
         
         o << "  with " << n.m_accesses << " memory accesses \n";
         
-        LOG("dsa-count", /*n.m_n->dump ();*/ 
-            o << "\tReferrers={";
+        LOG("dsa-info", /*n.m_n->dump ();*/ 
+            o << "=== Referrers \n";
             for (auto const& r : referrers) {
               if (r->hasName ())
                 o << r->getName ();
               else 
                 o << *r; 
-              o << ";";
-            }
-            o << "}\n";);
+              o << "\n";
+            });
       }
   }        
 
-  // horribly expensive
   unsigned int DSAInfo::findDSNodeForValue (const Value* v) {
     for (auto &p: m_referrers_map) {
-      for (auto &s: p.second) {
-        if (v == s) {
-          return getDSNodeID (p.first);
-        }
-      }
+      const ValueSet& referrers = p.second;
+      if (referrers.count (v) > 0)
+        return getDSNodeID (p.first);
     }
     return 0;
   }
 
-  void DSAInfo::write_alloca_info (llvm::raw_ostream& o) {
+  void DSAInfo::WriteAllocaInfo (llvm::raw_ostream& o) {
     o << " ========== Allocation sites  ==========\n";
-    o << m_alloc_sites.right.size ()  
-      << " Total number of allocation sites\n";     
+
+    // -- total number of allocations in the program
+    // o << m_alloc_sites.right.size ()  
+    //   << " Total number of allocation sites.\n";     
+
+    unsigned actual_alloc_sites = 0;
+    for (auto p: m_alloc_sites.right) {
+      if (findDSNodeForValue (p.second) == 0) continue;
+      actual_alloc_sites++;
+    }      
+
+    // -- total number of allocations that belong to a DSNode that is
+    //    ever read or written. Some DSNodes are never read or written
+    //    because after they are created they are only passed to
+    //    external calls.
+    o << actual_alloc_sites
+      << " Total number of allocation sites from an accessed DSNode.\n";     
     
     if (!DSAInfoPrint) return;
 
     for (auto p: m_alloc_sites.right) {
       unsigned NodeId = findDSNodeForValue (p.second);
-      o << "  [Alloc site Id " << p.first << " DSNode Id "; 
-      if (NodeId == 0) o << " NOT FOUND";
-      else o << NodeId;
-      o <<  "]  " << *p.second  << "\n";
+      // if not DSNode found then the alloca belongs to a DSNode to
+      // which nobody reads/write from/to.
+      if (NodeId == 0) continue;
+      o << "  [Alloc site Id " << p.first << " DSNode Id " << NodeId <<  "]  "
+        << *p.second  << "\n";
     }
   }
 
@@ -171,8 +194,7 @@ namespace seahorn
       for (const Value*v : boost::make_iterator_range (SM.global_begin (), 
                                                        SM.global_end ())){
         const DSNodeHandle lN = SM[v];
-        const DSNode* n = lN.getNode ();
-        if (n) {
+        if (const DSNode* n = lN.getNode ()) {
           add_node (n);
           insert_referrers_map  (n, v);
         }
@@ -188,15 +210,18 @@ namespace seahorn
         for (auto const &kv : boost::make_iterator_range (SM.begin (), 
                                                           SM.end ())){
           const Value* v = kv.first;
-          const DSNode* n = kv.second.getNode ();
-          if (n) {
+          DSNodeHandle lN = kv.second;
+          if (const DSNode* n = lN.getNode ()) {
             add_node (n);
             insert_referrers_map  (n, v);
           }
         }     
       }
 
-      // Count number of accesses to each DSNode
+      const TargetLibraryInfo * tli = &getAnalysis<TargetLibraryInfo>();
+      const DataLayout* dl = &getAnalysis<DataLayoutPass>().getDataLayout ();
+
+      // Count number of reads and writes to each DSNode
       for (Function &F : M) {
         if (F.isDeclaration ()) continue;
 
@@ -207,51 +232,19 @@ namespace seahorn
         for (inst_iterator i = inst_begin(F), e = inst_end(F); i != e; ++i)  {
           Instruction *I = &*i;
           if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
-            Value* ptr = LI->getPointerOperand ();
-            const DSNode* n = dsg->getNodeForValue (ptr).getNode ();
-            if (!n) n = gDsg->getNodeForValue (ptr).getNode ();
-            if (n) {
-              auto it = m_nodes.find (n);
-              if (it != m_nodes.end ())
-                it->second.m_accesses++;
-            }            
-          }
-          else if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
-            Value* ptr = SI->getPointerOperand ();
-            const DSNode* n = dsg->getNodeForValue (ptr).getNode ();
-            if (!n) n = gDsg->getNodeForValue (ptr).getNode ();
-            if (n) {
-              auto it = m_nodes.find (n);
-              if (it != m_nodes.end ())
-                it->second.m_accesses++;
-            }            
-          }
-          else if (MemTransferInst *MTI = dyn_cast<MemTransferInst>(I)) {
-            Value* ptr = MTI->getDest ();
-            // Assume both dest and src should be in the same alias class
-            // so we just check for one.
-            const DSNode* n = dsg->getNodeForValue (ptr).getNode ();
-            if (!n) n = gDsg->getNodeForValue (ptr).getNode ();
-            if (n) {
-              auto it = m_nodes.find (n);
-              if (it != m_nodes.end ())
-                it->second.m_accesses+=2;
-            }            
+            countAccesses (dl, tli, dsg, gDsg, m_nodes, LI->getPointerOperand ());
+          } else if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
+            countAccesses (dl, tli, dsg, gDsg, m_nodes, SI->getPointerOperand ());
+          } else if (MemTransferInst *MTI = dyn_cast<MemTransferInst>(I)) {
+            countAccesses (dl, tli, dsg, gDsg, m_nodes, MTI->getDest ());
+            countAccesses (dl, tli, dsg, gDsg, m_nodes, MTI->getSource ());
           } else if (MemSetInst *MSI = dyn_cast<MemSetInst>(I)) {
-            Value* ptr = MSI->getDest ();
-            const DSNode* n = dsg->getNodeForValue (ptr).getNode ();
-            if (!n) n = gDsg->getNodeForValue (ptr).getNode ();
-            if (n) {
-              auto it = m_nodes.find (n);
-              if (it != m_nodes.end ())
-                it->second.m_accesses++;
-            }            
+            countAccesses (dl, tli, dsg, gDsg, m_nodes, MSI->getDest ());
           }   
         }
       }
 
-      // figure out deterministically a representative name for each
-      // DSNode
+      // figure out deterministically a representative name for each DSNode
       for (auto &p: m_nodes) {
         WrapperDSNode& n = p.second;
         if (!has_referrers (n.m_n) || n.m_accesses == 0) continue;
@@ -308,9 +301,7 @@ namespace seahorn
       unsigned id = 1;
       for (auto n: nodes_vector) n->m_id = id++;
 
-      // Identify allocation sites and assign an identifier to each one
-
-      const TargetLibraryInfo * tli = &getAnalysis<TargetLibraryInfo>();
+      // Identify allocation sites and assign a numeric id to each one
       for (auto &F: M) {
         for (inst_iterator i = inst_begin(F), e = inst_end(F); i != e; ++i) {      
           Instruction* I = &*i;
@@ -320,9 +311,6 @@ namespace seahorn
               continue;
             if (AI->getAllocatedType ()->isFloatingPointTy ())
               continue;
-            //if (DSInfoOnlyArrayAlloca && !AI->getAllocatedType ()->isArrayTy ())
-            //  continue;
-            
             unsigned int alloc_site_id; 
             add_alloc_site (AI, alloc_site_id);
           } else if (isAllocationFn (I, tli, true)) {
@@ -334,20 +322,8 @@ namespace seahorn
         }
       }
 
-      // Dot printing of the DSA graphs
-      // for (auto&F : M) {
-      //   DSGraph* dsg = m_dsa->getDSGraph (F);
-      //   if (!dsg) continue;
-
-      //   if (std::find (DSAOnlyPrint.begin (), DSAOnlyPrint.end (),
-      //                  F.getName().str()) != DSAOnlyPrint.end ())
-      //     dsg->writeGraphToFile (errs () , F.getName ().str());
-        
-      //   //errs () << F.getName () << " DSGraph size=" << dsg->getGraphSize() << "\n";
-      // }
-
-      write_dsa_info (errs ());
-      write_alloca_info (errs ());
+      WriteDSInfo (errs ());
+      WriteAllocaInfo (errs ());
       
       return false;
   }
@@ -355,6 +331,7 @@ namespace seahorn
   void DSAInfo::getAnalysisUsage (llvm::AnalysisUsage &AU) const {
     AU.setPreservesAll ();
     AU.addRequiredTransitive<llvm::SteensgaardDataStructures> ();
+    AU.addRequired<llvm::DataLayoutPass>();
     AU.addRequired<llvm::TargetLibraryInfo>();
   }
 
