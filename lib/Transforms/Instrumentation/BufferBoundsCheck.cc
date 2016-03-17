@@ -280,7 +280,8 @@ namespace seahorn {
         // static check
         if (Size == 0) {
          // XXX: this is not true anymore if dereferenceable attribute is used
-         errs () << "ArrayBoundsCheck: definite unsafe access to " << *Ptr << "\n";
+         errs () << "ArrayBoundsCheck: possible unsafe access to " << *Ptr << "\n";
+         return false; // we mark as a non-trivial check.
         }
         return true;
       } 
