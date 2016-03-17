@@ -131,12 +131,15 @@ class Seapp(sea.LimitedCmd):
         ap = super (Seapp, self).mk_arg_parser (ap)
         ap.add_argument ('--inline', dest='inline', help='Inline all functions',
                          default=False, action='store_true')
-        ap.add_argument ('--inline-alloc-only', dest='inline_alloc', 
-                         help='Inline only functions that (re)allocate memory',
+        ap.add_argument ('--inline-only',
+                         help='Inline only these functions',
+                         dest='inline_only', type=str, metavar='str,...')
+        ap.add_argument ('--inline-allocators', dest='inline_alloc', 
+                         help='Inline functions that (de)allocate memory',
                          default=False, action='store_true')
-        ap.add_argument ('--inline-alloc-levels', dest='inline_alloc_levels', 
-                         help='Inline up to N callers',
-                         type=int, default=1, metavar='N')
+        ap.add_argument ('--inline-constructors', dest='inline_const', 
+                         help='Inline C++ constructors/destructors',
+                         default=False, action='store_true')
         ap.add_argument ('--entry', dest='entry', help='Make entry point if main does not exist',
                          default=None, metavar='str')
         ap.add_argument ('--abc', 
@@ -188,6 +191,9 @@ class Seapp(sea.LimitedCmd):
                          help='Externalize uses of address-taken functions',
                          dest='enable_ext_funcs', default=False,
                          action='store_true')
+        ap.add_argument ('--externalize-functions',
+                         help='Externalize these functions',
+                         dest='extern_funcs', type=str, metavar='str,...')
         ap.add_argument ('--lower-invoke',
                          help='Lower invoke instructions',
                          dest='lower_invoke', default=False,
@@ -204,9 +210,6 @@ class Seapp(sea.LimitedCmd):
         ap.add_argument ('--slice-functions', 
                          help='Slice program onto these functions',
                          dest='slice_funcs', type=str, metavar='str,...')
-        ap.add_argument ('--externalize-functions',
-                         help='Externalize these functions',
-                         dest='extern_funcs', type=str, metavar='str,...')
         add_in_out_args (ap)
         _add_S_arg (ap)
         return ap
@@ -219,10 +222,13 @@ class Seapp(sea.LimitedCmd):
         argv = list()
         if args.out_file is not None: argv.extend (['-o', args.out_file])
         if args.inline: argv.append ('--horn-inline-all')
-        elif args.inline_alloc: 
-            argv.append ('--horn-inline-alloc-only')
-            argv.append ('--horn-inline-alloc-levels={n}'.format(n=args.inline_alloc_levels))
-
+        if args.inline_only:
+            argv.append ('--horn-inline-all')
+            for f in args.inline_only.split(','):
+                argv.append ('--horn-inline-only={0}'.format(f))
+        if args.inline_alloc: argv.append ('--horn-inline-allocators')
+        if args.inline_const: argv.append ('--horn-inline-constructors') 
+            
         if args.strip_external:
             argv.append ('--strip-extern=true')
         else:

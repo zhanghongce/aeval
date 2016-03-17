@@ -38,10 +38,7 @@ namespace seahorn
       boost::optional <std::regex> m_re;
       MatchRegex (std::string s) { 
         if (s != "") {
-          try  
-          {
-            m_re = std::regex (s); 
-          }
+          try { m_re = std::regex (s);  }  
           catch (std::regex_error& e) 
           {
             errs () << "Warning: syntax error in the regex: " << e.what () << "\n";
@@ -49,8 +46,8 @@ namespace seahorn
         }
       }
       bool operator() (Function* F)  {
-        if (!m_re) return true; 
-        else return std::regex_match (F->getName ().str(), *m_re);
+        if (!m_re) return false;  // this should not happen
+        return std::regex_match (F->getName ().str(), *m_re);
       }
     };
     #endif 
@@ -87,9 +84,8 @@ namespace seahorn
       for (Function &F : M) {
         if (F.isDeclaration() || !(externalizeFunctions.count(&F) > 0)) 
           continue;
-        LOG("extern-functions", 
-            errs () << F.getName () << " set to external linkage\n");
-        errs () << F.getName () << " set to external linkage\n";
+        LOG("extern", 
+            errs () << "EXTERNALIZED " << F.getName () << "\n");
         F.deleteBody();
         Change = true;
       }
@@ -118,6 +114,9 @@ namespace seahorn
     void getAnalysisUsage (AnalysisUsage &AU) {
       AU.setPreservesAll ();
     }
+
+    virtual const char* getPassName () const 
+    {return "Externalize all selected functions";}
     
   };
 

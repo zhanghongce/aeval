@@ -3,6 +3,7 @@ add_llvm_library (SeaTransformsScalar
   LowerCstExpr.cc
   LowerGvInitializers.cc
   LowerArithInstrinsics.cc
+  LowerLibCxxAbiAllocators.cc
   PromoteVerifierCalls.cc
   CutLoops.cc
   PromoteMalloc.cc

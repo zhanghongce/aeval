@@ -74,9 +74,14 @@ InlineAll ("horn-inline-all", llvm::cl::desc ("Inline all functions"),
            llvm::cl::init (false));
 
 static llvm::cl::opt<bool>
-InlineAllocFn ("horn-inline-alloc-only", 
-               llvm::cl::desc ("Inline only functions that (re)allocate memory"),
+InlineAllocFn ("horn-inline-allocators", 
+               llvm::cl::desc ("Inline functions that allocate or deallocate memory"),
                llvm::cl::init (false));
+
+static llvm::cl::opt<bool>
+InlineConstructFn ("horn-inline-constructors", 
+                  llvm::cl::desc ("Inline C++ constructors and destructors"),
+                  llvm::cl::init (false));
 
 static llvm::cl::opt<bool>
 CutLoops ("horn-cut-loops", llvm::cl::desc ("Cut all natural loops"),
@@ -298,13 +303,20 @@ int main(int argc, char **argv) {
 
   // lower arithmetic with overflow intrinsics
   pass_manager.add(seahorn::createLowerArithWithOverflowIntrinsicsPass ());
-  
-  if (InlineAll || InlineAllocFn)
+    
+  // lower libc++abi allocator and deallocators 
+  pass_manager.add(seahorn::createLowerLibCxxAbiAllocatorsPass ());
+
+  if (InlineAll || InlineAllocFn || InlineConstructFn)
   {
     if (InlineAll)
       pass_manager.add (seahorn::createMarkInternalInlinePass ());
-    else if (InlineAllocFn)
-      pass_manager.add (seahorn::createMarkInternalAllocationInlinePass ());
+    else {
+      if (InlineAllocFn)
+        pass_manager.add (seahorn::createMarkInternalAllocOrDeallocInlinePass ());
+      if (InlineConstructFn)
+        pass_manager.add (seahorn::createMarkInternalConstructOrDestructInlinePass ());
+    }
 
     pass_manager.add (llvm::createAlwaysInlinerPass ());
     pass_manager.add (llvm::createGlobalDCEPass ()); // kill unused internal global

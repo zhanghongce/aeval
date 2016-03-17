@@ -2,7 +2,7 @@ add_llvm_library(SeaTransformsUtils
   DummyExitBlock.cc
   Local.cc
   MarkInternalInline.cc
-  MarkInternalAllocationInline.cc
+  MarkInternalSpecialFunctions.cc
   NameValues.cpp
   RemoveUnreachableBlocksPass.cc
   DummyMainFunction.cc
