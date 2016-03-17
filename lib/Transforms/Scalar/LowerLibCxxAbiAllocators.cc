@@ -36,12 +36,16 @@ namespace seahorn
       const DataLayout* DL = &getAnalysis<DataLayoutPass>().getDataLayout ();
       Type* IntPtrTy = DL->getIntPtrType (Context, 0);
       
+      CallGraphWrapperPass *cgwp = getAnalysisIfAvailable<CallGraphWrapperPass> ();
+      CallGraph* cg = cgwp ? &cgwp->getCallGraph () : nullptr;
+      
       m_mallocFn = dyn_cast<Function>
           (M.getOrInsertFunction ("malloc", 
                                   as,
                                   Type::getInt8Ty(Context)->getPointerTo(),
                                   IntPtrTy,
                                   NULL));
+      if (cg) cg->getOrInsertFunction (m_mallocFn);
     
       m_freeFn = dyn_cast<Function> 
           (M.getOrInsertFunction ("free",
@@ -49,6 +53,7 @@ namespace seahorn
                                   Type::getVoidTy (Context),
                                   Type::getInt8Ty(Context)->getPointerTo(),
                                   NULL));
+      if (cg) cg->getOrInsertFunction (m_freeFn);
       
       for (auto &F : M) runOnFunction (F);
 
