@@ -33,6 +33,9 @@ class IncHornifyFunction : public HornifyFunction {
   /// -- Cannot use the map from the parent (module)
   PredDeclMap m_bbPreds;
 
+  /// File to write the debug info
+
+
 protected:
   /// -- add predicate declaration for the given basic block
   const Expr declarePredicate(const BasicBlock &bb, const ExprVector &live);
@@ -41,7 +44,7 @@ protected:
   const Expr bbPredicate(const BasicBlock &bb);
 
   /// -- extract infos from Basic Blocks
-  void extractInfo(const BasicBlock &bb);
+  std::string extractInfo(const BasicBlock &bb, unsigned crumb_var);
 
 public:
   IncHornifyFunction(HornifyModule &parent, bool interproc = false)

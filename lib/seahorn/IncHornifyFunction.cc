@@ -2,23 +2,41 @@
 #include "seahorn/LiveSymbols.hh"
 #include "seahorn/Support/CFG.hh"
 #include "seahorn/Support/ExprSeahorn.hh"
+#include "llvm/Support/ToolOutputFile.h"
+#include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/CommandLine.h"
+
 
 #include <boost/lexical_cast.hpp>
 #include <llvm/IR/DebugInfo.h>
 
+
+
+  static llvm::cl::opt<std::string>
+  DebugInfo("horn-df", llvm::cl::desc("Get Debug info"),
+                 llvm::cl::init(""), llvm::cl::value_desc("DebugInfo"));
+
 namespace seahorn {
 
+
 /// Extract info
-void IncHornifyFunction::extractInfo(const BasicBlock &BB) {
-  errs() << "Getting info";
+std::string IncHornifyFunction::extractInfo(const BasicBlock &BB, unsigned crumb) {
+  std::stringstream ss;
+  // errs() << "Extracting info for: " << crumb << "\n";
+  std::stringstream lines;
   for (const Instruction &inst : BB) {
     MDNode *md = inst.getMetadata("dbg");
     DILocation loc(md);
     unsigned int line = loc.getLineNumber();
     StringRef file = loc.getFilename();
     StringRef dir = loc.getDirectory();
-    errs() << inst << " ; file: " << file << ", line: " << line << "\n";
+    // errs() << file << "\n";
+    // errs() << inst << " | line: " << line << "\n";
+    lines << line << " | ";
   }
+  ss << "DINFO: " << crumb << ": " << lines.str() << "\n";
+  return ss.str();
 }
 
 /// Find a function exit basic block.  Assumes that the function has
@@ -82,12 +100,23 @@ void IncSmallHornifyFunction::runOnFunction(Function &F) {
   DenseMap<const BasicBlock *, unsigned> bbOrder;
   unsigned idx = 0;
   ExprVector rflags;
+  std::error_code error_code;
+  std::unique_ptr<llvm::tool_output_file> debug = llvm::make_unique<llvm::tool_output_file>
+    (DebugInfo.c_str(), error_code, llvm::sys::fs::F_None);
+
+  llvm::raw_ostream *dinfo_out = &debug->os ();
+
+  std::string all_debug_info;   // all debug informations
+
   for (auto &BB : F) {
     std::string crumb_var =
         std::string("__r") + boost::lexical_cast<std::string>(idx);
+    all_debug_info += extractInfo(BB, idx);
     rflags.push_back(bind::boolConst(mkTerm(crumb_var, m_efac)));
     bbOrder[&BB] = idx++;
   }
+
+  if (!DebugInfo.empty ()) {errs() << all_debug_info;}
 
   for (auto &BB : F) {
     ExprVector lv = append(rflags, ls.live(&BB));
@@ -98,7 +127,7 @@ void IncSmallHornifyFunction::runOnFunction(Function &F) {
     // register with fixedpoint
     m_db.registerRelation(decl);
 
-    extractInfo(BB);
+
     // -- attempt to extract FunctionInfo record from the current basic block
     // -- only succeeds if the current basic block is the last one
     // -- also constructs summary predicates
