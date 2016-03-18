@@ -36,7 +36,7 @@ bool SliceFunctions::runOnModule(Module &M) {
     if (!F) {
       // errs() << "Warning: " << fname
       //        << " not found. No functions will be removed.\n";
-      errs() << "INC_INFO";
+      //errs() << "INC_INFO";
       printFunctionsInfo(M, fname);
       return false;
     }

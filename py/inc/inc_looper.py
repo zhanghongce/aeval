@@ -87,22 +87,21 @@ def run (workdir, fname, finfo, num_blks, timeout):
     sea_cmd = getSea()
     name = os.path.splitext (os.path.basename (fname))[0]
     info = '--slice-function=\"' + finfo + '"'
-    getInfo_cmd = [sea_cmd, 'finfo', info, fname]
+    getInfo_cmd = [sea_cmd, 'finfo', info, '-O0', fname]
     p = sub.Popen(getInfo_cmd, shell=False, stdout=sub.PIPE, stderr=sub.STDOUT)
     result_info, _ = p.communicate()
     all_funcs = {}
-    if "INC_INFO" in result_info:
+    for info in result_info.split('\n'):
+        if 'INC' in info:
+            raw = info.split('|')
+            f = {raw[1] : {'blks': raw[2], 'instr':raw[3]}}
+            all_funcs.update(f)
+    if len(all_funcs) > 0:
         print 'Functions info ...  OK'
-        for info in result_info.split('\n'):
-            if "INC_INFO" in info: continue
-            elif "INC" in info:
-                raw = info.split('|')
-                f = {raw[1] : {'blks': raw[2], 'instr':raw[3]}}
-                all_funcs.update(f)
         print 'Total number of functions ... ' + str(len(all_funcs))
         run_inc(all_funcs, fname, num_blks, timeout)
     else:
-        print 'Functions info ... KO'
+        print 'Functions info ...  KO'
     return
 
 def run_inc(all_funcs, fname, num_blks, timeout):
@@ -115,15 +114,15 @@ def run_inc(all_funcs, fname, num_blks, timeout):
     all_result = "FUNCTION, NUM_BLKS, RESULT, LINE_NUMBER(S), ROUNDS, QUERY_TIME\n"
     f_result.write(all_result)
     for func,v in all_funcs.iteritems():
-        if int(v['blks']) > num_blks:
+        if int(v['blks']) >= num_blks:
             print 'Running Function ... ' + func + '| BLK ...' + v['blks']
             info = '--slice-function=' + func.strip()
             my_timeout = '--timeout=' + str(timeout)
             cmd = [sea_cmd, 'inc', info, '--horn-no-verif', '--lower-invoke',
                    '--devirt-functions', '--step=incsmall', '--inc_verbose', '--horn-df=bla.txt',
-                   my_timeout, '-g', fname]
+                   my_timeout, '-g', '-O0', fname]
             cmd_sc = [sea_cmd, ' inc ', info, ' --horn-no-verif ', '--lower-invoke ',
-                   '--devirt-functions ', '--step=incsmall ', '--inc_verbose ',
+                   '--devirt-functions ', '--step=incsmall ', '--inc_verbose ' ,
                    my_timeout, fname]
             analyzed.update({func:v})
             bash_script += ''.join(cmd_sc) + '\n'
@@ -133,7 +132,8 @@ def run_inc(all_funcs, fname, num_blks, timeout):
             func_res = ""
             debug_info = {}
             for r in result.split('\n'):
-                if 'INC_STAT' in r: func_res += r + "\n"
+                if 'INC_STAT' in r:
+                    func_res += r + "\n"
                 if 'DINFO' in r:
                     tmp = r.split(":")
                     debug_info.update({tmp[1].strip():tmp[2]})
@@ -162,7 +162,7 @@ def getLines (lines_dict, incs):
     line = ""
     for i in inc_lines:
         try:
-            tmp = ''.join(list((set((lines_dict[i]).split("|")))))
+            tmp = '-'.join([x.strip() for x in list((set((lines_dict[i]).split("|"))))])
             line += tmp
         except:
             continue
