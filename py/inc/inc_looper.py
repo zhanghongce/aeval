@@ -132,7 +132,6 @@ def run_inc(all_funcs, fname, num_blks, timeout):
             result, _ = p.communicate()
             func_res = ""
             debug_info = {}
-            print result
             for r in result.split('\n'):
                 if 'INC_STAT' in r: func_res += r + "\n"
                 if 'DINFO' in r:
