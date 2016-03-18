@@ -107,7 +107,7 @@ namespace seahorn
       }
     }
 
-    unsigned int findDSNodeForValue (const Value* v);
+    void findDSNodeForValue (const Value* v, std::set<unsigned int>& nodes);
 
     void WriteDSInfo (llvm::raw_ostream& o);
 

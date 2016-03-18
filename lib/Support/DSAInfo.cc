@@ -143,13 +143,22 @@ namespace seahorn
       }
   }        
 
-  unsigned int DSAInfo::findDSNodeForValue (const Value* v) {
+  // unsigned int DSAInfo::findDSNodeForValue (const Value* v) {
+  //   for (auto &p: m_referrers_map) {
+  //     const ValueSet& referrers = p.second;
+  //     if (referrers.count (v) > 0)
+  //       return getDSNodeID (p.first);
+  //   }
+  //   return 0;
+  // }
+
+  void DSAInfo::findDSNodeForValue (const Value* v, std::set<unsigned int>& nodes) {
     for (auto &p: m_referrers_map) {
       const ValueSet& referrers = p.second;
       if (referrers.count (v) > 0)
-        return getDSNodeID (p.first);
+        if (getDSNodeID (p.first) > 0)
+          nodes.insert( getDSNodeID (p.first));
     }
-    return 0;
   }
 
   void DSAInfo::WriteAllocaInfo (llvm::raw_ostream& o) {
@@ -161,7 +170,9 @@ namespace seahorn
 
     unsigned actual_alloc_sites = 0;
     for (auto p: m_alloc_sites.right) {
-      if (findDSNodeForValue (p.second) == 0) continue;
+      std::set<unsigned int> nodes;
+      findDSNodeForValue (p.second, nodes);
+      if (nodes.empty ()) continue;
       actual_alloc_sites++;
     }      
 
@@ -174,20 +185,57 @@ namespace seahorn
     
     if (!DSAInfoPrint) return;
 
+    std::set <unsigned int> seen;
     for (auto p: m_alloc_sites.right) {
-      unsigned NodeId = findDSNodeForValue (p.second);
+      std::set<unsigned int> nodes;
+      findDSNodeForValue (p.second, nodes);
       // if not DSNode found then the alloca belongs to a DSNode to
       // which nobody reads/write from/to.
-      if (NodeId == 0) continue;
-      o << "  [Alloc site Id " << p.first << " DSNode Id " << NodeId <<  "]  "
-        << *p.second  << "\n";
+      if (nodes.empty ()) continue;
+
+      // -- Sanity check: an alloca site belongs only to one DSNode
+      if (nodes.size () > 1) {
+        errs () << "DSAInfo: alloca site " << p.first 
+                << " belongs to multiple DSNodes {";
+        for (auto NodeId: nodes) o << NodeId << ","; 
+        errs () << "}\n";
+        continue;
+      }
+
+      o << "  [Alloc site Id " << p.first << " DSNode Id " << *(nodes.begin ())
+        << "]  " << *p.second  << "\n";
+      seen.insert (*(nodes.begin ()));
+    }
+
+    // -- Sanity check: each DSNode has an allocation site
+    for (auto& kv: m_nodes) {
+      unsigned int NodeID = kv.second.m_id;
+      if (seen.count (NodeID) > 0) continue;
+      // An ID can be 0 (undefined) if the node did not have any
+      // access
+      if (NodeID > 0) {
+        errs () << "DSAInfo: DSNode ID " << NodeID << " has no allocation site\n";
+        LOG ("dsa-info", 
+             const ValueSet& referrers = get_referrers (kv.second.m_n);
+             for (auto const& r : referrers) {
+               if (r->hasName ())
+                 o << "\t  " << r->getName ();
+               else 
+                 o << "\t" << *r; 
+               o << "\n";
+             });
+        
+      }
     }
   }
 
   bool DSAInfo::runOnModule (llvm::Module &M) {  
 
+
       m_dsa = &getAnalysis<SteensgaardDataStructures> ();
       m_gDsg = m_dsa->getGlobalsGraph ();
+
+      //errs () << M << "\n";
 
       // Collect all referrers per DSNode
       DSScalarMap &SM = m_gDsg->getScalarMap ();
@@ -302,15 +350,28 @@ namespace seahorn
       for (auto n: nodes_vector) n->m_id = id++;
 
       // Identify allocation sites and assign a numeric id to each one
+      for (auto &GV: M.globals ()) {
+        Type *Ty = cast<PointerType>(GV.getType())->getElementType();
+        if (!Ty->isSized()) continue;
+        if (!GV.hasInitializer()) continue;
+        if (GV.hasSection()) {
+          StringRef Section(GV.getSection());
+          // Globals from llvm.metadata aren't emitted, do not instrument them.
+          if (Section == "llvm.metadata") continue;
+        }
+        unsigned int alloc_site_id; 
+        add_alloc_site (&GV, alloc_site_id);
+      }
+      
       for (auto &F: M) {
         for (inst_iterator i = inst_begin(F), e = inst_end(F); i != e; ++i) {      
           Instruction* I = &*i;
-          /// XXX: Global variables???
           if (AllocaInst* AI = dyn_cast<AllocaInst> (I)) {
-            if (AI->getAllocatedType ()->isIntegerTy ())
+            Type *Ty = AI->getAllocatedType();
+            if (!Ty->isSized() || dl->getTypeAllocSize(Ty) <= 0) {
+              errs () << "DSAInfo " << *AI << " will be ignored because it is not sized\n";
               continue;
-            if (AI->getAllocatedType ()->isFloatingPointTy ())
-              continue;
+            }
             unsigned int alloc_site_id; 
             add_alloc_site (AI, alloc_site_id);
           } else if (isAllocationFn (I, tli, true)) {
@@ -322,9 +383,10 @@ namespace seahorn
         }
       }
 
+
       WriteDSInfo (errs ());
       WriteAllocaInfo (errs ());
-      
+
       return false;
   }
 
