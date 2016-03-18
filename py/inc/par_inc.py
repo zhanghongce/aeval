@@ -93,7 +93,7 @@ class Feasibility(object):
             return out
         else:
             function_name = str(query.decl()).split("@")[0]
-            out = out_message % (function_name, "FEASIBLE", "", "Trivial", "", "", "")
+            out = out_message % (function_name, "FEASIBLE", "", "", "", "", "")
             out = bcolors.OKGREEN + out + bcolors.ENDC
             return out
 
@@ -128,10 +128,10 @@ class Feasibility(object):
                     rounds += 1
                     if expr_query is None:
                         feas = list(self.feasible_flag)
-                        infeas = list(self.non_feasible_flag)
+                        infeas = ";".join([str(x) for x in list(self.non_feasible_flag)])
                         q_times = [float(x) for x in self.query_times]
                         q_average = sum(q_times) / len(q_times)
-                        out += out_message % (function_name, "FEASIBLE", "", str(feas),  str(infeas), str(rounds), str(q_average))
+                        out += out_message % (function_name, "FEASIBLE", "", str(feas),  infeas, str(rounds), str(q_average))
                         out = bcolors.OKGREEN + out + bcolors.ENDC
                         done = True
                 elif res == z3.unsat:
@@ -148,7 +148,7 @@ class Feasibility(object):
                         feas = list(self.feasible_flag)
                         q_times = [float(x) for x in self.query_times]
                         q_average = sum(q_times) / len(q_times)
-                        out += out_message % (function_name, "FEASIBLE", inv_info, str(feas), str([]), str(rounds), str(q_average))
+                        out += out_message % (function_name, "FEASIBLE", inv_info, str(feas), "", str(rounds), str(q_average))
                         out = bcolors.OKGREEN + out + bcolors.ENDC
                     else:
                         msg = "EXIT is not FEASIBLE" if rounds==1 else "INFEASIBLE BLOCK FOUND"
@@ -160,7 +160,8 @@ class Feasibility(object):
                         feas, infeas = self.feasOut()
                         q_times = [float(x) for x in self.query_times]
                         q_average = sum(q_times) / len(q_times)
-                        out += out_message % (function_name, "INFEASIBLE", inv_info, str(feas), str(infeas), str(rounds), str(q_average))
+                        infeas_str = ";".join([str(x) for x in infeas])
+                        out += out_message % (function_name, "INFEASIBLE", inv_info, str(feas), infeas_str, str(rounds), str(q_average))
                         out = bcolors.FAIL + out + bcolors.ENDC
                     done = True
                 else:

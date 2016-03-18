@@ -92,7 +92,6 @@ def run (workdir, fname, finfo, num_blks, timeout):
     result_info, _ = p.communicate()
     all_funcs = {}
     if "INC_INFO" in result_info:
-
         print 'Functions info ...  OK'
         for info in result_info.split('\n'):
             if "INC_INFO" in info: continue
@@ -113,7 +112,7 @@ def run_inc(all_funcs, fname, num_blks, timeout):
     bash_script = ""
     f_script = open (fname+"_script.sh", "w")
     f_result = open (fname+"_result.txt", "w")
-    all_result = "FUNCTION, NUM_BLKS, RESULT, FEASIBLE, INFEASIBLE, ROUNDS, QUERY_TIME\n"
+    all_result = "FUNCTION, NUM_BLKS, RESULT, LINE_NUMBER(S), ROUNDS, QUERY_TIME\n"
     f_result.write(all_result)
     for func,v in all_funcs.iteritems():
         if int(v['blks']) > num_blks:
@@ -121,8 +120,8 @@ def run_inc(all_funcs, fname, num_blks, timeout):
             info = '--slice-function=' + func.strip()
             my_timeout = '--timeout=' + str(timeout)
             cmd = [sea_cmd, 'inc', info, '--horn-no-verif', '--lower-invoke',
-                   '--devirt-functions', '--step=incsmall', '--inc_verbose',
-                   my_timeout, fname]
+                   '--devirt-functions', '--step=incsmall', '--inc_verbose', '--horn-df=bla.txt',
+                   my_timeout, '-g', fname]
             cmd_sc = [sea_cmd, ' inc ', info, ' --horn-no-verif ', '--lower-invoke ',
                    '--devirt-functions ', '--step=incsmall ', '--inc_verbose ',
                    my_timeout, fname]
@@ -132,19 +131,25 @@ def run_inc(all_funcs, fname, num_blks, timeout):
             p = sub.Popen(cmd, shell=False, stdout=sub.PIPE, stderr=sub.STDOUT)
             result, _ = p.communicate()
             func_res = ""
+            debug_info = {}
+            print result
             for r in result.split('\n'):
                 if 'INC_STAT' in r: func_res += r + "\n"
-            res, cons, incs, rounds, query = "","","","",""
+                if 'DINFO' in r:
+                    tmp = r.split(":")
+                    debug_info.update({tmp[1].strip():tmp[2]})
+            res, incs, rounds, query = "", "","",""
             tmp_split = func_res.split("\n")
             try:
                 res = (tmp_split[0]).split('|')[2]
-                cons = (tmp_split[1]).split('|')[2]
+                # cons = (tmp_split[1]).split('|')[2]
                 incs = (tmp_split[2]).split('|')[2]
                 rounds = (tmp_split[3]).split('|')[2]
                 query = (tmp_split[4]).split('|')[2]
             except Exception as e:
                 print 'WARNING: wrong format \n' + func_res
-            new_result = func + " , " + v['blks'] + " , " + res + " , " + cons + " , " + incs + " , " + rounds + " , " + query + "\n"
+            line_numbers = getLines(debug_info, incs)
+            new_result = func + " , " + v['blks'] + " , " + res + " , " + line_numbers + " , " + rounds + " , " + query + "\n"
             all_result += new_result
             print new_result
             f_result.write(new_result)
@@ -152,6 +157,17 @@ def run_inc(all_funcs, fname, num_blks, timeout):
     print 'Analyzed functions ... ' + str(len(analyzed))
     return
 
+def getLines (lines_dict, incs):
+    if incs == "": return "None"
+    inc_lines = incs.split(";")
+    line = ""
+    for i in inc_lines:
+        try:
+            tmp = ''.join(list((set((lines_dict[i]).split("|")))))
+            line += tmp
+        except:
+            continue
+    return line
 
 def main (argv):
     (opt, args) = parseOpt (argv)
