@@ -44,30 +44,83 @@ namespace
    */
   class SymbolizeConstantLoopBounds : public FunctionPass
   {
-   public:
+
+    Function* assumeFn;
+    Function* nondetFn;
+    CallGraph* cg;
     
-    static char ID;
-    
-   private:
-    
-    void updateCallGraph (CallGraph* cg, Function* caller, CallInst* callee) {
+    void updateCallGraph (Function* caller, CallInst* callee) {
       if (cg) {
         (*cg)[caller]->addCalledFunction (CallSite (callee),
                                           (*cg)[callee->getCalledFunction ()]);
       }
     }
 
-    CmpInst* getLoopExitCond (BasicBlock* ExitingLoop) {
+    Instruction* getLoopExitCond (BasicBlock* ExitingLoop) {
       TerminatorInst* TI = ExitingLoop->getTerminator ();
       if (BranchInst* BI = dyn_cast<BranchInst> (TI)) {
         if (BI->isConditional ()) {
-          return dyn_cast<CmpInst> (BI->getCondition ());
+          return dyn_cast<Instruction> (BI->getCondition ());
         }
       }
       return nullptr;
     }
 
+    bool SymbolizeInst (Instruction* I, IRBuilder<> B) {
+
+      if (I->getOpcode () == BinaryOperator::And || 
+          I->getOpcode () == BinaryOperator::Or ||
+          I->getOpcode () == BinaryOperator::Xor) {
+        bool Change = false;
+        if (Instruction* I1 = dyn_cast <Instruction> (I->getOperand(0)))
+          Change |= SymbolizeInst (I1, B);
+        if (Instruction* I2 = dyn_cast <Instruction> (I->getOperand(1)))
+          Change |= SymbolizeInst (I2, B);
+        return Change;
+      } else if (CmpInst*CI = dyn_cast <CmpInst> (I)) {
+
+          Value* Op1 = CI->getOperand (0);
+          Value* Op2 = CI->getOperand (1);
+          Function* F = CI->getParent()->getParent ();
+          
+          // Assume that only one operand can be constant
+          Value* CstBound = nullptr;
+          if (isa<ConstantInt> (Op1)) 
+            CstBound = Op1;
+          else if (isa<ConstantInt> (Op2)) 
+            CstBound = Op2;
+          
+          if (!CstBound) {
+            LOG ("sym-bound", errs () << "STC: no integer constant operands\n");
+            return false;
+          }
+          
+          CallInst* nd = B.CreateCall (nondetFn, "loop.bound");
+          Value* symBound = B.CreateSExtOrTrunc (nd, CstBound->getType ()); 
+          updateCallGraph (F, nd);
+          CallInst* assumption = B.CreateCall (assumeFn, 
+                                               B.CreateICmpEQ (symBound, CstBound));
+          updateCallGraph (F, assumption);
+          
+          // --- replace the constant bound with the symbolic one.
+          //     We could replace any occurrence of the constant bound
+          //     inside the loop or even the function.
+          LOG ("sym-bound", errs () << "STC: replaced " << *CI << " with ");
+          if (CI->getOperand (0) == CstBound) {
+            CI->setOperand (0, symBound);
+          } else {
+            CI->setOperand (1, symBound);
+          }
+          LOG ("sym-bound", errs () << *CI << "\n");
+          
+          SymbolizedLoops++;
+          return true;
+      }
+    }
+
    public:
+    
+    static char ID;
 
     SymbolizeConstantLoopBounds () : FunctionPass (ID) {} 
 
@@ -89,15 +142,15 @@ namespace
       AttrBuilder AB;        
       AttributeSet as = AttributeSet::get (ctx, AttributeSet::FunctionIndex, AB);
 
-      Function* assumeFn = dyn_cast<Function>
+      assumeFn = dyn_cast<Function>
           (M->getOrInsertFunction ("verifier.assume", as, voidTy, boolTy, NULL));                                 
 
-      Function* nondetFn = dyn_cast<Function>
+      nondetFn = dyn_cast<Function>
           (M->getOrInsertFunction ("verifier.nondet", as, intTy, NULL));
                                    
       // XXX: I'm not sure the pass needs to a Module pass
       CallGraphWrapperPass *cgwp = getAnalysisIfAvailable<CallGraphWrapperPass> ();
-      CallGraph* cg = cgwp ? &cgwp->getCallGraph () : nullptr;
+      cg = cgwp ? &cgwp->getCallGraph () : nullptr;
       if (cg) { 
         cg->getOrInsertFunction (assumeFn);
         cg->getOrInsertFunction (nondetFn);
@@ -106,57 +159,24 @@ namespace
       LoopInfo* LI = &getAnalysis<LoopInfo>();      
       bool Change = false;
       for (auto L : boost::make_iterator_range (LI->begin (), LI->end ())) {
-        LOG ("sym-bound", errs () << *L << "\n");
+        LOG ("sym-bound", errs () << "STC:" << *L << "\n");
 
         SmallVector<BasicBlock*, 16> ExitingBlocks;
         L->getExitingBlocks (ExitingBlocks);
         for (BasicBlock* ExitingBlock : ExitingBlocks) {
-
-          // We could consider the exiting block only if an induction
-          // variable is involved.
-
-          CmpInst* ExitCond = getLoopExitCond (ExitingBlock);
+          Instruction* ExitCond = getLoopExitCond (ExitingBlock);
           if (!ExitCond) { 
             LOG ("sym-bound", 
-                 errs () << "STC: Skipped exiting block because no condition found\n");            
+                 errs () << "STC: Skipped exiting block " 
+                         << *ExitingBlock 
+                         << " because no condition found\n");            
             continue;
           }
-          
-          // Assume that only one operand is constant
-          Value* CstBound = nullptr;
-          if (isa<ConstantInt> (ExitCond->getOperand (0))) 
-            CstBound = ExitCond->getOperand (0);
-          else if (isa<ConstantInt> (ExitCond->getOperand (1))) 
-            CstBound = ExitCond->getOperand (1);
 
-          if (!CstBound) {
-            LOG ("sym-bound", 
-                 errs () 
-                 << "STC: Skipped exiting block because no constant bound found\n";);
-            continue;
-          }
-                      
           LOG ("sym-bound", 
-               errs () << "STC: Found loop with constant bound=" << *CstBound << "\n";); 
-               
-          CallInst* nd = B.CreateCall (nondetFn, "sym_bound");
-          Value* symBound = B.CreateSExtOrTrunc (nd, CstBound->getType ()); 
-          updateCallGraph (cg, &F, nd);
-          CallInst* assumption = B.CreateCall (assumeFn, 
-                                               B.CreateICmpEQ (symBound, CstBound));
-          updateCallGraph (cg, &F, assumption);
+               errs () << "STC: found loop condition " << *ExitCond << "\n");            
 
-          // --- replace the constant bound with the symbolic one.
-          //     We could replace any occurrence of the constant bound
-          //     inside the loop or even the function.
-          if (ExitCond->getOperand (0) == CstBound) {
-            ExitCond->setOperand (0, symBound);
-          } else {
-            ExitCond->setOperand (1, symBound);
-          }
-
-          SymbolizedLoops++;
-          Change = true;
+          Change |= SymbolizeInst (ExitCond, B);        
         } 
       } 
       
