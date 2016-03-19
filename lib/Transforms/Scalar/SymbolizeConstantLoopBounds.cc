@@ -116,6 +116,7 @@ namespace
           SymbolizedLoops++;
           return true;
       }
+      return false;
     }
 
    public:
