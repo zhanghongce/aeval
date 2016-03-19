@@ -5,6 +5,7 @@
 #include "ufo/Stats.hh"
 
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/FileSystem.h"
 
 static llvm::cl::opt<bool>
 ReduceFalse ("horn-reduce-constraints",
@@ -283,6 +284,8 @@ namespace seahorn
       errs () << "The exit block of " << F.getName () << " is unreachable.\n";
       return;
     }
+    
+    LOG ("reduce", errs () << "Begin HornifyFunction: " << F.getName () << "\n";);
 
 
     CutPointGraph &cpg = m_parent.getCpg (F);
@@ -310,6 +313,12 @@ namespace seahorn
     m_db.addRule (allVars, rule);
     allVars.clear ();
     ZSolver<EZ3> smt (m_zctx);
+    
+    /** use a rather weak solver */
+    ZParams<EZ3> params (m_zctx);
+    params.set (":smt.array.weak", true);
+    params.set (":smt.arith.ignore_int", true);
+    smt.set (params);
     
     UfoLargeSymExec lsem (m_sem);
     
@@ -350,16 +359,44 @@ namespace seahorn
           if (ReduceFalse)
           {
             ufo::ScopedStats __st__ ("HornifyFunction.reduce-false");
+            ufo::Stats::count ("HornifyFunction.edge");
             bind::IsConst isConst;
             for (auto &e : side)
             {
               // ignore uninterpreted functions, makes the problem easier to solve
               if (!bind::isFapp (e) || isConst (e)) smt.assertExpr (e);
             }
-          
+            LOG ("reduce",
+                 
+                 std::error_code EC;
+                 raw_fd_ostream file ("/tmp/edge.smt2", EC, sys::fs::F_Text);
+                 if (!EC)
+                 {
+                   file << "(set-info :original \""
+                        << edge->source ().bb ().getName () << " --> "
+                        << edge->target ().bb ().getName () << "\")\n";
+                   smt.toSmtLib (file);
+                   file.close ();
+                 });
             auto res = smt.solve ();
+            
             smt.reset ();
-            if (!res) continue; /* skip a rule with an inconsistent body */
+            
+            if (!res)
+              LOG ("reduce", errs () << "Reduced edge to false: "
+                   << edge->source ().bb ().getName () << " --> "
+                   << edge->target ().bb ().getName () << "\n";);
+            else 
+              LOG ("reduce", errs () << "NOT Reduced edge to false: "
+                   << edge->source ().bb ().getName () << " --> "
+                   << edge->target ().bb ().getName () << "\n";);
+            
+            if (!res)
+            {
+              ufo::Stats::count ("HornifyFunction.edge.false");
+              continue; /* skip a rule with an inconsistent body */
+            }
+            
           }
           
           reached.insert (&dst);
@@ -454,6 +491,7 @@ namespace seahorn
     }
     else if (!exit & m_interproc) assert (0);
   
+    LOG ("reduce", errs () << "Done HornifyFunction: " << F.getName () << "\n";);
   }
 
   // bool HornifyFunction::checkProperty(ExprVector predicates, Expr &cex){
