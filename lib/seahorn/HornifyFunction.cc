@@ -18,6 +18,12 @@ FlattenBody ("horn-flatten",
              ("Flatten bodies of generated rules"),
              llvm::cl::init (false));
 
+static llvm::cl::opt<bool>
+ReduceWeak ("horn-reduce-weakly",
+            llvm::cl::desc
+            ("Use weak solver for reducing constraints"),
+            llvm::cl::init (true));
+
 #include "ufo/Stats.hh"
 namespace seahorn
 {
@@ -316,8 +322,9 @@ namespace seahorn
     
     /** use a rather weak solver */
     ZParams<EZ3> params (m_zctx);
+    // -- always use weak arrays for now
     params.set (":smt.array.weak", true);
-    params.set (":smt.arith.ignore_int", true);
+    if (ReduceWeak) params.set (":smt.arith.ignore_int", true);
     smt.set (params);
     
     UfoLargeSymExec lsem (m_sem);
