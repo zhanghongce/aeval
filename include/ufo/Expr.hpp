@@ -2286,6 +2286,7 @@ namespace expr
         if (isRealVar (v) || isRealConst (v))
           return mk<REAL_TY> (v->efac ());
 
+        std::cerr << "WARNING: could not infer type of: " << *v << "\n";
         
         assert (0 && "Unreachable");
         return Expr();    
