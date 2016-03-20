@@ -123,9 +123,9 @@ namespace seahorn
     Expr falseE = mk<FALSE> (m_efac);
     ExprVector postArgs {trueE, trueE, trueE};
     fi.evalArgs (m_sem, s, std::back_inserter (postArgs));
-    std::copy_if (postArgs.begin () + 3, postArgs.end (), 
-                  std::inserter (allVars, allVars.begin ()),
-                  bind::IsConst());
+    // -- use a mutable gate to put everything together
+    expr::filter (mknary<OUT_G> (postArgs), bind::IsConst(),
+                  std::inserter (allVars, allVars.begin ()));
     
     m_db.addRule (allVars, bind::fapp (fi.sumPred, postArgs));
     
@@ -177,6 +177,7 @@ namespace seahorn
 
     BasicBlock &entry = F.getEntryBlock ();
     ExprSet allVars;
+    ExprVector args;
     SymStore s(m_efac);
     for (const Expr& v : ls.live (&F.getEntryBlock ())) allVars.insert (s.read (v));
     Expr rule = s.eval (bind::fapp (m_parent.bbPredicate (entry), ls.live (&entry)));
@@ -193,6 +194,8 @@ namespace seahorn
         allVars.clear ();
         s.reset ();
         side.clear ();
+        args.clear ();
+        
         
         const ExprVector &live = ls.live (bb);
         for (const Expr &v : live) allVars.insert (s.read (v));
@@ -205,7 +208,10 @@ namespace seahorn
 
         expr::filter (tau, bind::IsConst(), 
                       std::inserter (allVars, allVars.begin ()));
-        for (const Expr &v : ls.live (dst)) allVars.insert (s.read (v));
+        for (const Expr &v : ls.live (dst)) args.push_back (s.read (v));
+        // -- use a mutable gate to put everything together
+        expr::filter (mknary<OUT_G> (args), bind::IsConst(),
+                      std::inserter (allVars, allVars.begin ()));
 
         Expr post;
         post = s.eval (bind::fapp (m_parent.bbPredicate (*dst), ls.live (dst)));
@@ -233,6 +239,7 @@ namespace seahorn
       // error flag (directly or indirectly)
       s.reset ();
       allVars.clear ();
+      args.clear ();
       const ExprVector &live = ls.live (&BB);
       for (const Expr &v : live) allVars.insert (s.read (v));
       Expr pre = s.eval (bind::fapp (m_parent.bbPredicate (BB), live));
@@ -263,9 +270,10 @@ namespace seahorn
       ExprVector postArgs {mk<TRUE> (m_efac), falseE, falseE};
       const FunctionInfo &fi = m_sem.getFunctionInfo (F);
       fi.evalArgs (m_sem, s, std::back_inserter (postArgs));
-      std::copy_if (postArgs.begin () + 3, postArgs.end (), 
-                    std::inserter (allVars, allVars.begin ()),
-                    bind::IsConst());
+      // -- use a mutable gate to put everything together
+      expr::filter (mknary<OUT_G> (postArgs), bind::IsConst(),
+                    std::inserter (allVars, allVars.begin ()));
+      
       Expr post = bind::fapp (fi.sumPred, postArgs);
       m_db.addRule (allVars, boolop::limp (pre, post));
       
@@ -361,7 +369,10 @@ namespace seahorn
           const BasicBlock &dst = edge->target ().bb ();
           args.clear ();
           for (const Expr &v : ls.live (&dst)) args.push_back (s.read (v));
-          allVars.insert (args.begin (), args.end ());
+          // -- use a mutable gate to put everything together
+          expr::filter (mknary<OUT_G> (args), bind::IsConst(),
+                                            std::inserter (allVars, allVars.begin ()));
+          // allVars.insert (args.begin (), args.end ());
           
           if (ReduceFalse)
           {
@@ -483,9 +494,9 @@ namespace seahorn
       ExprVector postArgs {mk<TRUE> (m_efac), falseE, falseE};
       const FunctionInfo &fi = m_sem.getFunctionInfo (F);
       fi.evalArgs (m_sem, s, std::back_inserter (postArgs));
-      std::copy_if (postArgs.begin () + 3, postArgs.end (), 
-                    std::inserter (allVars, allVars.begin ()),
-                    bind::IsConst());
+      // -- use a mutable gate to put everything together
+      expr::filter (mknary<OUT_G> (postArgs), bind::IsConst(),
+                    std::inserter (allVars, allVars.begin ()));
       Expr post = bind::fapp (fi.sumPred, postArgs);
       m_db.addRule (allVars, boolop::limp (pre, post));
       
