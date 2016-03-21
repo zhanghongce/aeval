@@ -7,6 +7,10 @@
 
 #include "ufo/ufo_iterators.hpp"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/FileSystem.h"
+
+#include "ufo/Smt/EZ3.hh"
+#include "ufo/Stats.hh"
 
 //#include <queue>
 
@@ -65,6 +69,13 @@ UseWrite ("horn-use-write",
           llvm::cl::desc ("Write to store instead of havoc"),
           cl::init (false),
           cl::Hidden);
+
+
+static llvm::cl::opt<bool>
+LargeStepReduce ("horn-large-reduce",
+                 llvm::cl::desc ("Reduce constraints during large-step encoding"),
+                 cl::init (false),
+                 cl::Hidden);
 
 static const Value *extractUniqueScalar (CallSite &cs)
 {
@@ -1171,19 +1182,98 @@ namespace seahorn
   {
     const CutPoint &target = edge.target ();
     
+    std::unique_ptr<EZ3> zctx;
+    std::unique_ptr<ZSolver<EZ3> > smt;
+    if (LargeStepReduce) 
+    {
+      errs () << "\nE";
+      // XXX Consider using global EZ3 
+      zctx.reset (new EZ3 (m_sem.efac ()));
+      smt.reset (new ZSolver<EZ3> (*zctx));
+    }
+      
+    unsigned head = side.size ();
+    bind::IsConst isConst;
+    
     bool first = true;
     for (const BasicBlock& bb : edge) 
     {
+      Expr bbV;
       if (first)
       {
-        s.havoc (m_sem.symb (bb));
+        bbV = s.havoc (m_sem.symb (bb));
         m_sem.exec (s, bb, side, trueE);  
       }
-      else execEdgBb (s, edge, bb, side);
+      else
+      {
+        execEdgBb (s, edge, bb, side);
+        bbV = s.read (m_sem.symb (bb));
+      }
+
+      
+      if (LargeStepReduce){
+        for (unsigned sz = side.size (); head < sz; ++head)
+        {
+            ufo::ScopedStats __st__ ("LargeSymExec.smt");
+            Expr e = side [head];
+            if (!bind::isFapp (e) || isConst (e)) smt->assertExpr (e);
+        }
+        
+        errs () << ".";
+        errs ().flush ();
+        
+        TimeIt<llvm::raw_ostream&> _t_("smt-solving", errs(), 0.1);
+        
+        ufo::ScopedStats __st__ ("LargeSymExec.smt");
+        Expr a[1] = {bbV};
+
+        LOG("pedge",
+          std::error_code EC;
+          raw_fd_ostream file ("/tmp/p-edge.smt2", EC, sys::fs::F_Text);
+          if (!EC)
+          {
+            file << "(set-info :original \""
+                 << edge.source ().bb ().getName () << " --> "
+                 << bb.getName () << " --> "
+                 << edge.target ().bb ().getName () << "\")\n";
+            smt->toSmtLibAssuming (file, a);
+            file.close ();
+          });
+        
+        auto res = smt->solveAssuming (a);
+        if (!res)
+        {
+          errs () << "F";
+          errs ().flush ();
+          Stats::count ("LargeSymExec.smt.unsat");
+          smt->assertExpr (boolop::lneg (bbV));
+          side.push_back (boolop::lneg (bbV));
+        }
+      }
+      
+      
       first = false;
     }
     
     execEdgBb (s, edge, target.bb (), side, true);
+    
+    if (LargeStepReduce)
+    {
+      for (unsigned sz = side.size (); head < sz; ++head)
+      {
+        ufo::ScopedStats __st__ ("LargeSymExec.smt");
+        Expr e = side [head];
+        if (!bind::isFapp (e) || isConst (e)) smt->assertExpr (e);
+      }    
+    
+      ufo::ScopedStats __st__ ("LargeSymExec.smt.last");
+      auto res = smt->solve ();
+      if (!res)
+      {
+        Stats::count ("LargeSymExec.smt.last.unsat");
+        side.push_back (mk<FALSE> (m_sem.efac ()));
+      }
+    }
   }
   
   namespace sem_detail
