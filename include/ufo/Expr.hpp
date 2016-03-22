@@ -1333,7 +1333,10 @@ namespace expr
    */
   template <typename T, typename iterator> 
   Expr mknary (iterator bgn, iterator end)
-  { return eptr (*bgn)->efac ().mkNary (T(), bgn, end);  }
+  {
+    if (bgn == end) return Expr(nullptr);
+    return eptr (*bgn)->efac ().mkNary (T(), bgn, end);
+  }
 
   template <typename T, typename iterator> 
   Expr mknary (Expr base, iterator bgn, iterator end)
