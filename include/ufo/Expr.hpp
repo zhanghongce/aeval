@@ -1130,6 +1130,8 @@ namespace expr
   template <typename ExprVisitor> 
   Expr visit (ExprVisitor &v, Expr expr, DagVisitCache &cache)
   {
+    if (!expr) return expr;
+    
     if (expr->use_count () > 1)
       {
 	DagVisitCache::const_iterator cit 
