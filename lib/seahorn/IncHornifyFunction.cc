@@ -26,6 +26,7 @@ std::string IncHornifyFunction::extractInfo(const BasicBlock &BB, unsigned crumb
   // errs() << "Extracting info for: " << crumb << "\n";
   std::stringstream lines;
   for (const Instruction &inst : BB) {
+    //check if md is not null
     MDNode *md = inst.getMetadata("dbg");
     DILocation loc(md);
     unsigned int line = loc.getLineNumber();
