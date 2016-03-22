@@ -85,13 +85,16 @@ namespace
           
           // Assume that only one operand can be constant
           Value* CstBound = nullptr;
-          if (isa<ConstantInt> (Op1)) 
-            CstBound = Op1;
-          else if (isa<ConstantInt> (Op2)) 
-            CstBound = Op2;
+          if (ConstantInt* C = dyn_cast<ConstantInt> (Op1))  {
+            if (C->getBitWidth () > 1) // no booleans
+              CstBound = Op1;
+          } else if (ConstantInt* C = dyn_cast<ConstantInt> (Op2)) { 
+            if (C->getBitWidth () > 1) // no booleans            
+              CstBound = Op2;
+          }
           
           if (!CstBound) {
-            LOG ("sym-bound", errs () << "STC: no integer constant operands\n");
+            LOG ("sym-bound", errs () << "STC: no non-boolean integer constant operands\n");
             return false;
           }
           
@@ -117,6 +120,30 @@ namespace
           return true;
       }
       return false;
+    }
+
+    bool SymbolizeLoop (Loop* L, IRBuilder<> B) {
+      LOG ("sym-bound", errs () << "STC:" << *L << "\n");
+      bool Change=false;
+      SmallVector<BasicBlock*, 16> ExitingBlocks;
+      L->getExitingBlocks (ExitingBlocks);
+      for (BasicBlock* ExitingBlock : ExitingBlocks) {
+        Instruction* ExitCond = getLoopExitCond (ExitingBlock);
+        if (!ExitCond) { 
+          LOG ("sym-bound", 
+               errs () << "STC: Skipped exiting block " 
+               << *ExitingBlock 
+               << " because no condition found\n");            
+          continue;
+          }
+        
+        LOG ("sym-bound", 
+             errs () << "STC: found loop condition " << *ExitCond << "\n");            
+        
+        Change |= SymbolizeInst (ExitCond, B);        
+        
+      }
+      return Change;
     }
 
    public:
@@ -160,27 +187,12 @@ namespace
       LoopInfo* LI = &getAnalysis<LoopInfo>();      
       bool Change = false;
       for (auto L : boost::make_iterator_range (LI->begin (), LI->end ())) {
-        LOG ("sym-bound", errs () << "STC:" << *L << "\n");
-
-        SmallVector<BasicBlock*, 16> ExitingBlocks;
-        L->getExitingBlocks (ExitingBlocks);
-        for (BasicBlock* ExitingBlock : ExitingBlocks) {
-          Instruction* ExitCond = getLoopExitCond (ExitingBlock);
-          if (!ExitCond) { 
-            LOG ("sym-bound", 
-                 errs () << "STC: Skipped exiting block " 
-                         << *ExitingBlock 
-                         << " because no condition found\n");            
-            continue;
-          }
-
-          LOG ("sym-bound", 
-               errs () << "STC: found loop condition " << *ExitCond << "\n");            
-
-          Change |= SymbolizeInst (ExitCond, B);        
-        } 
-      } 
-      
+        // symbolize nested loops
+        for (auto SL: *L)
+        { Change |= SymbolizeLoop (SL, B); }
+        // symbolize outermost loop
+        Change |= SymbolizeLoop (L, B);
+      }      
       return Change;
     }
 
