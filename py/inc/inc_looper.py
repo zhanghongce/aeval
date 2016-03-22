@@ -120,7 +120,7 @@ def run_inc(all_funcs, fname, num_blks, timeout):
             my_timeout = '--timeout=' + str(timeout)
             cmd = [sea_cmd, 'inc', info, '--horn-no-verif', '--lower-invoke',
                    '--devirt-functions', '--step=incsmall', '--inc_verbose', '--horn-df=bla.txt',
-                   my_timeout, '-g', '-O0', fname]
+                   my_timeout, '-g', '-O0', '--null-check', fname]
             cmd_sc = [sea_cmd, ' inc ', info, ' --horn-no-verif ', '--lower-invoke ',
                    '--devirt-functions ', '--step=incsmall ', '--inc_verbose ' ,
                    my_timeout, fname]
