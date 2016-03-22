@@ -6,6 +6,13 @@
 #include "seahorn/Support/CFG.hh"
 
 #include "avy/AvyDebug.h"
+
+#include "llvm/Support/CommandLine.h"
+static llvm::cl::opt<bool>
+ExtraCp("horn-extra-cps", llvm::cl::desc
+        ("Generate additional cut-points"),
+        llvm::cl::init (false));
+
 namespace seahorn
 {
   char CutPointGraph::ID = 0;
@@ -41,8 +48,10 @@ namespace seahorn
 
     for (const BasicBlock *bb : topo)
     {
-      // -- skip basic blocks that are already marked as cut-points
-      if (isCutPoint (*bb)) continue;
+      // -- skip basic blocks that are already marked as cut-points if
+      // -- ExtraCp is enabled, we might still find a new cutpoint
+      // -- that points into this one
+      if (!ExtraCp && isCutPoint (*bb)) continue;
       
       // entry
       if (pred_begin (bb) == pred_end (bb))
@@ -66,10 +75,16 @@ namespace seahorn
         {
           LOG ("cpg", errs () << "back-edge cp: " << bb->getName () << "\n");
           newCp (*bb);
+          
+          // -- make a source of a back edge that has multiple successors a cutpoint
+          if (ExtraCp && succ_end(bb) - succ_begin(bb) > 1)
+          {
+            LOG("cpg", 
+                errs () << "Adding (pred) cp: " << pred->getName () << "\n";);
+            newCp (*pred);
+          }
         }
-      
     }
-
   }
 
   void setbit (llvm::BitVector &b, unsigned idx)

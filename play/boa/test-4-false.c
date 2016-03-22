@@ -1,4 +1,4 @@
-// SAFE
+// UNSAFE
 
 extern int nd ();
 extern void __VERIFIER_assume (int v);
@@ -22,7 +22,6 @@ int main(int argc, char**argv)
   {
     p[i] = i;
   }
-
-  printf("%d\n", p[i]);
-  return 42;
+  // trick llvm so that it cannot detect overflow
+  return p[(nd () > 0 ? i-1 : i)];
 }

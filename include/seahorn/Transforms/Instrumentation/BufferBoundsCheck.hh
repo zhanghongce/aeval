@@ -1,153 +1,125 @@
-#ifndef __BUFFER_BOUNDS_CHECK__HH__
-#define __BUFFER_BOUNDS_CHECK__HH__
+#ifndef __ARRAY_BOUNDS_CHECK__HH__
+#define __ARRAY_BOUNDS_CHECK__HH__
 
-#include "seahorn/Analysis/CanAccessMemory.hh"
+/*
+  Encodings to instrument a program for Array Bounds Check (ABC).
+ */ 
 
 #include "llvm/Pass.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/Analysis/MemoryBuiltins.h"
+#include "llvm/Analysis/CallGraph.h"
 #include "llvm/Target/TargetLibraryInfo.h"
-#include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/Support/Debug.h"
 
-#include "boost/unordered_set.hpp"
+#include "seahorn/config.h"
+#include "seahorn/Analysis/CanAccessMemory.hh"
+#include "seahorn/Support/DSAInfo.hh"
 
-// #include "dsa/DataStructure.h"
-// #include "dsa/DSGraph.h"
-// #include "dsa/DSNode.h"
+
+#include "boost/unordered_set.hpp"
 
 namespace seahorn
 {
   using namespace llvm;
 
-  class BufferBoundsCheck : public llvm::ModulePass
-  {
+  /* 
+     First encoding.
 
+     For each pointer dereference *p we add two shadow registers:
+     p.offset and p.size. p.offset is the distance from the base address
+     of the object that contains p to actual p and p.size is the actual
+     size of the allocated memory for p (including padding). Note that
+     for stack and static allocations p.size is always know but for
+     malloc-like allocations p.size may be unknown.
+
+     Then, for each pointer dereference *p we add two assertions:
+       [underflow]  assert (p.offset >= 0)
+       [overflow ]  assert (p.offset + p.addr_size <= p.size)
+       where p.addr_size is statically known by llvm.
+
+     For instrumenting a function f we add for each dereferenceable
+     formal parameter x two more shadow formal parameters x.offset and
+     x.size. Then, at a call site of f and for a dereferenceable actual
+     parameter y we add its corresponding y.offset and y.size. To
+     instrument the return value of a function we just keep of two
+     shadow global variables ret.offset and ret.size so that the callee
+     updates them before it returns to the caller.
+
+     If the instrumented program does not violate any of the assertions
+     then the original program is free of buffer overflows/underflows.
+
+     TODO: 
+       - instrument pointers originated from loads.
+       - instrument intToPtr instructions
+  */
+  class ABC1 : public llvm::ModulePass
+  {
     typedef boost::unordered_set< const Value *> ValueSet;
 
     const DataLayout *m_dl;
     TargetLibraryInfo *m_tli;
-    //DataStructures *m_dsa;
-    //ObjectSizeOffsetEvaluator *m_obj_size_eval;
 
-    Type *m_Int64Ty;    
-    Type *m_Int64PtrTy;    
+    Type *m_IntPtrTy;    
 
     Function * m_errorFn;
-    Function * m_memsafeFn;    
 
-    BasicBlock * m_err_bb;
-    BasicBlock * m_safe_bb;
+    Value* m_ret_offset;
+    Value* m_ret_size;
+
+    unsigned m_mem_accesses;   //! total number of instrumented mem accesses
+    unsigned m_checks_added;   //! checks added
+    unsigned m_trivial_checks; //! checks ignored because they are safe
+    unsigned m_checks_unable;  //! checks unable to add
 
     DenseMap <const Value*, Value*> m_offsets;
     DenseMap <const Value*, Value*> m_sizes;
 
-    //uint64_t getDSNodeSize (const Value *V, DSGraph *dsg, DSGraph *gDsg);
-    
-    Value* lookupSize (const Value* ptr)
-    {
-        auto it = m_sizes.find (ptr);
-        if (it != m_sizes.end ()) return it->second;
-        else return nullptr;
-    }
+   private:
 
-    Value* lookupOffset (const Value* ptr)
-    {
-        auto it = m_offsets.find (ptr);
-        if (it != m_offsets.end ()) return it->second;
-        else return nullptr;
-    }
+    Value* lookupSize (const Value* ptr);
+    Value* lookupOffset (const Value* ptr);
+
+    /* To instrument accesses */
 
     void resolvePHIUsers (const Value *v, 
                           DenseMap <const Value*, Value*>& m_table);
-
-    unsigned storageSize (const llvm::Type *t) 
-    {
-      return m_dl->getTypeStoreSize (const_cast<Type*> (t));
-    }
-    
-    unsigned fieldOffset (const StructType *t, unsigned field)
-    {
-      return m_dl->getStructLayout (const_cast<StructType*>(t))->
-          getElementOffset (field);
-    }
-    
-    Value* createMul(IRBuilder<>B, 
-                     Value *LHS, unsigned RHS, 
-                     const Twine &Name = "");
-    
-    Value* createAdd(IRBuilder<>B, 
-                     Value *LHS, Value *RHS, 
-                     const Twine &Name = "");
                      
-    void instrumentGepOffset(IRBuilder<> B, 
-                             Instruction* insertPoint,                                    
+    void instrumentGepOffset(IRBuilder<> B, Instruction* insertPoint,
                              const GetElementPtrInst *gep);
 
-    void instrumentSizeAndOffsetPtr (Function* F, 
-                                     IRBuilder<> B, 
-                                     Instruction* insertPoint, 
-                                     const Value * ptr,
-                                     ValueSet &
-                                     /*,DSGraph *dsg, DSGraph *gDsg*/);
+    void instrumentSizeAndOffsetPtrRec (Function* F, IRBuilder<> B, 
+                                        Instruction* insertPoint, 
+                                        const Value * ptr, ValueSet & visited);
     
-    void instrumentSizeAndOffsetPtr (Function* F,
-                                     IRBuilder<> B, 
-                                     Instruction* insertPoint, 
-                                     const Value * ptr
-                                     /*,DSGraph *dsg, DSGraph *gDsg*/);
+    void instrumentSizeAndOffsetPtr (Function* F, IRBuilder<> B, 
+                                     Instruction* insertPoint, const Value * ptr);
+      
+    bool instrumentCheck (Function& F, IRBuilder<> B, Instruction& inst, 
+                          const Value& ptr, Value* len);
     
-    bool instrumentCheck (IRBuilder<> B, 
-                          Instruction& insertPoint, 
-                          const Value& ptr);
-    
-    bool instrumentCheck (IRBuilder<> B, 
-                          Instruction& inst, 
-                          const Value& ptr,
-                          const Value& len);
-    
-    void instrumentErrAndSafeBlocks (IRBuilder<>B, Function &F);   
-
-    /************************************/
     /*   To shadow function parameters  */
-    /************************************/
 
     DenseMap <const Function *, size_t > m_orig_arg_size;
-    // keep track of the store instructions for returning by ref the
-    // shadow offset and size parameters.
-    DenseMap <const Function*,  
-              std::pair<StoreInst*,StoreInst* > > m_ret_shadows;
+    // keep track of the store instructions for returning the shadow
+    // offset and size return parameters.
+    typedef std::pair<StoreInst*,StoreInst* > StoreInstPair;
+    typedef std::pair<Value*,Value*> ValuePair;
+    DenseMap <const Function*,  StoreInstPair> m_ret_shadows;
 
     bool addFunShadowParams (Function *F, LLVMContext &ctx);  
 
-    bool lookup (const Function *F) const
-    {
-      auto it = m_orig_arg_size.find (F);
-      return (it != m_orig_arg_size.end ());
-    }
-
-    bool IsShadowableFunction (const Function &F) const  
-    { 
-      auto it = m_orig_arg_size.find (&F);
-      if (it == m_orig_arg_size.end ()) return false;
-      return (F.arg_size () > it->second);
-      //return (m_orig_arg_size.find (&F) != m_orig_arg_size.end ());
-    }
-
-    bool IsShadowableType (Type * ty) const { return ty->isPointerTy (); } 
-    
-    // return the number of original arguments before the pass added
-    // shadow parameters
-    size_t getOrigArgSize (const Function &F) 
-    {
-      assert (IsShadowableFunction (F));
-      return m_orig_arg_size [&F];
-    }
+    bool IsShadowableFunction (const Function &F) const;  
+    bool IsShadowableType (Type * ty) const;
+    // return the number of original arguments before adding shadow
+    // parameters
+    size_t getOrigArgSize (const Function &F) ;
     
     // Formal parameters of F are x1 x2 ... xn y1 ... ym where x1...xn
     // are the original formal parameters and y1...ym are the shadow
@@ -157,36 +129,204 @@ namespace seahorn
     // This function returns the pair of shadow variables
     // <offset,size> corresponding to Arg if there exists, otherwise
     // returns a pair of null pointers.
-    std::pair<Value*,Value*> findShadowArg (Function *F, const Value *Arg);
-
-    std::pair<StoreInst*, StoreInst*> findShadowRet (Function *F) {
-      return m_ret_shadows [F];
-    }
+    ValuePair findShadowArg (Function *F, const Value *Arg);
+    StoreInstPair findShadowRet (Function *F);
 
   public:
+
     static char ID;
 
-  private:
-
-    unsigned ChecksAdded;   //! Array bounds checks added
-    unsigned ChecksSkipped; //! Array bounds checks ignored because store/load is safe
-    unsigned ChecksUnable;  //! Array bounds checks unable to add
-
-  public:
-
-    BufferBoundsCheck () : llvm::ModulePass (ID), 
-                           ChecksAdded (0), 
-                           ChecksSkipped (0), 
-                           ChecksUnable (0) { }
+    ABC1 () : llvm::ModulePass (ID), 
+              m_dl (nullptr), m_tli (nullptr),
+              m_IntPtrTy (nullptr), 
+              m_errorFn (nullptr), 
+              m_mem_accesses (0), m_checks_added (0), 
+              m_trivial_checks (0), m_checks_unable (0) { }
     
     virtual bool runOnModule (llvm::Module &M);
-    virtual bool runOnFunction (Function &F);
-    
     virtual void getAnalysisUsage (llvm::AnalysisUsage &AU) const;
-    virtual const char* getPassName () const {return "BufferBoundsCheck";}
+    virtual const char* getPassName () const {return "ArrayBoundsCheck1";}
+  };
+
+
+  /* 
+     Second encoding.
+
+     The encoding keeps track only of four global variables: 
+
+     - g_base (pointer), 
+     - g_ptr (pointer), 
+     - g_size (integer), and
+     - g_offset (integer) 
+
+     where g_ptr is some address between [g_base,..., g_base + g_size - addr_size] 
+     and g_offset is g_ptr - g_base
+
+     Initially:
+        assume (g_base > 0);
+        g_ptr = null;
+        assume (g_size > 0);
+        g_offset = 0;
+   
+     For each allocation site p := alloc (n):
+        if (!g_ptr && p == g_base) {
+          g_ptr = g_base;
+          g_size = n;
+          g_offset = 0;
+        }
+        else {
+         assume (g_base + g_size < p);
+        }
+    
+     For each p := q + n:
+        if (nd () && g_ptr && q == g_base) {
+          g_ptr = p;
+          g_offset = n;
+        }
+
+     For each memory access *p := rhs or lhs := *p:
+        if (g_ptr && p == g_ptr) {
+          assert (g_offset + p.addr_size <= g_size);
+          assert (g_offset >= 0);
+        }
+  */
+  class ABC2 : public llvm::ModulePass
+  {
+    class ABCInst {
+      
+      const DataLayout*  m_dl;
+      const TargetLibraryInfo* m_tli;
+      IRBuilder<> m_B;
+      CallGraph* m_cg;
+      DSAInfo* m_dsa_info;
+      ObjectSizeOffsetEvaluator m_eval;
+
+      Type *m_IntPtrTy;    
+
+      /// tracked_ptr is some aligned address between 
+      ///    [tracked_base, ... , tracked_base + tracked_size - address_sizeof(tracked_ptr))]
+      /// m_tracked_offset = m_tracked_ptr - m_tracked_base
+      Value* m_tracked_base; 
+      Value* m_tracked_ptr;
+      Value* m_tracked_offset;
+      Value* m_tracked_size;
+      Value* m_tracked_escaped_ptr;
+
+      Function* m_errorFn;
+      Function* m_nondetFn;
+      Function* m_nondetPtrFn;
+      Function* m_assumeFn;
+
+     public: // counters for stats
+      
+      unsigned m_checks_added;   
+      unsigned m_trivial_checks; 
+      unsigned m_mem_accesses;
+
+      unsigned m_intrinsics_checks_added;
+      unsigned m_gep_known_size_and_offset_checks_added;
+      unsigned m_gep_known_size_checks_added;
+      unsigned m_gep_unknown_size_checks_added;
+      unsigned m_non_gep_known_size_checks_added;
+      unsigned m_non_gep_unknown_size_checks_added;
+
+     private /* helpers */ :
+      
+      BasicBlock* Assert (Value* cond, BasicBlock* then, BasicBlock* cur, 
+                          Instruction* inst, const Twine &errorBBName);
+
+      void Assume (Value* cond, Function* F);
+
+      CallInst* NonDet (Function* F);
+
+      CallInst* NonDetPtr (Function* F);
+
+     private /*main operations*/ :
+
+      //! Initialization of base, offset, and size.
+      void doInit (Module& M);
+
+      //! Instrument any allocation site
+      void doAllocaSite (Value* ptr, Value* size, Instruction* insertPt);
+   
+      //! Instrument pointer arithmetic
+      void doPtrArith (GetElementPtrInst * gep, Instruction* insertPt);
+            
+      //! Instrument any read or write to a pointer
+      void doGepOffsetCheck (GetElementPtrInst* gep, uint64_t size, Instruction* insertPt);
+      void doGepPtrCheck (GetElementPtrInst* gep, Instruction* insertPt);
+      void doPtrCheck (Value* ptr, Value* n, Instruction* insertPt);
+
+      bool globalGeneratedBySeaHorn (Value* V) {
+        return (V == m_tracked_base || V == m_tracked_ptr ||
+                V == m_tracked_offset || V == m_tracked_size || 
+                V == m_tracked_escaped_ptr);
+      }
+        
+      std::string mkBBName (const Twine& Prefix, Value* V) {
+        if (V && V->hasName ()) {
+          Twine name = Prefix + "_" + V->getName () + "_bb";
+          return name.str();
+        }
+        else  { 
+          Twine name = Prefix + "_bb"; 
+          return name.str ();
+        }
+      }
+
+     public:
+      
+      ABCInst (Module& M, 
+               const DataLayout* dl, const TargetLibraryInfo* tli,
+               IRBuilder<> B, CallGraph* cg, DSAInfo* dsa_info,
+               Function* errorFn, Function* nondetFn,
+               Function* nondetPtrFn, Function* assumeFn);
+      
+      void visit (GetElementPtrInst *I);
+      void visit (LoadInst *I);
+      void visit (StoreInst *I);
+      void visit (MemTransferInst *MTI);
+      void visit (MemSetInst *MSI);
+      void visit (AllocaInst *I);
+      void visit (CallInst *I);
+      void visit (Function *F);
+    }; // end class
+    
+   public:
+
+    static char ID;
+    ABC2 (): llvm::ModulePass (ID) { }
+    virtual bool runOnModule (llvm::Module &M);
+    virtual void getAnalysisUsage (llvm::AnalysisUsage &AU) const;
+    virtual const char* getPassName () const {return "ArrayBoundsCheck2";}
     
   };
-  
+
+
+  /* 
+     Third encoding.
+
+     Assume that the analyzed program includes some predefined functions:
+
+     - void sea_abc_init(void);
+     - void sea_abc_alloc (uint64_t *base, uint64_t size);
+     - void sea_abc_log_ptr (uint8_t *base, uint64_t offset);
+     - void sea_abc_assert_valid_ptr (uint8_t *base, uint64_t offset);
+     - void sea_abc_assert_valid_offset (uint64_t offset, uint64_t size);
+
+     This encoding simply calls to these functions.
+  */
+  class ABC3 : public llvm::ModulePass
+  {
+
+   public:
+    static char ID;
+    ABC3 ():  llvm::ModulePass (ID) { }
+    virtual bool runOnModule (llvm::Module &M);
+    virtual void getAnalysisUsage (llvm::AnalysisUsage &AU) const;
+    virtual const char* getPassName () const {return "ArrayBoundsCheck3";}
+  };
+
 }
 
 #endif

@@ -9,6 +9,7 @@
 #include <boost/lexical_cast.hpp>
 
 #include "ufo/Expr.hpp"
+#include "ufo/Stats.hh"
 
 #include <algorithm>
 
@@ -61,8 +62,11 @@ namespace seahorn
     bool operator==(const HornRule & other) const
     { return hash() == other.hash ();}
 
-    // return only the body of the horn clause
+    /// return only the body of the horn clause
     Expr body () const {return m_body;}
+
+    /// set body of the horn clause
+    void setBody (Expr v) {m_body = v;}
 
     // return only the head of the horn clause
     Expr head () const {return m_head;}
@@ -122,7 +126,7 @@ namespace seahorn
       boost::copy (vars, std::back_inserter (m_vars));
     }
 
-    void addRule (HornRule rule)
+    void addRule (const HornRule &rule)
     {
       m_rules.push_back (rule);
       boost::copy (rule.vars (), std::back_inserter (m_vars));
@@ -166,6 +170,7 @@ namespace seahorn
                           bool skipConstraints = false,
                           bool skipQuery = false) const
     {
+      ufo::ScopedStats _st_("HornClauseDB::loadZFixedPoint");
       for (auto &p: getRelations ())
        fp.registerRelation (p); 
       

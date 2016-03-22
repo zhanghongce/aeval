@@ -141,7 +141,6 @@ def run_inc(all_funcs, fname, num_blks, timeout):
             tmp_split = func_res.split("\n")
             try:
                 res = (tmp_split[0]).split('|')[2]
-                # cons = (tmp_split[1]).split('|')[2]
                 incs = (tmp_split[2]).split('|')[2]
                 rounds = (tmp_split[3]).split('|')[2]
                 query = (tmp_split[4]).split('|')[2]

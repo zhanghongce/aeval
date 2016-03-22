@@ -51,43 +51,48 @@ class Clang(sea.LimitedCmd):
         return _remap_file_name (in_file, ext, work_dir)
 
     def run (self, args, extra):
-        # do nothing on .bc and .ll files
-        if _bc_or_ll_file (args.in_files[0]): return 0
-
-        cmd_name = which (['clang-mp-3.6', 'clang-3.6', 'clang',
-                                'clang-mp-3.5', 'clang-mp-3.4'])
-        if cmd_name is None: raise IOError ('clang not found')
-        self.clangCmd = sea.ExtCmd (cmd_name)
-
-        argv = ['-c', '-emit-llvm', '-D__SEAHORN__', '-fgnu89-inline']
-
-        argv.extend (filter (lambda s : s.startswith ('-D'), extra))
-
-        if args.llvm_asm: argv.append ('-S')
-        argv.append ('-m{0}'.format (args.machine))
-
-        if args.debug_info: argv.append ('-g')
-
-
+        out_files = []
         if len(args.in_files) == 1:
-            out_files = [args.out_file]
+            out_files.append (args.out_file)
         else:
             # create private workdir
             workdir = createWorkDir ()
-            out_files = [_remap_file_name (f, '.bc', workdir)
-                         for f in args.in_files]
+            for f in args.in_files:
+                if _bc_or_ll_file (f):
+                    out_files.append(f)
+                else:
+                    out_files.append(_remap_file_name (f, '.bc', workdir))
 
-        for in_file, out_file in zip(args.in_files, out_files):
-            if out_file is not None:
-                argv.extend (['-o', out_file])
+        assert (len(out_files) > 0)
 
-            # clone argv
-            argv1 = list ()
-            argv1.extend (argv)
+        if not all (_bc_or_ll_file (f) for f  in args.in_files):
+            cmd_name = which (['clang-mp-3.6', 'clang-3.6', 'clang',
+                               'clang-mp-3.5', 'clang-mp-3.4'])
+            if cmd_name is None: raise IOError ('clang not found')
+            self.clangCmd = sea.ExtCmd (cmd_name)
 
-            argv1.append (in_file)
-            ret = self.clangCmd.run (args, argv1)
-            if ret <> 0: return ret
+            argv = ['-c', '-emit-llvm', '-D__SEAHORN__', '-fgnu89-inline']
+
+            argv.extend (filter (lambda s : s.startswith ('-D'), extra))
+
+            if args.llvm_asm: argv.append ('-S')
+            argv.append ('-m{0}'.format (args.machine))
+
+            if args.debug_info: argv.append ('-g')
+
+            for in_file, out_file in zip(args.in_files, out_files):
+                if _bc_or_ll_file (in_file): continue
+
+                # clone argv
+                argv1 = list ()
+                argv1.extend (argv)
+
+                if out_file is not None:
+                    argv1.extend (['-o', out_file])
+
+                argv1.append (in_file)
+                ret = self.clangCmd.run (args, argv1)
+                if ret <> 0: return ret
 
         if len(out_files) > 1:
             # link
@@ -126,18 +131,69 @@ class Seapp(sea.LimitedCmd):
         ap = super (Seapp, self).mk_arg_parser (ap)
         ap.add_argument ('--inline', dest='inline', help='Inline all functions',
                          default=False, action='store_true')
-        ap.add_argument ('--entry', dest='entry', help='Entry point if main does not exist',
-                         default=None, metavar='FUNCTION')
-        ap.add_argument ('--do-bounds-check', dest='boc', help='Insert buffer overflow checks',
+        ap.add_argument ('--inline-only',
+                         help='Inline only these functions',
+                         dest='inline_only', type=str, metavar='str,...')
+        ap.add_argument ('--inline-allocators', dest='inline_alloc',
+                         help='Inline functions that (de)allocate memory',
                          default=False, action='store_true')
-        ap.add_argument ('--overflow-check', dest='ioc', help='Insert signed integer overflow checks',
+        ap.add_argument ('--inline-constructors', dest='inline_const',
+                         help='Inline C++ constructors/destructors',
                          default=False, action='store_true')
-        ap.add_argument ('--null-check', dest='ndc', help='Insert null dereference checks',
+        ap.add_argument ('--entry', dest='entry', help='Make entry point if main does not exist',
+                         default=None, metavar='str')
+        ap.add_argument ('--abc',
+                         dest='abc', help='Insert array bounds checks using encoding N',
+                         type=int, default=0, metavar='N')
+        ap.add_argument ('--abc-disable-underflow', dest='abc_no_under',
+                         help='Do not instrument for underflow checks',
+                         default=False, action='store_true')
+        ap.add_argument ('--abc-disable-reads', dest='abc_no_reads',
+                         help='Do not instrument memory reads',
+                         default=False, action='store_true')
+        ap.add_argument ('--abc-disable-writes', dest='abc_no_writes',
+                         help='Do not instrument memory writes',
+                         default=False, action='store_true')
+        ap.add_argument ('--abc-disable-mem-intrinsics', dest='abc_no_intrinsics',
+                         help='Do not instrument memcpy, memmove, and memset',
+                         default=False, action='store_true')
+        ap.add_argument ('--abc-escape-ptr', dest='abc_escape_ptr',
+                         help='Keep track whether a pointer escapes',
+                         default=False, action='store_true')
+        ap.add_argument ('--abc-use-deref', dest='abc_use_deref',
+                         help='Use dereferenceable attribute to add extra assumptions',
+                         default=False, action='store_true')
+        ap.add_argument ('--abc-track-base-only', dest='abc_track_base_only',
+                         help='Track only accesses to base pointers',
+                         default=False, action='store_true')
+        ap.add_argument ('--abc-print-dsa-info', dest='abc_print_dsa_info',
+                         help='Print information about DSA nodes and allocation sites',
+                         default=False, action='store_true')
+        ap.add_argument ('--abc-dsa-node', dest='abc_dsa',
+                         help='Instrument only pointers that belong to this DSA node N',
+                         type=int, default=0, metavar='N')
+        ap.add_argument ('--abc-alloc-site', dest='abc_site',
+                         help='Instrument only pointers  that belong to this allocation site N',
+                         type=int, default=0, metavar='N')
+        ap.add_argument ('--abc-instrument-only-types',
+                         help='Instrument only pointers of these user-defined types',
+                         dest='abc_only_types', type=str,metavar='str,...')
+        ap.add_argument ('--abc-instrument-except-types',
+                         help='Do not instrument a pointer if it is not of these user-defined types',
+                         dest='abc_except_types', type=str,metavar='str,...')
+
+
+        ap.add_argument ('--overflow-check', dest='ioc', help='Insert signed integer overflow checks (OBSOLETE)',
+                         default=False, action='store_true')
+        ap.add_argument ('--null-check', dest='ndc', help='Insert null dereference checks (OBSOLETE)',
                          default=False, action='store_true')
         ap.add_argument ('--externalize-addr-taken-functions',
                          help='Externalize uses of address-taken functions',
                          dest='enable_ext_funcs', default=False,
                          action='store_true')
+        ap.add_argument ('--externalize-functions',
+                         help='Externalize these functions',
+                         dest='extern_funcs', type=str, metavar='str,...')
         ap.add_argument ('--lower-invoke',
                          help='Lower invoke instructions',
                          dest='lower_invoke', default=False,
@@ -151,9 +207,9 @@ class Seapp(sea.LimitedCmd):
         ap.add_argument ('--strip-extern', help='Replace external function calls ' +
                          'by non-determinism', default=False, action='store_true',
                          dest='strip_external')
-        ap.add_argument ('--slice-function', dest='slice_function',
-                         help='Slice program keeping this function',
-                         default=None, metavar='FUNCTION')
+        ap.add_argument ('--slice-functions',
+                         help='Slice program onto these functions',
+                         dest='slice_funcs', type=str, metavar='str,...')
         add_in_out_args (ap)
         _add_S_arg (ap)
         return ap
@@ -166,6 +222,12 @@ class Seapp(sea.LimitedCmd):
         argv = list()
         if args.out_file is not None: argv.extend (['-o', args.out_file])
         if args.inline: argv.append ('--horn-inline-all')
+        if args.inline_only:
+            argv.append ('--horn-inline-all')
+            for f in args.inline_only.split(','):
+                argv.append ('--horn-inline-only={0}'.format(f))
+        if args.inline_alloc: argv.append ('--horn-inline-allocators')
+        if args.inline_const: argv.append ('--horn-inline-constructors')
 
         if args.strip_external:
             argv.append ('--strip-extern=true')
@@ -181,19 +243,38 @@ class Seapp(sea.LimitedCmd):
         if args.enable_ext_funcs:
             argv.append ('--externalize-addr-taken-funcs')
 
-        if args.boc:
-            argv.append ('--bounds-check')
-        if args.ioc:
-            argv.append ('--overflow-check')
-        if args.ndc:
-            argv.append ('--null-check')
+        if args.abc:
+            argv.append ('--abc={id}'.format(id=args.abc))
+            if args.abc_print_dsa_info: argv.append ('--dsa-info-print-stats')
+            argv.append ('--abc-dsa-node={n}'.format (n=args.abc_dsa))
+            argv.append ('--abc-alloc-site={n}'.format (n=args.abc_site))
+            if args.abc_only_types:
+                for t in args.abc_only_types.split(','):
+                    argv.append ('--abc-instrument-only-type={0}'.format(t))
+            if args.abc_except_types:
+                for t in args.abc_except_types.split(','):
+                    argv.append ('--abc-instrument-except-type={0}'.format (t))
+            if args.abc_no_under: argv.append ('--abc-instrument-underflow=false')
+            if args.abc_no_reads: argv.append ('--abc-instrument-reads=false')
+            if args.abc_no_writes: argv.append ('--abc-instrument-writes=false')
+            if args.abc_no_intrinsics: argv.append ('--abc-instrument-mem-intrinsics=false')
+            if args.abc_escape_ptr: argv.append ('--abc-escape-ptr')
+            if args.abc_use_deref: argv.append ('--abc-use-deref')
+            if args.abc_track_base_only: argv.append ('--abc-track-base-only')
 
-        if args.entry is not None and args.slice_function is None:
+        if args.ioc: argv.append ('--overflow-check')
+        if args.ndc: argv.append ('--null-check')
+
+        if args.extern_funcs:
+            for f in args.extern_funcs.split(','):
+                argv.append ('--externalize-function={0}'.format(f))
+
+        if args.slice_funcs:
+            for f in args.slice_funcs.split(','):
+                argv.append ('--slice-function={0}'.format(f))
+
+        if args.entry is not None:
             argv.append ('--entry-point={0}'.format (args.entry))
-
-        if args.slice_function is not None:
-            argv.append ('--slice-function-names={0}'.format (args.slice_function))
-            argv.append ('--entry-point={0}'.format (args.slice_function))
 
         if args.kill_vaarg:
             argv.append('--kill-vaarg=true')
@@ -225,6 +306,14 @@ class MixedSem(sea.LimitedCmd):
         ap.add_argument ('--no-reduce-main', dest='reduce_main',
                          help='Do not reduce main to return paths only',
                          default=True, action='store_false')
+        # some passes only after mixed semantics
+        ap.add_argument ('--symbolize-constant-loop-bounds', dest='sym_bounds',
+                         help='Convert constant loop bounds into symbolic ones',
+                         default=False, action='store_true')
+        ap.add_argument ('--ms-slice-functions',
+                         help='Slice program onto these functions after mixed semantics',
+                         dest='ms_slice_funcs', type=str)
+
         add_in_out_args (ap)
         _add_S_arg (ap)
         return ap
@@ -238,6 +327,11 @@ class MixedSem(sea.LimitedCmd):
         if args.out_file is not None: argv.extend (['-o', args.out_file])
         if not args.ms_skip: argv.append ('--horn-mixed-sem')
         if args.reduce_main: argv.append ('--ms-reduce-main')
+        if args.sym_bounds: argv.append ('--horn-symbolize-loops')
+        if args.ms_slice_funcs:
+            for f in args.ms_slice_funcs.split(','):
+                argv.append ('--slice-function={0}'.format(f))
+
         if args.llvm_asm: argv.append ('-S')
         argv.extend (args.in_files)
         return self.seappCmd.run (args, argv)
@@ -304,8 +398,13 @@ class Seaopt(sea.LimitedCmd):
         ap.add_argument ('--enable-nondet-init', dest='enable_nondet_init', default=False,
                          action='store_true')
         ap.add_argument ('--llvm-inline-threshold', dest='inline_threshold',
-                         type=int, metavar='T',
+                         type=int, metavar='NUM',
                          help='Inline threshold (default = 255)')
+        ap.add_argument ('--llvm-unroll-threshold', type=int,
+                         help='Unrolling threshold (default = 150)',
+                         dest='unroll_threshold',
+                         default=150, metavar='NUM')
+
         add_in_out_args (ap)
         _add_S_arg (ap)
         return ap
@@ -328,7 +427,11 @@ class Seaopt(sea.LimitedCmd):
         if not args.enable_nondet_init:
             argv.append ('--enable-nondet-init=false')
         if args.inline_threshold is not None:
-            argv.append ('--inline-threshold={t}'.format(t=args.inline_threshold))
+            argv.append ('--inline-threshold={t}'.format
+                         (t=args.inline_threshold))
+        if args.unroll_threshold is not None:
+            argv.append ('--unroll-threshold={t}'.format
+                         (t=args.unroll_threshold))
 
         argv.extend (args.in_files)
         if args.llvm_asm: argv.append ('-S')
@@ -348,7 +451,7 @@ class Unroll(sea.LimitedCmd):
 
     def mk_arg_parser (self, ap):
         ap = super (Unroll, self).mk_arg_parser (ap)
-        ap.add_argument ('--threshold', type=int, help='Unrolling threshhold. ' +
+        ap.add_argument ('--threshold', type=int, help='Unrolling threshold. ' +
                          'Loops of larger size than this value will not ' +
                          'be unrolled (-unroll-threshold)',
                          default=131072, metavar='T')
@@ -664,62 +767,62 @@ class SeaTerm(sea.LimitedCmd):
         except Exception as e:
             raise IOError(str(e))
 
-
-
 class SeaInc(sea.LimitedCmd):
-    def __init__ (self, quiet=False):
-        super (SeaInc, self).__init__ ('inc', 'SeaHorn Inconsistency Checks',
-                                        allow_extra=True)
+  def __init__ (self, quiet=False):
+      super (SeaInc, self).__init__ ('inc', 'SeaHorn Inconsistency Checks',
+                                      allow_extra=True)
 
 
-    @property
-    def stdout (self):
-        return
+  @property
+  def stdout (self):
+      return
 
-    def name_out_file (self, in_files, args=None, work_dir=None):
-        return _remap_file_name (in_files[0], '.smt2', work_dir)
+  def name_out_file (self, in_files, args=None, work_dir=None):
+      return _remap_file_name (in_files[0], '.smt2', work_dir)
 
-    def mk_arg_parser (self, ap):
-        ap = super (SeaInc, self).mk_arg_parser (ap)
-        ap.add_argument ('--stop', help='stop after n iterations', dest="stop",
-                    default=None, type=int)
-        ap.add_argument ('--all', help='assert all failing flags', dest="all",
-                        default=False,action='store_true')
-        ap.add_argument ('--bench', help='Output Benchmarking Info', action='store_true',
-                    default=False, dest="bench")
-        ap.add_argument ('--debug_cex', help='Print RAW CEX for debugging', action='store_true',
-                        default=False, dest="debug_cex")
-        ap.add_argument ('--inv', help='Outpu Invariants', action='store_true',
-                    default=False, dest="inv")
-        ap.add_argument ('--stat', help='Print statistics', dest="stat",
-                    default=False, action='store_true')
-        ap.add_argument ('--spacer_verbose', help='Spacer Verbose', action='store_true',
-                    default=False, dest="z3_verbose")
-        ap.add_argument ('--no_dl', help='Disable Difference Logic (UTVPI) in SPACER', action='store_true',
-                    default=False, dest="utvpi")
-        ap.add_argument ('--pp',
-                    help='Enable default pre-processing in the solver',
-                    action='store_true', default=False)
-        ap.add_argument ('--inc_verbose', help='Verbose', action='store_true',
-                    default=False, dest="inc_verbose")
-        ap.add_argument ('--save', help='Save results file', action='store_true',
-                        default=False, dest="save")
-        ap.add_argument ('--timeout', help='Timeout per function',
-                        type=float, default=20.00, dest="timeout")
-        ap.add_argument ('--func', help='Number of functions',
-                        type=int, default=-1, dest="func")
-        return ap
+  def mk_arg_parser (self, ap):
+      ap = super (SeaInc, self).mk_arg_parser (ap)
+      ap.add_argument ('--stop', help='stop after n iterations', dest="stop",
+                  default=None, type=int)
+      ap.add_argument ('--all', help='assert all failing flags', dest="all",
+                      default=False,action='store_true')
+      ap.add_argument ('--bench', help='Output Benchmarking Info', action='store_true',
+                  default=False, dest="bench")
+      ap.add_argument ('--debug_cex', help='Print RAW CEX for debugging', action='store_true',
+                      default=False, dest="debug_cex")
+      ap.add_argument ('--inv', help='Outpu Invariants', action='store_true',
+                  default=False, dest="inv")
+      ap.add_argument ('--stat', help='Print statistics', dest="stat",
+                  default=False, action='store_true')
+      ap.add_argument ('--spacer_verbose', help='Spacer Verbose', action='store_true',
+                  default=False, dest="z3_verbose")
+      ap.add_argument ('--no_dl', help='Disable Difference Logic (UTVPI) in SPACER', action='store_true',
+                  default=False, dest="utvpi")
+      ap.add_argument ('--pp',
+                  help='Enable default pre-processing in the solver',
+                  action='store_true', default=False)
+      ap.add_argument ('--inc_verbose', help='Verbose', action='store_true',
+                  default=False, dest="inc_verbose")
+      ap.add_argument ('--save', help='Save results file', action='store_true',
+                      default=False, dest="save")
+      ap.add_argument ('--timeout', help='Timeout per function',
+                      type=float, default=20.00, dest="timeout")
+      ap.add_argument ('--func', help='Number of functions',
+                      type=int, default=-1, dest="func")
+      return ap
 
-    def run(self, args, extra):
-        try:
-            # from inc.inc import Inc
-            # tt = Inc(args)
-            # tt.solve(extra[len(extra)-1])
-            from inc.par_inc import JobsSpanner
-            jb = JobsSpanner(args)
-            jb.spanner(extra[len(extra)-1])
-        except Exception as e:
-            raise IOError(str(e))
+  def run(self, args, extra):
+      try:
+          # from inc.inc import Inc
+          # tt = Inc(args)
+          # tt.solve(extra[len(extra)-1])
+          from inc.par_inc import JobsSpanner
+          jb = JobsSpanner(args)
+          jb.spanner(extra[len(extra)-1])
+      except Exception as e:
+          raise IOError(str(e))
+
+
 
 
 
