@@ -47,9 +47,12 @@ namespace seahorn
       unsigned m_id;
       std::string m_rep_name;
       unsigned m_accesses;
+      std::set<Type*> m_types;
 
-      WrapperDSNode (const DSNode* n): 
-          m_n (n), m_id (0), m_accesses (0) { }
+      WrapperDSNode (const DSNode* n, Type* ty): 
+          m_n (n), m_id (0), m_accesses (0) {
+        m_types.insert (ty);
+      }
 
       bool operator==(const WrapperDSNode& o) const {
          return m_n == o.m_n;
@@ -64,10 +67,12 @@ namespace seahorn
     DenseMap<const DSNode*, ValueSet> m_referrers_map;
     boost::bimap<const Value*, unsigned int> m_alloc_sites;
 
-    void add_node (const DSNode* n) {
+    void add_node (const DSNode* n, Type* ty) {
       auto it = m_nodes.find (n);
       if (it == m_nodes.end ()) {
-        m_nodes.insert (std::make_pair(n, WrapperDSNode (n)));
+        m_nodes.insert (std::make_pair(n, WrapperDSNode (n, ty)));
+      } else {
+        it->second.m_types.insert (ty);
       }
     }
 

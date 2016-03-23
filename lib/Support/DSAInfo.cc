@@ -88,21 +88,40 @@ namespace seahorn
       o << total_accesses
         << " Total number of accessed DS nodes.\n";     
 
-      //  Print a summary
-      unsigned int sum_size = 5;
-      o << "Summary of the " << sum_size  << " most accessed DS nodes:\n";
-      std::vector<WrapperDSNode> tmp_nodes_vector (nodes_vector);
-      std::sort (tmp_nodes_vector.begin (), tmp_nodes_vector.end (),
-                 [](WrapperDSNode n1, WrapperDSNode n2){
-                   return (n1.m_accesses > n2.m_accesses);
-                 });
-      if (total_accesses > 0) {
+      {  //  Print a summary of accesses
+        unsigned int sum_size = 5;
+        o << "Summary of the " << sum_size  << " most accessed DS nodes:\n";
+        std::vector<WrapperDSNode> tmp_nodes_vector (nodes_vector);
+        std::sort (tmp_nodes_vector.begin (), tmp_nodes_vector.end (),
+                   [](WrapperDSNode n1, WrapperDSNode n2){
+                     return (n1.m_accesses > n2.m_accesses);
+                   });
+        if (total_accesses > 0) {
+          for (auto &n: tmp_nodes_vector) {
+          if (sum_size <= 0) break;
+          sum_size--;
+          if (n.m_accesses == 0) break;
+          o << "  [Node Id " << n.m_id  << "] " 
+            << (int) (n.m_accesses * 100 / total_accesses) 
+            << "% of total memory accesses\n" ;
+          }
+          o << "  ...\n";
+        }
+      }
+
+      {  //  Print a summary of distinct types
+        unsigned int sum_size = 5;
+        o << "Summary of the " << sum_size  << " DS nodes with more distinct types:\n";
+        std::vector<WrapperDSNode> tmp_nodes_vector (nodes_vector);
+        std::sort (tmp_nodes_vector.begin (), tmp_nodes_vector.end (),
+                   [](WrapperDSNode n1, WrapperDSNode n2){
+                     return (n1.m_types.size() > n2.m_types.size());
+                   });
         for (auto &n: tmp_nodes_vector) {
           if (sum_size <= 0) break;
           sum_size--;
           o << "  [Node Id " << n.m_id  << "] " 
-            << (int) (n.m_accesses * 100 / total_accesses) 
-            << "% of total memory accesses\n" ;
+            << n.m_types.size () << " distinct types\n";
         }
         o << "  ...\n";
       }
@@ -131,6 +150,10 @@ namespace seahorn
         
         o << "  with " << n.m_accesses << " memory accesses \n";
         
+        o << "  Types={";
+        for (auto Ty: n.m_types) { o << *Ty << ";";}
+        o << "}\n";
+
         LOG("dsa-info", /*n.m_n->dump ();*/ 
             o << "=== Referrers \n";
             for (auto const& r : referrers) {
@@ -242,8 +265,10 @@ namespace seahorn
       for (const Value*v : boost::make_iterator_range (SM.global_begin (), 
                                                        SM.global_end ())){
         const DSNodeHandle lN = SM[v];
+        if (lN.isForwarding ()) continue;
+
         if (const DSNode* n = lN.getNode ()) {
-          add_node (n);
+          add_node (n, v->getType ());
           insert_referrers_map  (n, v);
         }
       }
@@ -259,8 +284,10 @@ namespace seahorn
                                                           SM.end ())){
           const Value* v = kv.first;
           DSNodeHandle lN = kv.second;
+          if (lN.isForwarding ()) continue;
+
           if (const DSNode* n = lN.getNode ()) {
-            add_node (n);
+            add_node (n, v->getType ());
             insert_referrers_map  (n, v);
           }
         }     
