@@ -32,7 +32,6 @@
 
 #include "seahorn/Transforms/Scalar/PromoteVerifierCalls.hh"
 #include "seahorn/Transforms/Utils/RemoveUnreachableBlocksPass.hh"
-#include "seahorn/Transforms/Utils/DummyMainFunction.hh"
 #include "seahorn/Transforms/Scalar/LowerGvInitializers.hh"
 
 #include "seahorn/Analysis/CanAccessMemory.hh"
@@ -75,13 +74,30 @@ InlineAll ("horn-inline-all", llvm::cl::desc ("Inline all functions"),
            llvm::cl::init (false));
 
 static llvm::cl::opt<bool>
+InlineAllocFn ("horn-inline-allocators", 
+               llvm::cl::desc ("Inline functions that allocate or deallocate memory"),
+               llvm::cl::init (false));
+
+static llvm::cl::opt<bool>
+InlineConstructFn ("horn-inline-constructors", 
+                  llvm::cl::desc ("Inline C++ constructors and destructors"),
+                  llvm::cl::init (false));
+
+static llvm::cl::opt<bool>
 CutLoops ("horn-cut-loops", llvm::cl::desc ("Cut all natural loops"),
            llvm::cl::init (false));
 
+
 static llvm::cl::opt<bool>
-BoundsChecks ("bounds-check", 
+SymbolizeLoops ("horn-symbolize-loops", 
+               llvm::cl::desc ("Convert constant loop bounds into symbolic bounds"),
+               llvm::cl::init (false));
+
+// The number refers to the encoding id. If zero no bounds check.
+static llvm::cl::opt<unsigned>
+ArrayBoundsChecks ("abc", 
      llvm::cl::desc ("Insert array bounds checks"), 
-     llvm::cl::init (false));
+     llvm::cl::init (0)); /* 0 no checks*/
 
 static llvm::cl::opt<bool>
 OverflowChecks ("overflow-check", 
@@ -204,8 +220,11 @@ int main(int argc, char **argv) {
   }
   if (dl) pass_manager.add (new llvm::DataLayoutPass ());
 
+  // -- Externalize some user-selected functions
+  pass_manager.add (seahorn::createExternalizeFunctionsPass ());
+
   // -- Create a main function if we do not have one.
-  pass_manager.add (new seahorn::DummyMainFunction ());
+  pass_manager.add (seahorn::createDummyMainFunctionPass ());
  
   // -- promote verifier specific functions to special names
   pass_manager.add (new seahorn::PromoteVerifierCalls ());
@@ -281,10 +300,24 @@ int main(int argc, char **argv) {
     // cleanup after lowering invoke's
     pass_manager.add (llvm::createCFGSimplificationPass ());  
   }
-  
-  if (InlineAll)
+
+  // lower arithmetic with overflow intrinsics
+  pass_manager.add(seahorn::createLowerArithWithOverflowIntrinsicsPass ());
+    
+  // lower libc++abi allocator and deallocators 
+  pass_manager.add(seahorn::createLowerLibCxxAbiAllocatorsPass ());
+
+  if (InlineAll || InlineAllocFn || InlineConstructFn)
   {
-    pass_manager.add (seahorn::createMarkInternalInlinePass ());
+    if (InlineAll)
+      pass_manager.add (seahorn::createMarkInternalInlinePass ());
+    else {
+      if (InlineAllocFn)
+        pass_manager.add (seahorn::createMarkInternalAllocOrDeallocInlinePass ());
+      if (InlineConstructFn)
+        pass_manager.add (seahorn::createMarkInternalConstructOrDestructInlinePass ());
+    }
+
     pass_manager.add (llvm::createAlwaysInlinerPass ());
     pass_manager.add (llvm::createGlobalDCEPass ()); // kill unused internal global
     pass_manager.add (seahorn::createPromoteMallocPass ());
@@ -294,17 +327,29 @@ int main(int argc, char **argv) {
   pass_manager.add(llvm::createDeadInstEliminationPass());
   pass_manager.add (llvm::createGlobalDCEPass ()); // kill unused internal global
   
-  pass_manager.add (new seahorn::LowerGvInitializers ());
   pass_manager.add(llvm::createUnifyFunctionExitNodesPass ());
 
-  if (BoundsChecks)
+  if (ArrayBoundsChecks > 0)
   { 
-    pass_manager.add (new seahorn::LowerCstExprPass ());
-    pass_manager.add (new seahorn::CanAccessMemory ());
-    pass_manager.add (new seahorn::BufferBoundsCheck ());
-    // -- Turn undef into nondet (undef might be created by
-    //    BufferBoundsCheck)
-    pass_manager.add (seahorn::createNondetInitPass ());
+    //pass_manager.add (new seahorn::CanAccessMemory ());
+
+    // XXX: probably this is a pass that we should always run
+    pass_manager.add (seahorn::createSimplifyPointerLoopsPass ());
+    switch (ArrayBoundsChecks) {
+      case 1: 
+        pass_manager.add (new seahorn::LowerCstExprPass ());
+        pass_manager.add (new seahorn::ABC1 ());
+        // -- Turn undef into nondet (undef might be created by ABC1)
+        pass_manager.add (seahorn::createNondetInitPass ());
+        break;
+      case 2: 
+        pass_manager.add (new seahorn::ABC2 ());
+        break;
+      default:
+        pass_manager.add (new seahorn::ABC3 ());
+        // --- inline some special functions
+        pass_manager.add (llvm::createAlwaysInlinerPass ());
+    }      
   }
 
   if (OverflowChecks)
@@ -326,6 +371,17 @@ int main(int argc, char **argv) {
     pass_manager.add (new seahorn::MixedSemantics ());
     pass_manager.add (new seahorn::RemoveUnreachableBlocksPass ());
     pass_manager.add (seahorn::createPromoteMallocPass ());
+    pass_manager.add (llvm::createGlobalDCEPass ()); // kill unused internal global    
+  }
+
+  // -- Enable function slicing
+  pass_manager.add (seahorn::createSliceFunctionsPass ());
+  // -- Create a main function if we sliced it away
+  pass_manager.add (seahorn::createDummyMainFunctionPass ());
+
+  if (SymbolizeLoops) 
+  {
+    pass_manager.add (seahorn::createSymbolizeConstantLoopBoundsPass ());
   }
 
   if (CutLoops)
@@ -335,8 +391,7 @@ int main(int argc, char **argv) {
     pass_manager.add (seahorn::createCutLoopsPass ());
     // pass_manager.add (new seahorn::RemoveUnreachableBlocksPass ());
   }
-  
-  
+    
   pass_manager.add (llvm::createVerifierPass());
     
   if (!OutputFilename.empty ()) 

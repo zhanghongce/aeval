@@ -1,5 +1,7 @@
 #include <stdio.h>
-int main(int argc, char**argv)
+extern int nd ();
+
+int main(int argc, char**argv) 
 {
   int i;
   int a[10];
@@ -8,8 +10,9 @@ int main(int argc, char**argv)
     a[i] = 9999;
   }
 
-  printf("%d\n", a[i]);
 
+  // trick llvm so that it cannot detect overflow
+  printf("%d\n", a[(nd()>0?i-1:i)]);
   return 42;
 
 }

@@ -3,6 +3,8 @@
 extern void __VERIFIER_assume (int v);
 #define assume __VERIFIER_assume
 
+extern int nd(void);
+
 int * foo (int *c, int n, int x) {
   assume (n > 0);
   int i;
@@ -14,7 +16,11 @@ int * foo (int *c, int n, int x) {
 int main() 
 {
   int a[10];
-  int *b = foo (a, 10, 5);
-  int *c = foo (b, 10, 7);
-  printf("%d\n", c[7]);
+  int n = nd();
+  int x = nd();
+  assume (n==10);
+  assume (x==5);
+  int *b = foo (a, n, x);
+  /* int *c = foo (b, 10, 7); */
+  printf("%d\n", b[7]);
 }

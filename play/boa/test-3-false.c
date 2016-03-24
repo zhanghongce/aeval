@@ -1,5 +1,7 @@
 #include <stdio.h>
 
+extern int nd ();
+
 int a[10];
 
 // To test loops 
@@ -10,6 +12,7 @@ int main(int argc, char**argv)
   for (i = 0; i < 10; i++) {
     a[i] = i;
   }
-  printf("%d\n", a[i]);
+  // trick llvm so that it cannot detect overflow
+  printf("%d\n", a[(nd()>0?i-1:i)]);
   return 42;
 }

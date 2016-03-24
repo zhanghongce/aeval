@@ -90,20 +90,18 @@ namespace seahorn {
                 if (UndefWarningErr) errs () << "ERROR: ";
                 else errs () << "Warning: ";
 
-                errs () << "read of an undefined value.\n";
+                errs () << "possible read of an undefined value.\n";
                 
-                if (!UndefWarningErr) {
-                  errs () << "This normally indicates that the program should be fixed, "
-                          << "otherwise SeaHorn will probably crash.\n";
-                }
+                // if (!UndefWarningErr) {
+                //   errs () << "This normally indicates that the program should be fixed, "
+                //           << "otherwise SeaHorn will probably crash.\n";
+                // }
 
                 if (errs().has_colors()) errs().resetColor();
 
-                if (!printDebugLoc (dyn_cast<Instruction> (phi)))
-                  errs () << "No location found. Make sure you run with -g flag.\n";
+                // if (!printDebugLoc (dyn_cast<Instruction> (phi)))
+                //   errs () << "No location found. Make sure you run with -g flag.\n";
                 
-                errs () << "\n";
-
                 m_undef_found = true;
               }
               
@@ -124,20 +122,18 @@ namespace seahorn {
                 if (UndefWarningErr) errs () << "ERROR: ";
                 else errs () << "Warning: ";
 
-                errs () << "read of an undefined value.\n";
+                errs () << "possible read of an undefined value.\n";
 
-                if (!UndefWarningErr)
-                  errs () << "This normally indicates that the program should be fixed, "
-                          << "otherwise SeaHorn will probably crash.\n";
+                // if (!UndefWarningErr)
+                //   errs () << "This normally indicates that the program should be fixed, "
+                //           << "otherwise SeaHorn will probably crash.\n";
                 
                 if (errs().has_colors()) errs().resetColor();
                 
-                if (!printDebugLoc (dyn_cast<Instruction> (u.getOperand (i))))
-                  errs () << "No location found. Make sure you run with -g flag.\n";
+                // if (!printDebugLoc (dyn_cast<Instruction> (u.getOperand (i))))
+                //   errs () << "No location found. Make sure you run with -g flag.\n";
                 
-              errs () << "\n";
-
-              m_undef_found = true;
+                m_undef_found = true;
             }
           }
         }
