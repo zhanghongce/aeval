@@ -88,6 +88,7 @@ def getAnswer(out_file):
 
 
 def run (workdir, fname, finfo, num_blks, timeout):
+    print "Getting functions information ..."
     sea_cmd = getSea()
     name = os.path.splitext (os.path.basename (fname))[0]
     info = '--slice-function=\"' + finfo + '"'
@@ -101,7 +102,7 @@ def run (workdir, fname, finfo, num_blks, timeout):
             f = {raw[1] : {'blks': raw[2], 'instr':raw[3]}}
             all_funcs.update(f)
     if len(all_funcs) > 0:
-        print 'Functions info ...  OK'
+        print 'Functions infos ...  OK'
         print 'Total number of functions ... ' + str(len(all_funcs))
         run_inc(all_funcs, fname, num_blks, timeout)
     else:
@@ -120,7 +121,7 @@ def run_inc(all_funcs, fname, num_blks, timeout):
     f_result.write(all_result)
     for func,v in all_funcs.iteritems():
         if int(v['blks']) >= num_blks:
-            print 'Running Function ... ' + func + '| BLK ...' + v['blks']
+            print 'Checking Inconsistency ... ' + func + '| BLK ...' + v['blks']
             info = '--slice-function=' + func.strip()
             my_timeout = '--timeout=' + str(timeout)
             cmd = [sea_cmd, 'inc', info, '--horn-no-verif', '--lower-invoke',
