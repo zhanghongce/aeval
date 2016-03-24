@@ -53,7 +53,12 @@ def createWorkDir (dname = None, save = False):
     return workdir
 
 def getSea ():
-    seahorn = os.path.join (root, "../../bin/sea")
+    #seahorn = os.path.join (root, "sea")
+    path = os.path.abspath (sys.argv[0])
+    path = os.path.dirname(path)
+    seahorn = os.path.join(path,'sea')
+    #print path
+    #print seahorn
     if not isexec (seahorn):
         raise IOError ("Cannot find sea")
     return seahorn
@@ -90,6 +95,7 @@ def run (workdir, fname, finfo, num_blks, timeout):
     getInfo_cmd = [sea_cmd, 'finfo', info, '-O0', fname]
     p = sub.Popen(getInfo_cmd, shell=False, stdout=sub.PIPE, stderr=sub.STDOUT)
     result_info, _ = p.communicate()
+    print result_info
     all_funcs = {}
     for info in result_info.split('\n'):
         if 'INC' in info:
