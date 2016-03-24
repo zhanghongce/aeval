@@ -158,6 +158,21 @@ namespace seahorn
     cp_map.clear ();
   }
 
+  void CutPointGraph::orderCutPoints (const Function &F, const TopologicalOrder &topo)
+  {
+    m_cps.clear ();
+    // -- re-create m_cps in topological order
+    for (const BasicBlock *bb : topo)
+    {
+      auto it = m_bb.find (bb);
+      if (it == m_bb.end ()) continue;
+
+      CutPointPtr cp = it->second;
+      cp.setId (m_cps.size ());
+      m_cps.push_back (cp);
+    }
+  }
+  
   void CutPointGraph::computeFwdReach (const Function &F, const TopologicalOrder &topo)
   {
     for (auto it = topo.rbegin (), end = topo.rend (); it != end; ++it)
@@ -181,6 +196,7 @@ namespace seahorn
     for (const BasicBlock *bb : topo)
     {
       BitVector &r = m_bwd [bb];
+      
       const BasicBlock &BB = *bb;
       for (const BasicBlock *pred :
              boost::make_iterator_range (pred_begin (bb), pred_end (bb)))
