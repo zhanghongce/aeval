@@ -62,6 +62,8 @@ namespace seahorn
     
   class CutPoint
   {
+    friend class CutPointGraph;
+    
     const CutPointGraph &m_parent;
     unsigned m_id;
     const BasicBlock &m_bb;
@@ -114,7 +116,9 @@ namespace seahorn
  
   class CutPointGraph : public FunctionPass
   {
-    typedef std::vector<boost::shared_ptr<CutPoint> > CpVector;
+    typedef boost::shared_ptr<CutPoint> CutPointPtr;
+    
+    typedef std::vector<CutPointPtr> CpVector;
     typedef std::vector<boost::shared_ptr<CpEdge> > CpEdgeVector;
     
     CpVector m_cps;

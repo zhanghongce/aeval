@@ -168,7 +168,7 @@ namespace seahorn
       if (it == m_bb.end ()) continue;
 
       CutPointPtr cp = it->second;
-      cp.setId (m_cps.size ());
+      cp->setId (m_cps.size ());
       m_cps.push_back (cp);
     }
   }
