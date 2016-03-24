@@ -18,6 +18,7 @@ import itertools
 
 root = os.path.dirname (os.path.dirname (os.path.realpath (__file__)))
 verbose = True
+f_result = None
 
 def isexec (fpath):
     if fpath == None: return False
@@ -35,6 +36,7 @@ def parseOpt (argv):
                        help="Temporary directory",
                        default=None)
     parser.add_option ('--finfo', dest='finfo', help='Funcs Info file', default='finfo_inc')
+    parser.add_option ('--save', dest='save', help='Save results into file', default='save')
     parser.add_option ('--num_blks', dest='num_blks', help='Number of Basic Blocks', default=3, type=int)
     parser.add_option ('--timeout', dest='timeout', help='Timeout per function', default=10.00, type=float)
 
@@ -53,12 +55,9 @@ def createWorkDir (dname = None, save = False):
     return workdir
 
 def getSea ():
-    #seahorn = os.path.join (root, "sea")
     path = os.path.abspath (sys.argv[0])
     path = os.path.dirname(path)
     seahorn = os.path.join(path,'sea')
-    #print path
-    #print seahorn
     if not isexec (seahorn):
         raise IOError ("Cannot find sea")
     return seahorn
@@ -95,7 +94,6 @@ def run (workdir, fname, finfo, num_blks, timeout):
     getInfo_cmd = [sea_cmd, 'finfo', info, '-O0', fname]
     p = sub.Popen(getInfo_cmd, shell=False, stdout=sub.PIPE, stderr=sub.STDOUT)
     result_info, _ = p.communicate()
-    print result_info
     all_funcs = {}
     for info in result_info.split('\n'):
         if 'INC' in info:
@@ -116,6 +114,7 @@ def run_inc(all_funcs, fname, num_blks, timeout):
     analyzed = {}
     bash_script = ""
     f_script = open (fname+"_script.sh", "w")
+    global f_result
     f_result = open (fname+"_result.txt", "w")
     all_result = "FUNCTION, NUM_BLKS, RESULT, LINE_NUMBER(S), ROUNDS, QUERY_TIME\n"
     f_result.write(all_result)
@@ -175,7 +174,6 @@ def getLines (lines_dict, incs):
 
 def main (argv):
     (opt, args) = parseOpt (argv)
-
     workdir = createWorkDir (opt.temp_dir, opt.save_temps)
     returnvalue = 0
     fname = args[1]
@@ -186,22 +184,15 @@ def main (argv):
     return returnvalue
 
 
-# if __name__ == '__main__':
-#     # unbuffered output
-#     sys.stdout = os.fdopen (sys.stdout.fileno (), 'w', 0)
-#     try:
-#         sys.exit (main (sys.argv))
-#     except KeyboardInterrupt:
-#         pass
-#     except Exception as e:
-#         print 'here'
-#     finally:
-#         sys.exit(0)
-
 if __name__ == '__main__':
     res = None
     try:
         res = main (sys.argv)
+    except Exception as e:
+        str(e)
+        f_result.close()
+    except KeyboardInterrupt:
+        f_result.close()
     finally:
         print '\n ... DONE ...'
     sys.exit (res)
