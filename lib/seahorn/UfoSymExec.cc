@@ -305,7 +305,9 @@ namespace
       if (cond && op0 && op1)
       {
         Expr rhs = mk<ITE> (cond, op0, op1);
-        if (UseWrite) write (I, rhs);
+
+        /* avoid creating nest ite expressions by always introducing fresh constants */
+        if (false && UseWrite) write (I, rhs);
         else side (lhs, rhs);
       }
     }
