@@ -1192,6 +1192,10 @@ namespace seahorn
       // XXX Consider using global EZ3 
       zctx.reset (new EZ3 (m_sem.efac ()));
       smt.reset (new ZSolver<EZ3> (*zctx));
+      ZParams<EZ3> params (*zctx);
+      params.set (":smt.array.weak", true);
+      params.set (":smt.arith.ignore_int", true);
+      smt->set (params);
     }
       
     unsigned head = side.size ();
@@ -1242,15 +1246,24 @@ namespace seahorn
             file.close ();
           });
         
-        auto res = smt->solveAssuming (a);
-        if (!res)
+        try
         {
-          errs () << "F";
-          errs ().flush ();
-          Stats::count ("LargeSymExec.smt.unsat");
-          smt->assertExpr (boolop::lneg (bbV));
-          side.push_back (boolop::lneg (bbV));
+          auto res = smt->solveAssuming (a);
+          if (!res)
+          {
+            errs () << "F";
+            errs ().flush ();
+            Stats::count ("LargeSymExec.smt.unsat");
+            smt->assertExpr (boolop::lneg (bbV));
+            side.push_back (boolop::lneg (bbV));
+          }
         }
+        catch (z3::exception &e)
+        {
+          errs () << e.msg () << "\n";
+          // std::exit (1);
+        }
+        
       }
       
       
@@ -1268,13 +1281,20 @@ namespace seahorn
         if (!bind::isFapp (e) || isConst (e)) smt->assertExpr (e);
       }    
     
-      ufo::ScopedStats __st__ ("LargeSymExec.smt.last");
-      auto res = smt->solve ();
-      if (!res)
+      try
       {
-        Stats::count ("LargeSymExec.smt.last.unsat");
-        side.push_back (mk<FALSE> (m_sem.efac ()));
+        ufo::ScopedStats __st__ ("LargeSymExec.smt.last");
+        auto res = smt->solve ();
+        if (!res)
+        {
+          Stats::count ("LargeSymExec.smt.last.unsat");
+          side.push_back (mk<FALSE> (m_sem.efac ()));
+        }
+      } catch (z3::exception &e)
+      {
+        errs () << e.msg () << "\n";
       }
+      
     }
   }
   
