@@ -136,6 +136,11 @@ ExternalizeAddrTakenFuncs ("externalize-addr-taken-funcs",
                            llvm::cl::desc ("Externalize uses of address-taken functions"),
                            llvm::cl::init (false));
 
+static llvm::cl::opt<bool>
+PromoteAssumptions ("promote-assumptions",
+                    llvm::cl::desc ("Promote verifier.assume to llvm.assume"),
+                    llvm::cl::init (true));
+
 static llvm::cl::opt<int>
 SROA_Threshold ("sroa-threshold",
                 llvm::cl::desc ("Threshold for ScalarReplAggregates pass"),
@@ -391,6 +396,9 @@ int main(int argc, char **argv) {
     pass_manager.add (seahorn::createCutLoopsPass ());
     // pass_manager.add (new seahorn::RemoveUnreachableBlocksPass ());
   }
+
+  if (PromoteAssumptions)
+    pass_manager.add (seahorn::createPromoteSeahornAssumePass ());
     
   pass_manager.add (llvm::createVerifierPass());
     
