@@ -63,9 +63,6 @@ class Feasibility(object):
         self.query_times = list()
 
 
-
-
-
     def run(self, query_index):
         self.fp.set (engine='spacer')
         if self.args.stat:
@@ -106,8 +103,9 @@ class Feasibility(object):
                 infeas.append(x)
         return feas, infeas
 
+
     def checkFeas(self, expr_query):
-        done = False
+        done = False # flag to stop the feasibility checking
         rounds = 1 # counter for feasibility check
         self.ee_idx = self.ee_vars(expr_query) #entr/exit vars
         self.log.info("EE VARS INDEX ..." + str(self.ee_idx))
@@ -244,11 +242,6 @@ class Feasibility(object):
         for idx in idxs:
             new_v = z3.Bool("__r"+str(idx)+"_0", qr.ctx)
             vars.append(new_v)
-            # if z3.is_true(v):
-            #     new_v = z3.Bool("__r"+str(idx)+"_0", qr.ctx)
-            #     vars.append(new_v)
-            # else:
-            #     vars.append(v)
         return vars
 
 
@@ -303,6 +296,9 @@ class Feasibility(object):
 
 
 def jobStarter(args, query_index, smt2_file):
+    """
+    Spawn jobs
+    """
     job = Feasibility(args, smt2_file)
     out = job.run(query_index)
     return out
@@ -310,6 +306,10 @@ def jobStarter(args, query_index, smt2_file):
 
 
 class JobsSpanner(object):
+    """
+    Class to start all the inconsistency jobs and start
+    callbacks for results
+    """
     def __init__(self, args):
         print "\n\t =========  SEAHORN INCONSISTENCY CHECKS   ========"
         global verbose

@@ -195,5 +195,5 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         f_result.close()
     finally:
-        print '\n ... DONE ...'
+        print '\nDONE ...'
     sys.exit (res)

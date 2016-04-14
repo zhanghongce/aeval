@@ -78,7 +78,7 @@ int main(int argc, char **argv) {
   llvm::SMDiagnostic err;
   llvm::LLVMContext &context = llvm::getGlobalContext();
   std::unique_ptr<llvm::Module> module;
-  
+
   module = llvm::parseIRFile(InputFilename, err, context);
   if (module.get() == 0)
   {
@@ -88,21 +88,21 @@ int main(int argc, char **argv) {
     if (llvm::errs().has_colors()) llvm::errs().resetColor();
     return 3;
   }
-  
+
   llvm::PassManager pass_manager;
 
   llvm::PassRegistry &Registry = *llvm::PassRegistry::getPassRegistry();
   llvm::initializeAnalysis(Registry);
   /// call graph and other IPA passes
   llvm::initializeIPA (Registry);
-  
+
   // add an appropriate DataLayout instance for the module
   const llvm::DataLayout *dl = module->getDataLayout ();
   if (!dl && !DefaultDataLayout.empty ()) {
     module->setDataLayout (DefaultDataLayout);
     dl = module->getDataLayout ();
   }
-  if (dl) 
+  if (dl)
     pass_manager.add (new llvm::DataLayoutPass ());
 
   //pass_manager.add (llvm::createVerifierPass());
@@ -115,13 +115,13 @@ int main(int argc, char **argv) {
   if (Profiler)
     pass_manager.add (seahorn::createProfilerPass ());
 
-  if (CfgDot)  
+  if (CfgDot)
     pass_manager.add (seahorn::createCFGPrinterPass ());
 
   if (CfgOnlyDot)
     pass_manager.add (seahorn::createCFGOnlyPrinterPass ());
 
-  if (CfgViewer)  
+  if (CfgViewer)
     pass_manager.add (seahorn::createCFGViewerPass ());
 
   if (CfgOnlyViewer)
