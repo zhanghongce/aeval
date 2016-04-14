@@ -162,7 +162,7 @@ def run_inc(all_funcs, fname, num_blks, timeout):
     return
 
 def getLines (lines_dict, incs):
-    if incs == "": return "None"
+    if incs == "": return "--"
     inc_lines = incs.split(";")
     line = ""
     for i in inc_lines:
