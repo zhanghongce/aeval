@@ -50,6 +50,7 @@ namespace seahorn
   llvm::Pass* createLowerLibCxxAbiAllocatorsPass ();
   llvm::Pass* createSimplifyPointerLoopsPass ();
   llvm::Pass* createSymbolizeConstantLoopBoundsPass ();
+  llvm::Pass* createLowerAssertPass ();
 
   llvm::Pass* createStripLifetimePass ();
   llvm::Pass* createStripUselessDeclarationsPass ();

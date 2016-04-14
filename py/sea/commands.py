@@ -202,6 +202,10 @@ class Seapp(sea.LimitedCmd):
                          help='Devirtualize indirect functions',
                          dest='devirt_funcs', default=False,
                          action='store_true')
+        ap.add_argument ('--lower-assert',
+                         help='Replace assertions with assumptions',
+                         dest='lower_assert', default=False,
+                         action='store_true')
         ap.add_argument ('--no-kill-vaarg', help='Do not delete variadic functions',
                          dest='kill_vaarg', default=True, action='store_false')
         ap.add_argument ('--strip-extern', help='Replace external function calls ' +
@@ -264,6 +268,8 @@ class Seapp(sea.LimitedCmd):
 
         if args.ioc: argv.append ('--overflow-check')
         if args.ndc: argv.append ('--null-check')
+
+        if args.lower_assert: argv.append('--lower-assert')
 
         if args.extern_funcs:
             for f in args.extern_funcs.split(','):

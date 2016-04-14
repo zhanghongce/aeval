@@ -136,6 +136,11 @@ ExternalizeAddrTakenFuncs ("externalize-addr-taken-funcs",
                            llvm::cl::desc ("Externalize uses of address-taken functions"),
                            llvm::cl::init (false));
 
+static llvm::cl::opt<bool>
+LowerAssert ("lower-assert", 
+             llvm::cl::desc ("Replace assertions with assumptions"),
+             llvm::cl::init (false));
+
 static llvm::cl::opt<int>
 SROA_Threshold ("sroa-threshold",
                 llvm::cl::desc ("Threshold for ScalarReplAggregates pass"),
@@ -362,6 +367,11 @@ int main(int argc, char **argv) {
   {
     pass_manager.add (new seahorn::LowerCstExprPass ());
     pass_manager.add (new seahorn::NullCheck ());
+  }
+
+  if (LowerAssert)
+  {
+    pass_manager.add (seahorn::createLowerAssertPass ());
   }
 
   pass_manager.add (new seahorn::RemoveUnreachableBlocksPass ());
