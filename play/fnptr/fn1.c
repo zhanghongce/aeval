@@ -1,5 +1,6 @@
 #include <stdio.h>
 
+
 extern void __VERIFIER_error ();
 extern int nd(void);
 
@@ -48,7 +49,8 @@ int test4 ()
     {
         j--;
         if (a[j]==nd()) {
-            assert(0<=j && j<SIZE);
+            //assert(0<=j && j<SIZE);
+            assert(0<=j);
             done = 1;
         }
     } while ( done==0 && j >= 0 );
