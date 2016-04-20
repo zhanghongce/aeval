@@ -48,7 +48,7 @@ namespace seahorn
   llvm::Pass* createPromoteMallocPass ();
   llvm::Pass* createKillVarArgFnPass ();
   llvm::Pass* createLowerArithWithOverflowIntrinsicsPass ();
-  llvm::Pass* createLowerLibCxxAbiAllocatorsPass ();
+  llvm::Pass* createLowerLibCxxAbiFunctionsPass ();
   llvm::Pass* createSimplifyPointerLoopsPass ();
   llvm::Pass* createSymbolizeConstantLoopBoundsPass ();
 

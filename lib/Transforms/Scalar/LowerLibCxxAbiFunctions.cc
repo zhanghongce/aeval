@@ -16,14 +16,14 @@ using namespace llvm;
 namespace seahorn
 {
 
-  struct LowerLibCxxAbiAllocators : public ModulePass
+  struct LowerLibCxxAbiFunctions : public ModulePass
   {
     static char ID;
     
     Function *m_mallocFn;
     Function *m_freeFn;
     
-    LowerLibCxxAbiAllocators () : ModulePass (ID) {}
+    LowerLibCxxAbiFunctions () : ModulePass (ID) {}
     
     bool runOnModule (Module &M)  {
 
@@ -117,6 +117,12 @@ namespace seahorn
             (*cg)[&F]->addCalledFunction (CallSite (ci),
                                           (*cg)[ci->getCalledFunction ()]);
           toKill.push_back (&I);
+        } else if (fn && fn->getName ().equals("__cxa_throw")) {
+          LOG ("lower-libc++abi", 
+               errs () << "Deleted " << I << "\n");
+          // Assume that after this call there is always an
+          // unreachable instruction
+          toKill.push_back (&I);
         }
       }
       
@@ -133,14 +139,14 @@ namespace seahorn
     }
     
     virtual const char* getPassName () const 
-    {return "Lower Libc++abi allocators";}
+    {return "Lower Libc++abi functions";}
 
   };
 
-  char LowerLibCxxAbiAllocators::ID = 0;
+  char LowerLibCxxAbiFunctions::ID = 0;
 
-  Pass *createLowerLibCxxAbiAllocatorsPass () 
-  {return new  LowerLibCxxAbiAllocators();}
+  Pass *createLowerLibCxxAbiFunctionsPass () 
+  {return new  LowerLibCxxAbiFunctions();}
   
 } // end namespace
 

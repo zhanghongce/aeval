@@ -309,8 +309,8 @@ int main(int argc, char **argv) {
   // lower arithmetic with overflow intrinsics
   pass_manager.add(seahorn::createLowerArithWithOverflowIntrinsicsPass ());
     
-  // lower libc++abi allocator and deallocators 
-  pass_manager.add(seahorn::createLowerLibCxxAbiAllocatorsPass ());
+  // lower libc++abi functions
+  pass_manager.add(seahorn::createLowerLibCxxAbiFunctionsPass ());
 
   if (InlineAll || InlineAllocFn || InlineConstructFn)
   {
