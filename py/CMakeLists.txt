@@ -15,6 +15,8 @@ if (PYTHON AND NOT USE_PY_SETUP)
   install (DIRECTORY sea DESTINATION lib/seapy
     FILES_MATCHING PATTERN "*.py")
   install (DIRECTORY term DESTINATION lib/seapy
+    FILES_MATCHING PATTERN "*.py")
+    install (DIRECTORY inc DESTINATION lib/seapy
             FILES_MATCHING PATTERN "*.py")
   install (PROGRAMS seapy DESTINATION bin RENAME sea)
   install (PROGRAMS sea_par.py DESTINATION bin RENAME sea_svcomp)

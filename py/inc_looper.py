@@ -17,7 +17,7 @@ import itertools
 
 
 root = os.path.dirname (os.path.dirname (os.path.realpath (__file__)))
-verbose = True
+verbose = False
 f_result = None
 
 def isexec (fpath):
@@ -39,7 +39,7 @@ def parseOpt (argv):
     parser.add_option ('--save', dest='save', help='Save results into file', default='save')
     parser.add_option ('--num_blks', dest='num_blks', help='Number of Basic Blocks', default=3, type=int)
     parser.add_option ('--timeout', dest='timeout', help='Timeout per function', default=10.00, type=float)
-
+    parser.add_option ('--verbose', help='', action='store_true', default=False, dest="verbose")
     (options, args) = parser.parse_args (argv)
     return (options, args)
 
@@ -95,6 +95,7 @@ def run (workdir, fname, finfo, num_blks, timeout):
     getInfo_cmd = [sea_cmd, 'finfo', info, '-O0', fname]
     p = sub.Popen(getInfo_cmd, shell=False, stdout=sub.PIPE, stderr=sub.STDOUT)
     result_info, _ = p.communicate()
+    if verbose: print "Function infos:\n" + result_info
     all_funcs = {}
     for info in result_info.split('\n'):
         if 'INC' in info:
@@ -126,7 +127,7 @@ def run_inc(all_funcs, fname, num_blks, timeout):
             my_timeout = '--timeout=' + str(timeout)
             cmd = [sea_cmd, 'inc', info, '--horn-no-verif', '--lower-invoke',
                    '--devirt-functions', '--step=incsmall', '--inc_verbose', '--horn-df=bla.txt',
-                   my_timeout, '-g', '-O0', '--null-check', fname]
+                   my_timeout, '-g', '-O0', '--null-check', '--lower-assert', fname]
             cmd_sc = [sea_cmd, ' inc ', info, ' --horn-no-verif ', '--lower-invoke ',
                    '--devirt-functions ', '--step=incsmall ', '--inc_verbose ' ,
                    my_timeout, fname]
@@ -135,6 +136,7 @@ def run_inc(all_funcs, fname, num_blks, timeout):
             f_script.write(bash_script)
             p = sub.Popen(cmd, shell=False, stdout=sub.PIPE, stderr=sub.STDOUT)
             result, _ = p.communicate()
+            if verbose: print result
             func_res = ""
             debug_info = {}
             for r in result.split('\n'):
@@ -181,6 +183,8 @@ def main (argv):
     finfo = opt.finfo
     num_blks = opt.num_blks
     timeout= opt.timeout
+    global verbose
+    verbose = opt.verbose
     run(workdir, fname, finfo, num_blks, timeout)
     return returnvalue
 
