@@ -140,6 +140,9 @@ class Seapp(sea.LimitedCmd):
         ap.add_argument ('--inline-constructors', dest='inline_const', 
                          help='Inline C++ constructors/destructors',
                          default=False, action='store_true')
+        ap.add_argument ('--promote-arrays', dest='promote_arrays', 
+                         help='Promote sized arrays to packed structs',
+                         default=False, action='store_true')
         ap.add_argument ('--entry', dest='entry', help='Make entry point if main does not exist',
                          default=None, metavar='str')
         ap.add_argument ('--abc', 
@@ -166,9 +169,6 @@ class Seapp(sea.LimitedCmd):
         ap.add_argument ('--abc-track-base-only', dest='abc_track_base_only',
                          help='Track only accesses to base pointers',
                          default=False, action='store_true')
-        ap.add_argument ('--abc-print-dsa-info', dest='abc_print_dsa_info',
-                         help='Print information about DSA nodes and allocation sites',
-                         default=False, action='store_true')
         ap.add_argument ('--abc-dsa-node', dest='abc_dsa', 
                          help='Instrument only pointers that belong to this DSA node N',
                          type=int, default=0, metavar='N')
@@ -181,6 +181,9 @@ class Seapp(sea.LimitedCmd):
         ap.add_argument ('--abc-instrument-except-types', 
                          help='Do not instrument a pointer if it is not of these user-defined types',
                          dest='abc_except_types', type=str,metavar='str,...')
+        ap.add_argument ('--dsa-info', dest='dsa_info',
+                         help='Print information about DSA nodes and allocation sites',
+                         default=False, action='store_true')
 
 
         ap.add_argument ('--overflow-check', dest='ioc', help='Insert signed integer overflow checks (OBSOLETE)',
@@ -234,6 +237,9 @@ class Seapp(sea.LimitedCmd):
         else:
             argv.append ('--strip-extern=false')
 
+        if args.promote_arrays:
+            argv.append ('--promote-arrays')
+
         if args.lower_invoke:
             argv.append ('--lower-invoke')
 
@@ -245,7 +251,7 @@ class Seapp(sea.LimitedCmd):
 
         if args.abc:
             argv.append ('--abc={id}'.format(id=args.abc))
-            if args.abc_print_dsa_info: argv.append ('--dsa-info-print-stats')
+            if args.dsa_info: argv.append ('--dsa-info')
             argv.append ('--abc-dsa-node={n}'.format (n=args.abc_dsa))
             argv.append ('--abc-alloc-site={n}'.format (n=args.abc_site))
             if args.abc_only_types: 

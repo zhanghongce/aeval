@@ -141,6 +141,11 @@ PromoteAssumptions ("promote-assumptions",
                     llvm::cl::desc ("Promote verifier.assume to llvm.assume"),
                     llvm::cl::init (true));
 
+static llvm::cl::opt<bool>
+PromoteArrays ("promote-arrays",
+               llvm::cl::desc ("Promote sized arrays to packed structs"),
+               llvm::cl::init (false));
+
 static llvm::cl::opt<int>
 SROA_Threshold ("sroa-threshold",
                 llvm::cl::desc ("Threshold for ScalarReplAggregates pass"),
@@ -332,6 +337,14 @@ int main(int argc, char **argv) {
   pass_manager.add(llvm::createDeadInstEliminationPass());
   pass_manager.add (llvm::createGlobalDCEPass ()); // kill unused internal global
   
+  if (PromoteArrays) 
+  { 
+    pass_manager.add (new seahorn::LowerCstExprPass ());
+    pass_manager.add (seahorn::createPromoteArraysPass());
+    // cleanup after createPromoteArraysPass
+    pass_manager.add (llvm::createGlobalDCEPass ()); 
+  }
+
   pass_manager.add(llvm::createUnifyFunctionExitNodesPass ());
 
   if (ArrayBoundsChecks > 0)
