@@ -4,6 +4,7 @@
 
 #include "seahorn/Transforms/Instrumentation/NullCheck.hh"
 
+#include "llvm/ADT/SmallSet.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
@@ -86,13 +87,22 @@ namespace seahorn
   {
     if (F.isDeclaration ()) return false;
 
+    // We instrument every address only once per basic block
+    SmallSet<Value*, 16> TempsToInstrument;
     std::vector<Instruction*> Worklist;
-    for (inst_iterator i = inst_begin(F), e = inst_end(F); i != e; ++i)  {
-      Instruction *I = &*i;
-      if (isa<LoadInst>(I)) {
-        Worklist.push_back (I);
-      } else if (isa<StoreInst>(I)) {
-        Worklist.push_back (I);
+    for (auto&BB : F)  {
+      TempsToInstrument.clear();
+      for (auto &i: BB) {
+        Instruction *I = &i;
+        if (isa<LoadInst>(I)) {
+          // We've seen this temp in the current BB.
+          if (!TempsToInstrument.insert(I).second) continue;  
+          Worklist.push_back (I);
+        } else if (isa<StoreInst>(I)) {
+          // We've seen this temp in the current BB.
+          if (!TempsToInstrument.insert(I).second) continue;  
+          Worklist.push_back (I);
+        }
       }
     }
 
@@ -108,14 +118,33 @@ namespace seahorn
         Ptr = SI->getPointerOperand();
       }
 
-
-      // Dereferencing a pointer so we insert a check if the pointer is null
+      // Dereferencing a pointer so we insert a check if the pointer
+      // is null
       if (Ptr) {
         insertNullCheck (Ptr, B, I);
+
+        // Add extra memory safety assumption that successful
+        // load/store imply validity of their arguments.
+        if (GetElementPtrInst* gep = dyn_cast<GetElementPtrInst>(Ptr)) {
+          if (gep->isInBounds() && gep->getPointerAddressSpace() == 0) {
+            Value* base = gep->getPointerOperand ();
+            B.SetInsertPoint (I);
+            auto It = B.GetInsertPoint();
+            ++It;
+            B.SetInsertPoint(I->getParent(), It);
+            CallInst* CI = B.CreateCall(AssumeFn, B.CreateIsNotNull(base));
+            CI->setDebugLoc (I->getDebugLoc ());
+            // update call graph
+            if (CG) {
+              auto f1 = CG->getOrInsertFunction (&F);
+              auto f2 = CG->getOrInsertFunction (AssumeFn);
+              f1->addCalledFunction (CallSite (CI), f2);
+            }
+          }
+        }
         change = true;
       }
     }
-
     return change;
   }
 
@@ -125,19 +154,25 @@ namespace seahorn
       
     // Get call graph
     CallGraphWrapperPass *cgwp = getAnalysisIfAvailable<CallGraphWrapperPass> ();
-    if (cgwp)
-      CG = &cgwp->getCallGraph ();
+    if (cgwp) CG = &cgwp->getCallGraph ();
 
     LLVMContext &ctx = M.getContext ();
 
     AttrBuilder B;
-    B.addAttribute (Attribute::NoReturn);
-    B.addAttribute (Attribute::ReadNone);
-    
+
     AttributeSet as = AttributeSet::get (ctx, 
                                          AttributeSet::FunctionIndex,
                                          B);
-    
+
+    AssumeFn = dyn_cast<Function>
+        (M.getOrInsertFunction ("verifier.assume", 
+                                as,
+                                Type::getVoidTy (ctx),
+                                Type::getInt1Ty (ctx),
+                                NULL));
+
+    B.addAttribute (Attribute::NoReturn);
+    B.addAttribute (Attribute::ReadNone);
     ErrorFn = dyn_cast<Function> (M.getOrInsertFunction ("verifier.error",
                                                          as,
                                                          Type::getVoidTy (ctx), NULL));
@@ -154,7 +189,7 @@ namespace seahorn
     return change;
   }
     
-  void NullCheck::getAnalysisUsage (llvm::AnalysisUsage &AU) const {
+  void NullCheck::getAnalysisUsage (llvm::AnalysisUsage &AU) const  {
     AU.setPreservesAll ();
     AU.addRequired<CallGraphWrapperPass> ();
     AU.addPreserved<CallGraphWrapperPass> ();
