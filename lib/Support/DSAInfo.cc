@@ -2,7 +2,7 @@
 #include "llvm/Support/CommandLine.h"
 
 static llvm::cl::opt<bool>
-DSAInfoPrint("dsa-info-print-stats",
+DSAInfoPrint("dsa-info",
     llvm::cl::desc ("Print all DSA and allocation information"),
     llvm::cl::init (false),
     llvm::cl::Hidden);
@@ -109,27 +109,9 @@ namespace seahorn
         }
       }
 
-      {  //  Print a summary of distinct types
-        unsigned int sum_size = 5;
-        o << "Summary of the " << sum_size  << " DS nodes with more distinct types:\n";
-        std::vector<WrapperDSNode> tmp_nodes_vector (nodes_vector);
-        std::sort (tmp_nodes_vector.begin (), tmp_nodes_vector.end (),
-                   [](WrapperDSNode n1, WrapperDSNode n2){
-                     return (n1.m_types.size() > n2.m_types.size());
-                   });
-        for (auto &n: tmp_nodes_vector) {
-          if (sum_size <= 0) break;
-          sum_size--;
-          o << "  [Node Id " << n.m_id  << "] " 
-            << n.m_types.size () << " distinct types\n";
-        }
-        o << "  ...\n";
-      }
-
       if (!DSAInfoPrint) return;
 
       o << "Detailed information about all DS nodes\n";
-      // Print detailed information about each DSA node
       std::sort (nodes_vector.begin (), nodes_vector.end (),
                  [](WrapperDSNode n1, WrapperDSNode n2){
                    return (n1.m_id < n2.m_id);
@@ -147,33 +129,72 @@ namespace seahorn
               o << " non-singleton={" << n.m_rep_name << ",...}";
           }
         }
-        
         o << "  with " << n.m_accesses << " memory accesses \n";
-        
-        o << "  Types={";
-        for (auto Ty: n.m_types) { o << *Ty << ";";}
-        o << "}\n";
 
-        LOG("dsa-info", /*n.m_n->dump ();*/ 
-            o << "=== Referrers \n";
+        // --- print type information
+        DSNode * nn = const_cast<DSNode*> (n.m_n);
+        LOG("dsa-info", errs () << "     ";  nn->dump ());
+        if (nn->hasNoType ())
+          o << "  Types={untyped";
+        else {
+          o << "  Types={";
+          DSNode::type_iterator ii = nn->type_begin(), ie = nn->type_end();
+          DSNode::type_iterator jj = ii;
+          if (++jj == ie) {
+            auto ty_set_ptr = ii->second;
+            if (ty_set_ptr->size () == 1) {
+              o << **(ty_set_ptr->begin ());
+            } else {
+              svset<Type*>::const_iterator ki = (*ty_set_ptr).begin (), ke = (*ty_set_ptr).end ();
+              o << "[";
+              for (; ki != ke; ) { 
+                o << **ki;
+                ++ki;
+                if (ki != ke) o << " | ";
+              }
+              o << "]";
+            }
+          }
+          else {
+            o << "struct {";
+            while (ii != ie) {
+              o << ii->first << ":";
+              if (!ii->second) { 
+                o << "untyped";
+              } else {
+                auto ty_set_ptr = ii->second;
+                if (ty_set_ptr->size () == 1) {
+                  o << **(ty_set_ptr->begin ());
+                } else {
+                  svset<Type*>::const_iterator ki = ty_set_ptr->begin (), ke = ty_set_ptr->end ();
+                  o << "[";
+                  for (; ki != ke; ) { 
+                    o << **ki;
+                    ++ki;
+                    if (ki != ke) o << " | ";
+                  }
+                  o << "]";
+                }
+              }
+              ++ii;
+              if (ii != ie)
+                o << ",";   
+            }
+            o << "}*";
+          }
+        }
+        // --- print llvm values referring to the DSNodes
+        o << "}\n";
+        LOG("dsa-info", 
+            o << "  Referrers={\n";
             for (auto const& r : referrers) {
-              if (r->hasName ())
-                o << r->getName ();
-              else 
-                o << *r; 
+              if (r->hasName ()) o << "    " << r->getName ();
+              else o << "  " << *r;  
               o << "\n";
-            });
+            }
+            o << "  }\n");
       }
   }        
-
-  // unsigned int DSAInfo::findDSNodeForValue (const Value* v) {
-  //   for (auto &p: m_referrers_map) {
-  //     const ValueSet& referrers = p.second;
-  //     if (referrers.count (v) > 0)
-  //       return getDSNodeID (p.first);
-  //   }
-  //   return 0;
-  // }
 
   void DSAInfo::findDSNodeForValue (const Value* v, std::set<unsigned int>& nodes) {
     for (auto &p: m_referrers_map) {
@@ -268,7 +289,7 @@ namespace seahorn
         if (lN.isForwarding ()) continue;
 
         if (const DSNode* n = lN.getNode ()) {
-          add_node (n, v->getType ());
+          add_node (n);
           insert_referrers_map  (n, v);
         }
       }
@@ -287,7 +308,7 @@ namespace seahorn
           if (lN.isForwarding ()) continue;
 
           if (const DSNode* n = lN.getNode ()) {
-            add_node (n, v->getType ());
+            add_node (n);
             insert_referrers_map  (n, v);
           }
         }     
@@ -396,7 +417,8 @@ namespace seahorn
           if (AllocaInst* AI = dyn_cast<AllocaInst> (I)) {
             Type *Ty = AI->getAllocatedType();
             if (!Ty->isSized() || dl->getTypeAllocSize(Ty) <= 0) {
-              errs () << "DSAInfo " << *AI << " will be ignored because it is not sized\n";
+              errs () << "DSAInfo " << *AI 
+                      << " will be ignored because it is not sized\n";
               continue;
             }
             unsigned int alloc_site_id; 
