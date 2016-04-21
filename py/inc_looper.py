@@ -37,9 +37,11 @@ def parseOpt (argv):
                        default=None)
     parser.add_option ('--finfo', dest='finfo', help='Funcs Info file', default='finfo_inc')
     parser.add_option ('--save', dest='save', help='Save results into file', default='save')
-    parser.add_option ('--num_blks', dest='num_blks', help='Number of Basic Blocks', default=3, type=int)
+
+    parser.add_option ('--num_blks', dest='num_blks', help='Number of Basic Blocks', default=0, type=int)
     parser.add_option ('--timeout', dest='timeout', help='Timeout per function', default=10.00, type=float)
     parser.add_option ('--verbose', help='', action='store_true', default=False, dest="verbose")
+    parser.add_option ('--boa', help='Add buffer overflow', action='store_true', default=False, dest="boa")
     (options, args) = parser.parse_args (argv)
     return (options, args)
 
@@ -87,7 +89,7 @@ def getAnswer(out_file):
         return None
 
 
-def run (workdir, fname, finfo, num_blks, timeout):
+def run (workdir, fname, finfo, num_blks, opt):
     print "Getting functions information ..."
     sea_cmd = getSea()
     name = os.path.splitext (os.path.basename (fname))[0]
@@ -105,12 +107,12 @@ def run (workdir, fname, finfo, num_blks, timeout):
     if len(all_funcs) > 0:
         print 'Functions infos ...  OK'
         print 'Total number of functions ... ' + str(len(all_funcs))
-        run_inc(all_funcs, fname, num_blks, timeout)
+        run_inc(all_funcs, fname, num_blks, opt)
     else:
         print 'Functions info ...  KO'
     return
 
-def run_inc(all_funcs, fname, num_blks, timeout):
+def run_inc(all_funcs, fname, num_blks, opt):
     sea_cmd = getSea()
     name = os.path.splitext (os.path.basename (fname))[0]
     analyzed = {}
@@ -124,8 +126,9 @@ def run_inc(all_funcs, fname, num_blks, timeout):
         if int(v['blks']) >= num_blks:
             print 'Checking Inconsistency ... ' + func + '| BLK ...' + v['blks']
             info = '--slice-function=' + func.strip()
-            my_timeout = '--timeout=' + str(timeout)
-            cmd = [sea_cmd, 'inc', info, '--horn-no-verif', '--lower-invoke',
+            my_timeout = '--timeout=' + str(opt.timeout)
+            boa = '--boa=2' if opt.boa else ''
+            cmd = [sea_cmd, 'inc', info, '--horn-no-verif', '--lower-invoke', boa,
                    '--devirt-functions', '--step=incsmall', '--inc_verbose', '--horn-df=bla.txt',
                    my_timeout, '-g', '-O0', '--null-check', '--lower-assert', fname]
             cmd_sc = [sea_cmd, ' inc ', info, ' --horn-no-verif ', '--lower-invoke ',
@@ -185,7 +188,7 @@ def main (argv):
     timeout= opt.timeout
     global verbose
     verbose = opt.verbose
-    run(workdir, fname, finfo, num_blks, timeout)
+    run(workdir, fname, finfo, num_blks, opt)
     return returnvalue
 
 

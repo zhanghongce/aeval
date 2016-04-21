@@ -49,7 +49,6 @@ int test4 ()
     {
         j--;
         if (a[j]==nd()) {
-            //assert(0<=j && j<SIZE);
             assert(0<=j);
             done = 1;
         }
