@@ -1,4 +1,5 @@
-// SAFE
+// RUN: %sea pf -O0 --abc=%abc_encoding "%s" 2>&1 | OutputCheck %s
+// CHECK: ^unsat$
 
 extern int nd ();
 extern void __VERIFIER_assume (int v);

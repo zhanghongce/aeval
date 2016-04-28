@@ -1,3 +1,6 @@
+// RUN: %sea pf -O3 --lower-invoke --symbolize-constant-loop-bounds --abc=%abc_encoding --abc-escape-ptr "%s" 2>&1 | OutputCheck %s
+// CHECK: ^unsat$
+
 #include <vector>
 extern "C" int nd ();
 extern "C" void do_something (int x);

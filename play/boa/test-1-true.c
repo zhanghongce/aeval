@@ -1,6 +1,9 @@
+// RUN: %sea pf -O0 --abc=%abc_encoding "%s" 2>&1 | OutputCheck %s
+// CHECK: ^unsat$
+
 // See how we treat global variables, struct and one-dimensional arrays
 // The program is safe in terms of buffer overflow although A is
-// uninitialized. B is unitialized since it is a global array.
+// uninitialized. B is initialized since it is a global array.
 int x=6;
 
 struct foo { 

@@ -1,3 +1,6 @@
+// RUN: %sea pf -O0 --abc=2 "%s" 2>&1 | OutputCheck %s
+// CHECK: ^sat$
+
 #include <stdio.h>
 int main(int argc, char**argv) 
 {

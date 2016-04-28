@@ -1,3 +1,6 @@
+// RUN: %sea pf -O0 --abc=%abc_encoding "%s" 2>&1 | OutputCheck %s
+// CHECK: ^sat$
+
 // If the multidimensional array is local then LLVM generates multiple
 // GetElementPtr instructions
 
