@@ -14,7 +14,7 @@ int example9(int index, int ints_size, int chars_size, int bytes_size, int boole
         max = 33;
 
     if (max != 0) {
-        int rand = getInt(6);
+        int rand = getInt(9);
         max = max - index;
         //at this point, max must be 1 because
         //if max!=0, then one of the cases above

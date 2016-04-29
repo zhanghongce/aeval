@@ -123,7 +123,7 @@ def get_opt(opt, fname):
     save_temps = ['--save-temps'] if opt.save_temps else []
     tmp_dir = ['--temp-dir=' + opt.temp_dir] if opt.temp_dir else []
     tmp = save_temps + tmp_dir
-    boa = ['--boa=2'] if opt.boa else []
+    boa = ['--abc=2'] if opt.boa else []
     reduce_large = ['--horn-large-reduce'] if opt.reduce_large else []
     reduce_weakly = ['--horn-reduce-weakly'] if opt.reduce_weakly else []
     reduce_false = ['--horn-reduce-constraints'] if opt.reduce_false else []
