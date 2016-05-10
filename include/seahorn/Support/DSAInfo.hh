@@ -151,6 +151,7 @@ namespace seahorn
 
     virtual bool runOnModule (llvm::Module &M);
     virtual void getAnalysisUsage (llvm::AnalysisUsage &AU) const;
+    void releaseMemory();
     virtual const char* getPassName () const {return "DSAInfo";}
 
   };

@@ -61,6 +61,12 @@ namespace seahorn
      return it->second.m_accesses > 0;
   }
 
+  void DSAInfo::releaseMemory () {
+    m_nodes.clear();
+    m_referrers_map.clear();
+    m_alloc_sites.clear();
+  }
+
   // Print statistics 
   void DSAInfo::WriteDSInfo (llvm::raw_ostream& o) {
 
@@ -134,8 +140,10 @@ namespace seahorn
         // --- print type information
         DSNode * nn = const_cast<DSNode*> (n.m_n);
         LOG("dsa-info", errs () << "     ";  nn->dump ());
-        if (nn->hasNoType ())
-          o << "  Types={untyped";
+        if (nn->isNodeCompletelyFolded())  {
+          o << "  Types={collapsed";
+        } else if (nn->hasNoType ())
+          o << "  Types={void";
         else {
           o << "  Types={";
           DSNode::type_iterator ii = nn->type_begin(), ie = nn->type_end();
@@ -160,7 +168,7 @@ namespace seahorn
             while (ii != ie) {
               o << ii->first << ":";
               if (!ii->second) { 
-                o << "untyped";
+                o << "void";
               } else {
                 auto ty_set_ptr = ii->second;
                 if (ty_set_ptr->size () == 1) {
@@ -186,7 +194,8 @@ namespace seahorn
         // --- print llvm values referring to the DSNodes
         o << "}\n";
         LOG("dsa-info", 
-            o << "  Referrers={\n";
+            o << "  " << std::distance(referrers.begin(), referrers.end()) 
+              << " Referrers={\n";
             for (auto const& r : referrers) {
               if (r->hasName ()) o << "    " << r->getName ();
               else o << "  " << *r;  
