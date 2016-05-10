@@ -28,19 +28,27 @@
   This pass rewrites a module by transforming sized arrays to packed
   structs.
 
-  Currently, we handle only the case of struct members of array type
-  and replace
+  Currently, we handle two cases:
 
-  %struct.foo = type { i32, %struct.bar, [2 x i32] }
+  - struct members of array type by replacing
+  
+    %struct.foo = type { i32, %struct.bar, [2 x i32] }
 
-  with
+    with
 
-  %struct.foo = type { i32, %struct.bar, <{i32, i32 }>}
+    %struct.foo = type { i32, %struct.bar, <{i32, i32 }>}
 
-  TODO: Handle arrays which are not struct members, e.g., %A = [10 x i32]
+  - allocas of arrays by replacing 
+
+    %a = alloca [10 x i32]
+  
+    with 
+
+    %a = alloca <{ i32, i32, i32, i32, i32, i32, i32, i32, i32, i32 }>
+
   TODO: Update CallGraph
-  TODO: All the metadata is removed by this pass! 
-        See FIXME.
+  TODO: All the metadata is removed by this pass. See FIXME.
+  
 */
 
 using namespace llvm;
@@ -183,8 +191,8 @@ namespace seahorn {
     }
 
     if (ArrayType *AT = dyn_cast<ArrayType>(T)) {
-      if (hasStructAncestor) {
-        // --- Convert array to a struct 
+      if (hasStructAncestor || PromotedTypes.count(AT) > 0) { 
+        // --- Convert array to a packed struct 
         std::vector<Type*> StructElementTypes;
         StructElementTypes.reserve (AT->getNumElements ());
         Type* StructElementTy = ConvertType (AT->getElementType(), hasStructAncestor);
@@ -776,13 +784,33 @@ namespace seahorn {
       }
     }
 
+    // promote allocas of sized arrays
+    for (auto &F: M) 
+      for (inst_iterator II = inst_begin(&F), IE = inst_end(&F); II!=IE; ++II) {
+        Instruction *I = &*II;
+        if (AllocaInst* AI = dyn_cast<AllocaInst>(I)) {
+          if (ArrayType *ATy = dyn_cast<ArrayType> (AI->getAllocatedType())) {
+            if (ATy->getNumElements () > 0) {
+              PromotedTypes.insert(ATy);
+              Change = true;
+            }
+          }
+        }
+      }
+    
     if (!Change) 
       return false;
     
     LOG ("promote-arrays", 
          errs () << PromotedTypes.size () << " types will be promoted: \n";
-         for (auto T: PromotedTypes) 
-           errs () << "\t" << *T << " has a sized array member\n";
+         for (auto T: PromotedTypes) { 
+           if (isa<StructType>(T))
+             errs () << "\t" << *T << " has a sized array member.\n";
+           else if (isa<ArrayType>(T))
+             errs () << "\t" << *T << " is a sized array.\n";
+           else // this case should not happen
+             errs () << "\t" << *T << "\n";
+         }
          );
          
     // FIXME: remove all the metadata!
