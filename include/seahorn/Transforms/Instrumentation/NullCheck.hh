@@ -4,13 +4,17 @@
 #include "llvm/Pass.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/IRBuilder.h"
-#include "llvm/Analysis/CallGraph.h"
+
+namespace llvm {
+   class CallGraph;
+   class DominatorTree;
+}
 
 namespace seahorn
 {
   using namespace llvm;
-  
-  class NullCheck : public llvm::ModulePass {
+
+   class NullCheck : public llvm::ModulePass {
 
    public:
     
@@ -36,10 +40,10 @@ namespace seahorn
           ErrorFn (nullptr), AssumeFn (nullptr), 
           CG (nullptr) { }
     
-    virtual bool runOnModule (llvm::Module &M);
-    virtual bool runOnFunction (Function &F);
+    virtual bool runOnModule (llvm::Module &M) override;
+    bool runOnFunction (Function &F, DominatorTree* DT);
     
-    virtual void getAnalysisUsage (llvm::AnalysisUsage &AU) const;
+    virtual void getAnalysisUsage (llvm::AnalysisUsage &AU) const override;
     virtual const char* getPassName () const {return "NullCheck";}
     
   };

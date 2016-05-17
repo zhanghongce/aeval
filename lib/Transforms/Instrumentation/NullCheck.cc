@@ -7,6 +7,8 @@
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/Dominators.h"
+#include "llvm/Analysis/CallGraph.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/CommandLine.h"
@@ -17,54 +19,90 @@ namespace seahorn
 {
   using namespace llvm;
  
-  char NullCheck::ID = 0;
+  Value* getBasePtr (Value *V, SmallPtrSet<Instruction *, 8> &SeenInsts) {
 
-  void NullCheck::insertNullCheck (Value *Ptr, 
-                                   IRBuilder<> B,
-                                   Instruction* I) {
+    V = V->stripPointerCasts();
+    if (Instruction *I = dyn_cast<Instruction>(V)) {
+      // If we have already seen this instruction, bail
+      // out. Cycles can happen in unreachable code after constant
+      // propagation.
+      if (!SeenInsts.insert(I).second)
+        return nullptr;
 
-     B.SetInsertPoint (I);    
-     Value* isNull = B.CreateIsNull (Ptr);
-     isNull->setName ("null_check");
+      if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(V)) {
+        if (GEP->isInBounds() && GEP->getPointerAddressSpace() == 0)
+          return getBasePtr(GEP->getPointerOperand(), SeenInsts);
+        else 
+          return nullptr;
+      }
+      if (LoadInst *LI = dyn_cast<LoadInst>(V))
+        return getBasePtr(LI->getPointerOperand(), SeenInsts);
+      if (StoreInst *SI = dyn_cast<StoreInst>(V))
+        return getBasePtr(SI->getPointerOperand(), SeenInsts);
 
-     if (Constant* C = dyn_cast<Constant> (isNull)) {
-       if (ConstantInt* CI = dyn_cast<ConstantInt> (C)) {
-         if (CI == ConstantInt::getFalse (B.getContext ())) {
-           LOG ("null-check",
-                errs () << "Memory access is trivially safe\n";);
-           
+      return nullptr;
+    }
+    if (Argument *A = dyn_cast<Argument>(V))
+      return V;
+    if (isa<ConstantPointerNull>(V) || isa<UndefValue>(V))
+      return V;
+    if (isa<GlobalAlias>(V) || isa<GlobalVariable>(V))
+      return V;
+    if (ConstantExpr *CE = dyn_cast<ConstantExpr>(V)) {
+      if (CE->getOpcode() == Instruction::GetElementPtr)
+        return getBasePtr(cast<GEPOperator>(*CE).getPointerOperand(), SeenInsts);
+    }
+    return nullptr;
+  }
+
+  Value* getBasePtr (Value *V) {
+    SmallPtrSet<Instruction *, 8> SeenInsts;
+    return getBasePtr(V, SeenInsts);
+  }
+
+  void NullCheck::insertNullCheck (Value *Ptr, IRBuilder<> B, Instruction* I) {
+    B.SetInsertPoint (I);    
+    Value* isNull = B.CreateIsNull (Ptr);
+    isNull->setName ("null_check");
+
+    if (Constant* C = dyn_cast<Constant> (isNull)) {
+      if (ConstantInt* CI = dyn_cast<ConstantInt> (C)) {
+        if (CI == ConstantInt::getFalse (B.getContext ())) {
+          LOG ("null-check",
+               errs () << "Memory access is trivially safe\n";);
+          
            TrivialChecks++;
-         }
-         else if (CI == ConstantInt::getTrue (B.getContext ())) {
-           LOG ("null-check",
-                errs () << "Memory access is trivially unsafe\n";);
+        }
+        else if (CI == ConstantInt::getTrue (B.getContext ())) {
+          LOG ("null-check",
+               errs () << "Memory access is trivially unsafe\n";);
            
-           TrivialChecks++;
-         }
-       }
-     }
-
-     
-     // Attach debug information to the new instruction
-     if (Instruction* isNullI = dyn_cast<Instruction> (isNull)) {
-       isNullI->setDebugLoc (I->getDebugLoc ());
-       LOG ("null-check",
-            errs () << "Added " << *isNullI << "\n";);
-       ChecksAdded++;
-     }
-
-     TerminatorInst* ThenTerm = nullptr;
-     TerminatorInst* ElseTerm = nullptr;
-
-     SplitBlockAndInsertIfThenElse(isNull, I, &ThenTerm, &ElseTerm);
-
-     assert (ThenTerm);
-
-     // ThenTerm is always a BranchInst so this cast should never fail
-     BranchInst *BI = cast<BranchInst> (ThenTerm);
-
-     BasicBlock* ErrorBB = createErrorBlock (*I->getParent ()->getParent (), B);
-     BI->setSuccessor(0, ErrorBB);
+          TrivialChecks++;
+        }
+      }
+    }
+    
+    
+    // Attach debug information to the new instruction
+    if (Instruction* isNullI = dyn_cast<Instruction> (isNull)) {
+      isNullI->setDebugLoc (I->getDebugLoc ());
+      LOG ("null-check",
+           errs () << "Added check for " << *(Ptr->stripPointerCasts()) << "\n";);
+      ChecksAdded++;
+    }
+    
+    TerminatorInst* ThenTerm = nullptr;
+    TerminatorInst* ElseTerm = nullptr;
+    
+    SplitBlockAndInsertIfThenElse(isNull, I, &ThenTerm, &ElseTerm);
+    
+    assert (ThenTerm);
+    
+    // ThenTerm is always a BranchInst so this cast should never fail
+    BranchInst *BI = cast<BranchInst> (ThenTerm);
+    
+    BasicBlock* ErrorBB = createErrorBlock (*I->getParent ()->getParent (), B);
+    BI->setSuccessor(0, ErrorBB);
   }
 
   BasicBlock* NullCheck::createErrorBlock (Function &F, IRBuilder<> B) {
@@ -78,16 +116,17 @@ namespace seahorn
     if (CG) {
       auto f1 = CG->getOrInsertFunction (&F);
       auto f2 = CG->getOrInsertFunction (ErrorFn);
-        f1->addCalledFunction (CallSite (CI), f2);
-    }
+      f1->addCalledFunction (CallSite (CI), f2);
+    } 
+
     return errBB;
   }
 
-  bool NullCheck::runOnFunction (Function &F)
+  bool NullCheck::runOnFunction (Function &F, DominatorTree *DT)
   {
     if (F.isDeclaration ()) return false;
 
-    // We instrument every address only once per basic block
+    // We instrument every base pointer only once per basic block
     SmallSet<Value*, 16> TempsToInstrument;
     std::vector<Instruction*> Worklist;
     for (auto&BB : F)  {
@@ -95,14 +134,38 @@ namespace seahorn
       for (auto &i: BB) {
         Instruction *I = &i;
         if (isa<LoadInst>(I)) {
-          // We've seen this temp in the current BB.
-          if (!TempsToInstrument.insert(I).second) continue;  
+          if (Value* BasePtr = getBasePtr (I)) {
+            // We've checked BasePtr in the current BB.
+            if (!TempsToInstrument.insert(BasePtr).second) {
+              LOG ("null-check", 
+                   errs () << "Skipped " << *BasePtr 
+                           << " because already checked twice in the same block.\n";);
+              continue;  
+            }
+          }
           Worklist.push_back (I);
         } else if (isa<StoreInst>(I)) {
-          // We've seen this temp in the current BB.
-          if (!TempsToInstrument.insert(I).second) continue;  
+          if (Value* BasePtr = getBasePtr (I)) {
+            // We've checked BasePtr in the current BB.
+            if (!TempsToInstrument.insert(BasePtr).second) {
+              LOG ("null-check", 
+                   errs () << "Skipped " << *BasePtr 
+                           << " because already checked twice in the same block.\n";);
+              continue;  
+            }
+          }
           Worklist.push_back (I);
         }
+      }
+    }
+
+    std::set<Instruction*> DominatedInsts;    
+    // set of instructions that are dominated by another checked instruction.
+    for (auto I1: Worklist) {
+      for (auto I2: Worklist) {
+        if (I1 == I2) continue;
+        if (DT->dominates (I1,I2))
+          DominatedInsts.insert(I2);
       }
     }
 
@@ -111,6 +174,7 @@ namespace seahorn
 
     bool change = false;    
     for (auto I: Worklist) {
+
       Value *Ptr = nullptr;
       if (auto *LI = dyn_cast<LoadInst>(I)) {
         Ptr = LI->getPointerOperand();
@@ -118,30 +182,48 @@ namespace seahorn
         Ptr = SI->getPointerOperand();
       }
 
-      // Dereferencing a pointer so we insert a check if the pointer
-      // is null
       if (Ptr) {
-        insertNullCheck (Ptr, B, I);
 
-        // Add extra memory safety assumption that successful
-        // load/store imply validity of their arguments.
-        if (GetElementPtrInst* gep = dyn_cast<GetElementPtrInst>(Ptr)) {
-          if (gep->isInBounds() && gep->getPointerAddressSpace() == 0) {
-            Value* base = gep->getPointerOperand ();
-            B.SetInsertPoint (I);
-            auto It = B.GetInsertPoint();
-            ++It;
-            B.SetInsertPoint(I->getParent(), It);
-            CallInst* CI = B.CreateCall(AssumeFn, B.CreateIsNotNull(base));
-            CI->setDebugLoc (I->getDebugLoc ());
-            // update call graph
-            if (CG) {
-              auto f1 = CG->getOrInsertFunction (&F);
-              auto f2 = CG->getOrInsertFunction (AssumeFn);
-              f1->addCalledFunction (CallSite (CI), f2);
-            }
-          }
+        if (DominatedInsts.count(I) > 0) { 
+          LOG ("null-check", 
+               errs () << "Skipped " << *Ptr
+                       << " because already dominated by a checked instruction.\n";);
+          continue; 
         }
+
+        Value * Base = getBasePtr(Ptr);
+        // -- Instrument the memory access
+        insertNullCheck (Base ? Base : Ptr, B, I);
+
+        /// XXX : if Base is not null then to add after the memory
+        /// access assume(Base) is redundant since insertNullCheck
+        /// already added assert(Base). Otherwise, we cannot add it
+        /// anyway because it won't be the case that Ptr is a
+        /// in-bounds GEP with zero pointer address space.
+
+        // // -- Add extra memory safety assumption: successful load/store
+        // //    implies validity of their arguments.
+        // if (GetElementPtrInst* gep = dyn_cast<GetElementPtrInst>(Ptr)) {
+        //   //if (gep->isInBounds() && gep->getPointerAddressSpace() == 0) {
+        //   if (Value* base = getBasePtr(Ptr)) { //gep->getPointerOperand ();
+        //     B.SetInsertPoint (I);
+        //     auto It = B.GetInsertPoint();
+        //     ++It;
+        //     B.SetInsertPoint(I->getParent(), It);
+        //     CallInst* CI = B.CreateCall(AssumeFn, B.CreateIsNotNull(base));
+        //     CI->setDebugLoc (I->getDebugLoc ());
+
+        //     LOG ("null-check",
+        //          errs () << "Added memory safety assumption for " << *base << "\n";);
+
+        //     // update call graph
+        //     if (CG) {
+        //       auto f1 = CG->getOrInsertFunction (&F);
+        //       auto f2 = CG->getOrInsertFunction (AssumeFn);
+        //       f1->addCalledFunction (CallSite (CI), f2);
+        //     }
+        //   }
+        // }
         change = true;
       }
     }
@@ -180,7 +262,9 @@ namespace seahorn
 
     bool change = false;
     for (Function &F : M) {
-      change |= runOnFunction (F); 
+      if (F.isDeclaration ()) continue;
+      DominatorTreeWrapperPass* DTWP = &getAnalysis<DominatorTreeWrapperPass>(F);
+      change |= runOnFunction (F, &DTWP->getDomTree()); 
     }
 
     errs () << "-- Inserted " << ChecksAdded << " null dereference checks " 
@@ -189,16 +273,19 @@ namespace seahorn
     return change;
   }
     
-  void NullCheck::getAnalysisUsage (llvm::AnalysisUsage &AU) const  {
+  void NullCheck::getAnalysisUsage (llvm::AnalysisUsage &AU) const {
     AU.setPreservesAll ();
     AU.addRequired<CallGraphWrapperPass> ();
     AU.addPreserved<CallGraphWrapperPass> ();
+    AU.addRequired<DominatorTreeWrapperPass>();
   } 
 
+  char NullCheck::ID = 0;
 
-}
+  static llvm::RegisterPass<NullCheck> 
+  X ("null-check", "Insert null dereference checks", false, false);
 
-static llvm::RegisterPass<seahorn::NullCheck> 
-X ("null-check", "Insert null dereference checks");
+} // end namespace seahorn
+
    
 

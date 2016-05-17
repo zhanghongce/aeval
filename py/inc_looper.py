@@ -39,11 +39,13 @@ def parseOpt (argv):
     parser.add_option ('--num-blks', dest='num_blks', help='Number of Basic Blocks', default=0, type=int)
     parser.add_option ('--timeout', dest='timeout', help='Timeout per function', default=10.00, type=float)
     parser.add_option ('--verbose', help='Talk a lot', action='store_true', default=False, dest="verbose")
-    parser.add_option ('--boa', help='Add buffer overflow', action='store_true', default=False, dest="boa")
+    parser.add_option ('--boa', help='Add buffer overflow checks', action='store_true', default=False, dest="boa")
+    parser.add_option ('--null', help='Add Null dereference checks', action='store_true', default=False, dest="null")
     parser.add_option ('--large-reduce', help='Reduce constraints during large-step-encoding', action='store_true', default=False, dest="reduce_large")
     parser.add_option ('--reduce-weakly', help='Use weak solver for reducing constraints', action='store_true', default=False, dest="reduce_weakly")
     parser.add_option ('--reduce-constraints', help='Reduce False Constraints', action='store_true', default=False, dest="reduce_false")
     parser.add_option ('--single', help='Check inconsistency of the whole program', action='store_true', default=False, dest="single")
+    parser.add_option ('--inv', help='Get Invariants', action='store_true', default=False, dest="inv")
     (options, args) = parser.parse_args (argv)
     return (options, args)
 
@@ -124,16 +126,17 @@ def get_opt(opt, fname):
     tmp_dir = ['--temp-dir=' + opt.temp_dir] if opt.temp_dir else []
     tmp = save_temps + tmp_dir
     boa = ['--abc=2'] if opt.boa else []
+    null = ['--null-check', '--lower-assert'] if opt.null else []
     reduce_large = ['--horn-large-reduce'] if opt.reduce_large else []
     reduce_weakly = ['--horn-reduce-weakly'] if opt.reduce_weakly else []
     reduce_false = ['--horn-reduce-constraints'] if opt.reduce_false else []
     reduce = reduce_weakly + reduce_large + reduce_false
+    inv = ['--inv'] if opt.inv else []
     cmd = [sea_cmd, 'inc',
                    '--horn-no-verif', '--lower-invoke',
                    '--devirt-functions', '--step=incsmall',
                    '--inc_verbose', '--horn-df=bla.txt',
-                   my_timeout, '-g', '-O0', '--null-check',
-                   '--lower-assert', fname] +  boa + tmp + reduce
+                   my_timeout, '-g', '-O0', fname] +  inv + boa + null + tmp + reduce
     return cmd
 
 def run_single(fname, opt):

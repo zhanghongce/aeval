@@ -11,6 +11,13 @@ typedef struct example_s {
 #define hashCode(this) ((size_t) this->bases)
 
 
+void example0(int c, int d){
+ const int i = 0;
+ int result = c+d;
+ if (i>0){
+    result = result / 0;
+ }
+}
 
 bool example1(example* this, const example* other) {
 
