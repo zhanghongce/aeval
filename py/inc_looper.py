@@ -126,14 +126,14 @@ def get_opt(opt, fname):
     tmp_dir = ['--temp-dir=' + opt.temp_dir] if opt.temp_dir else []
     tmp = save_temps + tmp_dir
     boa = ['--abc=2'] if opt.boa else []
-    null = ['--null-check', '--lower-assert'] if opt.null else []
+    null = ['--null-check'] if opt.null else []
     reduce_large = ['--horn-large-reduce'] if opt.reduce_large else []
     reduce_weakly = ['--horn-reduce-weakly'] if opt.reduce_weakly else []
     reduce_false = ['--horn-reduce-constraints'] if opt.reduce_false else []
     reduce = reduce_weakly + reduce_large + reduce_false
     inv = ['--inv'] if opt.inv else []
     cmd = [sea_cmd, 'inc',
-                   '--horn-no-verif', '--lower-invoke',
+                   '--horn-no-verif', '--lower-invoke', '--lower-assert',
                    '--devirt-functions', '--step=incsmall',
                    '--inc_verbose', '--horn-df=bla.txt',
                    my_timeout, '-g', '-O0', fname] +  inv + boa + null + tmp + reduce
