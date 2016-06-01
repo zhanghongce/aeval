@@ -30,9 +30,14 @@ namespace seahorn
         return nullptr;
 
       if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(V)) {
-        if (GEP->isInBounds() && GEP->getPointerAddressSpace() == 0)
-          return getBasePtr(GEP->getPointerOperand(), SeenInsts);
-        else 
+        if (GEP->isInBounds() && GEP->getPointerAddressSpace() == 0) {
+          // if the pointer is the base of some gep that is directly
+          // read from memory we give up.
+          if (isa<LoadInst>(GEP->getPointerOperand()))
+            return GEP->getPointerOperand();
+          else
+            return getBasePtr(GEP->getPointerOperand(), SeenInsts);
+        } else 
           return nullptr;
       }
       if (LoadInst *LI = dyn_cast<LoadInst>(V))
@@ -68,15 +73,11 @@ namespace seahorn
     if (Constant* C = dyn_cast<Constant> (isNull)) {
       if (ConstantInt* CI = dyn_cast<ConstantInt> (C)) {
         if (CI == ConstantInt::getFalse (B.getContext ())) {
-          LOG ("null-check",
-               errs () << "Memory access is trivially safe\n";);
-          
-           TrivialChecks++;
+          LOG ("null-check", errs () << "Memory access is trivially safe\n";);
+          TrivialChecks++;
         }
         else if (CI == ConstantInt::getTrue (B.getContext ())) {
-          LOG ("null-check",
-               errs () << "Memory access is trivially unsafe\n";);
-           
+          LOG ("null-check", errs () << "Memory access is trivially unsafe\n";);
           TrivialChecks++;
         }
       }
@@ -87,7 +88,10 @@ namespace seahorn
     if (Instruction* isNullI = dyn_cast<Instruction> (isNull)) {
       isNullI->setDebugLoc (I->getDebugLoc ());
       LOG ("null-check",
-           errs () << "Added check for " << *(Ptr->stripPointerCasts()) << "\n";);
+           errs () << "Added check for " 
+                   << I->getParent()->getParent()->getName() << "::"  
+                   << *(Ptr->stripPointerCasts()) << "\n";
+           );
       ChecksAdded++;
     }
     
@@ -126,11 +130,11 @@ namespace seahorn
   {
     if (F.isDeclaration ()) return false;
 
-    // We instrument every base pointer only once per basic block
     SmallSet<Value*, 16> TempsToInstrument;
     std::vector<Instruction*> Worklist;
     for (auto&BB : F)  {
-      TempsToInstrument.clear();
+      // XXX: uncomment if only consider within a basic block 
+      //TempsToInstrument.clear();
       for (auto &i: BB) {
         Instruction *I = &i;
         if (isa<LoadInst>(I)) {
@@ -138,8 +142,7 @@ namespace seahorn
             // We've checked BasePtr in the current BB.
             if (!TempsToInstrument.insert(BasePtr).second) {
               LOG ("null-check", 
-                   errs () << "Skipped " << *BasePtr 
-                           << " because already checked twice in the same block.\n";);
+                   errs () << "Skipped " << *BasePtr << " because already checked!\n";);
               continue;  
             }
           }
@@ -149,8 +152,7 @@ namespace seahorn
             // We've checked BasePtr in the current BB.
             if (!TempsToInstrument.insert(BasePtr).second) {
               LOG ("null-check", 
-                   errs () << "Skipped " << *BasePtr 
-                           << " because already checked twice in the same block.\n";);
+                   errs () << "Skipped " << *BasePtr << " because already checked!\n";);
               continue;  
             }
           }
@@ -159,15 +161,15 @@ namespace seahorn
       }
     }
 
-    std::set<Instruction*> DominatedInsts;    
-    // set of instructions that are dominated by another checked instruction.
-    for (auto I1: Worklist) {
-      for (auto I2: Worklist) {
-        if (I1 == I2) continue;
-        if (DT->dominates (I1,I2))
-          DominatedInsts.insert(I2);
-      }
-    }
+    // std::set<Instruction*> DominatedInsts;    
+    // // set of instructions that are dominated by another checked instruction.
+    // for (auto I1: Worklist) {
+    //   for (auto I2: Worklist) {
+    //     if (I1 == I2) continue;
+    //     if (DT->dominates (I1,I2))
+    //       DominatedInsts.insert(I2);
+    //   }
+    // }
 
     LLVMContext &ctx = F.getContext ();
     IRBuilder<> B (ctx);
@@ -184,12 +186,12 @@ namespace seahorn
 
       if (Ptr) {
 
-        if (DominatedInsts.count(I) > 0) { 
-          LOG ("null-check", 
-               errs () << "Skipped " << *Ptr
-                       << " because already dominated by a checked instruction.\n";);
-          continue; 
-        }
+        // if (DominatedInsts.count(I) > 0) { 
+        //   LOG ("null-check", 
+        //        errs () << "Skipped " << *Ptr
+        //                << " because already dominated by a checked instruction.\n";);
+        //   continue; 
+        // }
 
         Value * Base = getBasePtr(Ptr);
         // -- Instrument the memory access
@@ -267,6 +269,7 @@ namespace seahorn
       change |= runOnFunction (F, &DTWP->getDomTree()); 
     }
 
+    //errs () << "After NullCheck pass \n" << M << "\n";
     errs () << "-- Inserted " << ChecksAdded << " null dereference checks " 
             << " (skipped " << TrivialChecks << " trivial checks).\n";
 

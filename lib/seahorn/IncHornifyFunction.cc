@@ -115,6 +115,8 @@ void IncSmallHornifyFunction::runOnFunction(Function &F) {
     all_debug_info += extractInfo(BB, idx);
     rflags.push_back(bind::boolConst(mkTerm(crumb_var, m_efac)));
     bbOrder[&BB] = idx++;
+    LOG("seahorn-inc", 
+        errs () << "Crum variable " << crumb_var << " --- " << BB.getName() << "\n");
   }
 
   if (!DebugInfo.empty ()) {errs() << all_debug_info;}

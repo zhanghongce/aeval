@@ -137,6 +137,7 @@ def get_opt(opt, fname):
                    '--devirt-functions', '--step=incsmall',
                    '--inc_verbose', '--horn-df=bla.txt',
                    my_timeout, '-g', '-O0', fname] +  inv + boa + null + tmp + reduce
+    print cmd
     return cmd
 
 def run_single(fname, opt):

@@ -545,9 +545,9 @@ class Seahorn(sea.LimitedCmd):
         ap.add_argument ('--show-invars',
                          help='Display computed invariants',
                          dest='show_invars', default=False, action='store_true')
-        ap.add_argument ('--crab',
-                         help='Enable Crab abstract interpreter',
-                         dest='crab', default=False, action='store_true')
+        # ap.add_argument ('--crab',
+        #                  help='Enable Crab abstract interpreter',
+        #                  dest='crab', default=False, action='store_true')
         ap.add_argument ('--bmc',
                          help='Use BMC engine',
                          dest='bmc', default=False, action='store_true')
@@ -563,8 +563,8 @@ class Seahorn(sea.LimitedCmd):
         if args.bmc:
             argv.append ('--horn-bmc')
 
-        if args.crab:
-            argv.append ('--horn-crab')
+        # if args.crab:
+        #     argv.append ('--horn-crab')
 
         if args.solve or args.out_file is not None:
             argv.append ('--keep-shadows=true')
@@ -827,11 +827,6 @@ class SeaInc(sea.LimitedCmd):
           jb.spanner(extra[len(extra)-1])
       except Exception as e:
           raise IOError(str(e))
-
-
-
-
-
 
 FrontEnd = sea.SeqCmd ('fe', 'Front end: alias for clang|pp|ms|opt',
                        [Clang(), Seapp(), MixedSem(), Seaopt ()])
