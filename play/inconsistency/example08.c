@@ -1,8 +1,10 @@
 #include<stdio.h>
 
 //extern void __VERIFIER_assume (int);
-//extern void __VERIFIER_error (void);
-//void assert (int v) { if (!v) __VERIFIER_error (); }
+
+extern void __VERIFIER_error() __attribute__ ((__noreturn__));
+__attribute__((always_inline)) void assert (int v) { if (!v) __VERIFIER_error (); }
+
 
 extern int nd();
 int *p, *q;
@@ -31,9 +33,7 @@ int main ()
     goto Y;
     X: // then block
     //assert(NULL!=q);
-    //if (NULL==q) goto ERROR;
-    //assert(NULL!=p);
-    if (NULL==p) goto ERROR;
+    assert(NULL!=p);
     if (*p==*q) return 1;
     Y: // else block
     printf("OLA\n");
@@ -41,7 +41,5 @@ int main ()
 
 
   return 42;
-
-ERROR: goto ERROR;
 
 }

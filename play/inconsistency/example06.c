@@ -1,5 +1,8 @@
 extern int nd ();
 
+extern void __VERIFIER_error() __attribute__ ((__noreturn__));
+__attribute__((always_inline)) void assert (int v) { if (!v) __VERIFIER_error (); }
+
 int main ()
 {
 
@@ -16,8 +19,6 @@ int main ()
 	x--;
   } while ( x > 0 );
 
-  if(flag!=0) goto ERROR;
-
+  assert(flag == 0);
   return x;
-  ERROR: goto ERROR;
 }

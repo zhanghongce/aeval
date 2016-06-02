@@ -1,7 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <assert.h>
 #include <stdbool.h>
+
+extern void __VERIFIER_error (void);
+__attribute__((always_inline))void assert (int v) { if (!v) __VERIFIER_error (); }
 
 typedef struct {
   int* data;
@@ -57,7 +59,7 @@ int find_in_vector(const my_vector* v, int x) {
 int main() {
   int i;
   my_vector v;
-
+  
   init_vector(&v, 100);
   i = find_in_vector(&v, 10);
   printf("i = %d\n", i);

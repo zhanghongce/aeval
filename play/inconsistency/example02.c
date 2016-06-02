@@ -1,5 +1,7 @@
 extern int nd();
 
+__attribute__((always_inline)) void assert (int v) { if (!v) __VERIFIER_error (); }
+
 int main ()
 {
   int a = nd ();
@@ -10,13 +12,10 @@ int main ()
   }
   if (y==0)
   {
-    //assert (a != 0);
-    if (a == 0)
-      goto ERROR;
+    assert (a != 0);
   }
   y++;
   
   return 42;
   
-ERROR: goto ERROR;
 }

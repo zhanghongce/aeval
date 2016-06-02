@@ -1,7 +1,9 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <stdio.h>
-#include <assert.h>
+
+extern void __VERIFIER_error (void);
+__attribute__((always_inline))void assert (int v) { if (!v) __VERIFIER_error (); }
 
 typedef struct example_s {
 	struct example_s* bases;

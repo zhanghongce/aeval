@@ -1,7 +1,7 @@
 #include <stdio.h>
 
 extern void __VERIFIER_error() __attribute__ ((__noreturn__));
-
+__attribute__((always_inline)) void assert (int v) { if (!v) __VERIFIER_error (); }
 int __VERIFIER_nondet_int();
 
 main()
@@ -19,10 +19,6 @@ main()
             menor = array[j];
     }
 
-     if (!(array[0]>=menor)) {
-        ERROR: __VERIFIER_error();
-    } else {
-        printf("OLA");
-    }
-
+    assert (array[0]>=menor);
+    printf("OLA");
 }
