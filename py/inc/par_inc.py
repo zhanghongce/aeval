@@ -20,7 +20,7 @@ import ntpath
 root = os.path.dirname (os.path.dirname (os.path.realpath (__file__)))
 verbose=False
 bench=False
-debug_cex= True
+debug_cex= False
 
 class bcolors:
     HEADER = '\033[95m'
@@ -231,8 +231,9 @@ class Feasibility(object):
         if debug_cex: print "New Conjunct:", and_predicate
         new_exist_vars = self.existVars(exist_vars, true_false_vars)
         new_query = z3.Exists(new_exist_vars,and_predicate)
-        #if debug_cex: print "NEW Query:\n", new_query
-        print "NEW Query:\n", new_query
+        if debug_cex: print "NEW Query:\n", new_query
+        
+        #print "NEW Query:\n", new_query
         return new_query
 
     def mkVars(self, idxs, qr):
