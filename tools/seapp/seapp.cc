@@ -372,6 +372,8 @@ int main(int argc, char **argv) {
   if (LowerAssert)
   {
     pass_manager.add (seahorn::createLowerAssertPass ());
+    // LowerAssert might generate some dead code 
+    pass_manager.add(llvm::createDeadInstEliminationPass());
   }
 
   pass_manager.add (new seahorn::RemoveUnreachableBlocksPass ());
