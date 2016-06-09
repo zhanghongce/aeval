@@ -19,7 +19,7 @@ using namespace llvm;
 
 #define DEBUG_TYPE "unfold-loop-for-dsa"
 
-namespace seahorn {
+namespace {
 
   /* 
      Unfold the first iteration of a loop if it is useful for DSA.
@@ -39,7 +39,13 @@ namespace seahorn {
 
     static char ID;
     
-    UnfoldLoopForDsa (): LoopPass (ID), LI (nullptr) { }
+    UnfoldLoopForDsa (): LoopPass (ID), LI (nullptr)
+    {
+      // initialize passes we depend on
+      initializeLoopSimplifyPass(*PassRegistry::getPassRegistry());
+      initializeLoopInfoPass(*PassRegistry::getPassRegistry());
+      initializeLCSSAPass(*PassRegistry::getPassRegistry());
+    }
 
     bool runOnLoop (Loop *L, LPPassManager &LPM) override
     {
@@ -60,10 +66,11 @@ namespace seahorn {
       // XXX: I believe LoopInfo and LoopSimplify is preserved since
       // we do not add/remove loops and although we modify a bit the
       // loops they are kept in natural form after the unfolding.
-      AU.addRequired<LoopInfo>();
-      AU.addPreserved<LoopInfo>();
+      // AG: You might need to update LoopInfo though. 
       AU.addRequiredID(LoopSimplifyID);
       AU.addPreservedID(LoopSimplifyID);
+      AU.addRequired<LoopInfo>();
+      AU.addPreserved<LoopInfo>();
       AU.addRequiredID(LCSSAID);
       // XXX: FIXME I think LCSSA is not preserved
       //AU.addPreservedID(LCSSAID);
@@ -270,13 +277,15 @@ namespace seahorn {
   }
 
   char UnfoldLoopForDsa::ID = 0;
-
+}
+namespace seahorn
+{
   Pass *createUnfoldLoopForDsaPass () 
   {return new UnfoldLoopForDsa ();} 
 
 
 } // end namespace seahorn
 
-static llvm::RegisterPass<seahorn::UnfoldLoopForDsa> 
+static llvm::RegisterPass<UnfoldLoopForDsa> 
 X ("unfold-loop-dsa", 
    "Unfold a loop iteration if useful for DSA", false, false);
