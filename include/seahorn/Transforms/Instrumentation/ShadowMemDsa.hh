@@ -42,19 +42,29 @@ namespace seahorn
     
     DataStructures *m_dsa;
     
-    DenseMap<const DSNode*, AllocaInst*> m_shadows;
+    DenseMap<const DSNode*, DenseMap<unsigned, AllocaInst*> > m_shadows;
     DenseMap<const DSNode*, unsigned> m_node_ids;
+    unsigned m_max_id;
     Type *m_Int32Ty;
     
     
-    AllocaInst* allocaForNode (const DSNode *n);
-    unsigned getId (const DSNode *n);
+    
+    void declareFunctions (llvm::Module &M);
+    AllocaInst* allocaForNode (const DSNode *n, unsigned offset);
+    unsigned getId (const DSNode *n, unsigned offset);
+    unsigned getOffset (const DSNodeHandle &nh);
+    
+    unsigned getId (const DSNodeHandle &nh)
+    { return getId (nh.getNode(), getOffset (nh)); }
+    AllocaInst* allocaForNode (const DSNodeHandle &nh)
+    { return allocaForNode (nh.getNode (), getOffset (nh)); }
+    
     
     
   public:
     static char ID;
     
-    ShadowMemDsa () : llvm::ModulePass (ID)
+    ShadowMemDsa () : llvm::ModulePass (ID), m_max_id(0)
     {}
     
     virtual bool runOnModule (llvm::Module &M);
