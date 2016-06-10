@@ -1,16 +1,14 @@
 #include "llvm/IR/Instructions.h"
-#include "llvm/IR/Dominators.h"
 #include "llvm/Analysis/LoopPass.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/LoopIterator.h"
-//#include "llvm/Analysis/AssumptionCache.h"
-//#include "llvm/Transforms/Utils/UnrollLoop.h"
 #include "llvm/Transforms/Scalar.h"
-#include "llvm/Support/raw_ostream.h"
-#include "llvm/ADT/Statistic.h"
-
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Cloning.h"
+#include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/CommandLine.h"
+#include "llvm/ADT/Statistic.h"
+#include "llvm/ADT/SmallSet.h"
 
 #include "boost/range.hpp"
 #include "avy/AvyDebug.h"
@@ -18,6 +16,12 @@
 using namespace llvm;
 
 #define DEBUG_TYPE "unfold-loop-for-dsa"
+
+llvm::cl::opt<bool>
+UnfoldAllLoops("unfold-all-loops", 
+               llvm::cl::desc("Unfold all loops even it is not useful for DSA"),
+               llvm::cl::init (false),
+               llvm::cl::Hidden);
 
 namespace {
 
@@ -50,9 +54,9 @@ namespace {
     bool runOnLoop (Loop *L, LPPassManager &LPM) override
     {
       LI = &getAnalysis<LoopInfo>();      
-      if (ShouldLoopBeUnfolded (L)) {
+      if (UnfoldAllLoops || ShouldLoopBeUnfolded (L))
         return OneUnfoldLoop (L);
-      }
+
       return false;
     }
 
@@ -60,20 +64,12 @@ namespace {
     /// requires that loop preheaders be inserted into the CFG...
     /// It also requires LCSSA.
     void getAnalysisUsage (AnalysisUsage &AU) const override {
-      //AU.addRequired<AssumptionCacheTracker>();
-      //AU.addPreserved<DominatorTreeWrapperPass>();
-
-      // XXX: I believe LoopInfo and LoopSimplify is preserved since
-      // we do not add/remove loops and although we modify a bit the
-      // loops they are kept in natural form after the unfolding.
-      // AG: You might need to update LoopInfo though. 
-      AU.addRequiredID(LoopSimplifyID);
-      AU.addPreservedID(LoopSimplifyID);
       AU.addRequired<LoopInfo>();
       AU.addPreserved<LoopInfo>();
+      AU.addRequiredID(LoopSimplifyID);
+      AU.addPreservedID(LoopSimplifyID);
       AU.addRequiredID(LCSSAID);
-      // XXX: FIXME I think LCSSA is not preserved
-      //AU.addPreservedID(LCSSAID);
+      AU.addPreservedID(LCSSAID);
     }
     
     virtual const char *getPassName () const 
@@ -192,35 +188,47 @@ namespace {
     }
     
   */
-    
+ 
   bool UnfoldLoopForDsa::OneUnfoldLoop (Loop* L) {
-    
     if (!isSafeToUnfold(L)) return false;
-    
+
     BasicBlock* Preheader = L->getLoopPreheader();      
     BasicBlock *Header = L->getHeader();
     BasicBlock *LatchBlock = L->getLoopLatch();      
-    
     assert(Preheader);
     assert(Header);
     assert(LatchBlock);
-    
+
+    SmallVector<BasicBlock*,8> VExitBlocks;
+    L->getExitBlocks(VExitBlocks);
+    // XXX: ExitBlocks can have duplicates
+    SmallSet<BasicBlock*, 8> ExitBlocks;
+    for (auto B: VExitBlocks)
+      ExitBlocks.insert(B);
+        
     BranchInst *BI = dyn_cast<BranchInst>(LatchBlock->getTerminator());
-    
-    std::vector<PHINode*> OrigPHINode;
+
+    std::vector<PHINode*> OrigHeaderPHINode;
     for (BasicBlock::iterator I = Header->begin(); isa<PHINode>(I); ++I) {
-      OrigPHINode.push_back(cast<PHINode>(I));
+      OrigHeaderPHINode.push_back(cast<PHINode>(I));
     }
+
+    std::vector<PHINode*> OrigExitPHINode;
+    for (auto ExitBlock: ExitBlocks)
+      for (BasicBlock::iterator I = ExitBlock->begin(); isa<PHINode>(I); ++I) {
+        OrigExitPHINode.push_back(cast<PHINode>(I));
+      }
     
-    // The current on-the-fly SSA update requires blocks to be processed in
-    // reverse postorder so that LastValueMap contains the correct value at each exit.
+    // The current on-the-fly SSA update requires blocks to be
+    // processed in reverse postorder so that VMap contains the
+    // correct value at each exit.
     LoopBlocksDFS DFS(L);
     DFS.perform(LI);
     
     // Stash the DFS iterators before adding blocks to the loop.
     LoopBlocksDFS::RPOIterator BlockBegin = DFS.beginRPO();
     LoopBlocksDFS::RPOIterator BlockEnd = DFS.endRPO();
-    
+
     BasicBlock* UnfoldedHeader = nullptr;
     BasicBlock* UnfoldedLatchBlock = nullptr;
     
@@ -228,51 +236,79 @@ namespace {
     ValueToValueMapTy VMap;
     Function *F = Header->getParent();
     for (LoopBlocksDFS::RPOIterator BB = BlockBegin; BB != BlockEnd; ++BB) {
-      BasicBlock *New = CloneBasicBlock(*BB, VMap, ".1");
-      VMap[*BB] = New;
+      BasicBlock *New = CloneBasicBlock(*BB, VMap, ".unfolded");
       F->getBasicBlockList().push_back(New);
+
+      // Tell LI about New.
+      if (Loop* ParentLoop = L->getParentLoop()) {
+        ParentLoop->addBasicBlockToLoop(New, LI->getBase());
+      }
+
+      VMap[*BB] = New;
       if (*BB == Header) UnfoldedHeader = New;
       if (*BB == LatchBlock) UnfoldedLatchBlock = New;
       NewBlocks.push_back(New);        
     } 
-    
-    assert (UnfoldedHeader);
-    assert (UnfoldedLatchBlock);
-    
+
+    if (!UnfoldedHeader || !UnfoldedLatchBlock) {
+      // XXX: This is very likely to happen if LI is not updated
+      //      properly above.
+      LOG("unfold-loop-for-dsa", 
+          errs() << "  Won't unroll loop: header not found during reverse postorder.\n"
+                 << *L);
+      return false;
+    }
+
     // Remap all instructions with new map
     for (unsigned i = 0; i < NewBlocks.size(); ++i)
       for (BasicBlock::iterator I = NewBlocks[i]->begin(),
                E = NewBlocks[i]->end(); I != E; ++I)
         RemapInstruction(I, VMap);
+
+
+    // Update phi nodes at the loop exits with new map
+    for (auto PN: OrigExitPHINode)
+      for (unsigned i=0, e = PN->getNumIncomingValues(); i!=e; ++i) {
+        Value * NewPHIIncVal = VMap[PN->getIncomingValue(i)];
+        if (!NewPHIIncVal) 
+          NewPHIIncVal = PN->getIncomingValue(i);
+        PN->addIncoming(NewPHIIncVal,
+                        cast<BasicBlock>(VMap[cast<BasicBlock>(PN->getIncomingBlock(i))]));
+      }
     
-    // remove phi nodes in the new header
-    for (unsigned i = 0, e = OrigPHINode.size(); i != e; ++i) {
-      PHINode *PN = OrigPHINode[i];
+    // remove phi nodes in the unfolded header
+    for (unsigned i = 0, e = OrigHeaderPHINode.size(); i != e; ++i) {
+      PHINode *PN = OrigHeaderPHINode[i];
       PHINode *NewPHI = cast<PHINode>(VMap[PN]);
       Value* IncVal = PN->getIncomingValueForBlock(Preheader);
       NewPHI->replaceAllUsesWith(IncVal);
       PN->removeIncomingValue(Preheader);
-      
       // connect phi node of the original header with incoming value
-      // from the new latch block.
+      // from the unfolded latch block.
       PN->addIncoming(NewPHI->getIncomingValueForBlock(UnfoldedLatchBlock), 
                       UnfoldedLatchBlock);
       UnfoldedHeader->getInstList().erase(NewPHI);
     }
-    
-    // connect preheader with new header
+
+    // connect unfolded header with preheader
     BranchInst *Term = cast<BranchInst>(Preheader->getTerminator());
     assert(Term->isUnconditional ());
     Term->setSuccessor(0, UnfoldedHeader);
     
     BranchInst *UnfoldedBI = dyn_cast<BranchInst>(UnfoldedLatchBlock->getTerminator());
-    // finish the connection between new latch block and the
+    // finish the connection between unfolded latch block and the
     // original header
     if (L->contains(BI->getSuccessor(0))) {
       UnfoldedBI->setSuccessor(0, BI->getSuccessor(0));
     } else if (L->contains(BI->getSuccessor(1))) {
       UnfoldedBI->setSuccessor(1, BI->getSuccessor(1));
     }
+
+    LOG("unfold-loop-for-dsa", 
+        errs () << "--- Unrolled one iteration in " << F->getName() << "\n");
+    LOG("unfold-loop-for-dsa", errs () << *L);
+    LOG("unfold-loop-for-dsa", 
+        errs () << "--------------------------------------------------------\n");
     return true;
   }
 

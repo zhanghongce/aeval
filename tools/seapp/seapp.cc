@@ -349,17 +349,14 @@ int main(int argc, char **argv) {
 
   pass_manager.add(llvm::createUnifyFunctionExitNodesPass ());
 
-  /// TEMPORARY: run always the pass
-  pass_manager.add (llvm_seahorn::createFakeLatchExitPass());
-  pass_manager.add (seahorn::createUnfoldLoopForDsaPass());
-
   if (ArrayBoundsChecks > 0)
   { 
     // XXX: probably this is a pass that we should always run
     pass_manager.add (seahorn::createSimplifyPointerLoopsPass ());
     // XXX: help DSA to be more precise
-    // pass_manager.add (llvm_seahorn::createFakeLatchExitPass());
-    // pass_manager.add (seahorn::createUnfoldLoopForDsaPass());
+    //      we might want to also run always this pass
+    pass_manager.add (llvm_seahorn::createFakeLatchExitPass());
+    pass_manager.add (seahorn::createUnfoldLoopForDsaPass());
     switch (ArrayBoundsChecks) {
       case 1: 
         pass_manager.add (new seahorn::LowerCstExprPass ());
