@@ -103,7 +103,7 @@ namespace seahorn
     // -- allocate enough ids for every byte of the object
     assert (n->getSize() > 0);
     m_max_id += n->getSize ();
-    return id;
+    return id + offset;
   }
     
     
@@ -257,7 +257,7 @@ namespace seahorn
           if (!n) continue;
           
           B.SetInsertPoint (&inst);
-          B.CreateCall3 (m_memLoadFn, B.getInt32 (getId (n)),
+          B.CreateCall3 (m_memLoadFn, B.getInt32 (getId (nh)),
                          B.CreateLoad (allocaForNode (nh)),
                          getUniqueScalar (ctx, B, nh));
         }
