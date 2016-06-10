@@ -16,6 +16,11 @@
 
 #include "dsa/Steensgaard.hh"
 
+static llvm::cl::opt<bool>
+SplitFields("horn-split-dsa",
+            llvm::cl::desc("Split DSA nodes by fields"),
+            llvm::cl::init (false));
+
 namespace seahorn
 {
   using namespace llvm;
@@ -215,7 +220,8 @@ namespace seahorn
     return getUniqueScalar (ctx, B, nh);
   }
   
-  unsigned ShadowMemDsa::getOffset (const DSNodeHandle &nh) { return 0; }
+  unsigned ShadowMemDsa::getOffset (const DSNodeHandle &nh)
+  {return SplitFields ? nh.getOffset() : 0;}
   
   bool ShadowMemDsa::runOnFunction (Function &F)
   {
