@@ -18,7 +18,18 @@ import itertools
 
 root = os.path.dirname (os.path.dirname (os.path.realpath (__file__)))
 verbose = False
+bench = False
 f_result = None
+
+pp_result = ("""
+  -----------------
+  FUNCTION NAME: %s
+      N. BLOCKS: %s
+         RESULT: %s
+   LINE NUMBERS: %s
+  ANALYSIS TIME: %s
+ ------------------
+""")
 
 def isexec (fpath):
     if fpath == None: return False
@@ -39,6 +50,7 @@ def parseOpt (argv):
     parser.add_option ('--num-blks', dest='num_blks', help='Number of Basic Blocks', default=0, type=int)
     parser.add_option ('--timeout', dest='timeout', help='Timeout per function', default=10.00, type=float)
     parser.add_option ('--verbose', help='Talk a lot', action='store_true', default=False, dest="verbose")
+    parser.add_option ('--bench', help='For benchmarking', action='store_true', default=False, dest="bench")
     parser.add_option ('--boa', help='Add buffer overflow checks', action='store_true', default=False, dest="boa")
     parser.add_option ('--null', help='Add Null dereference checks', action='store_true', default=False, dest="null")
     parser.add_option ('--large-reduce', help='Reduce constraints during large-step-encoding', action='store_true', default=False, dest="reduce_large")
@@ -95,7 +107,7 @@ def getAnswer(out_file):
 
 def getFuncInfo (workdir, fname, opt):
     """ Get function info"""
-    print "Getting functions information ..."
+    if bench: print "Getting functions information ..."
     sea_cmd = getSea()
     name = os.path.splitext (os.path.basename (fname))[0]
     info = '--slice-function=\"' + opt.finfo
@@ -111,8 +123,8 @@ def getFuncInfo (workdir, fname, opt):
             f = {raw[1] : {'blks': raw[2], 'instr':raw[3]}}
             all_funcs.update(f)
     if len(all_funcs) > 0:
-        print 'Functions infos ...  OK'
-        print 'Total number of functions ... ' + str(len(all_funcs))
+        if bench: print 'Functions infos ...  OK'
+        if bench: print 'Total number of functions ... ' + str(len(all_funcs))
         return all_funcs
     else:
         print 'Functions info ...  KO'
@@ -137,7 +149,6 @@ def get_opt(opt, fname):
                    '--devirt-functions', '--step=incsmall',
                    '--inc_verbose', '--horn-df=bla.txt',
                    my_timeout, '-g', '-O0', fname] +  inv + boa + null + tmp + reduce
-    print cmd
     return cmd
 
 def run_single(fname, opt):
@@ -162,7 +173,7 @@ def run(all_funcs, fname, opt):
     # iterate over the functions
     for func,v in all_funcs.iteritems():
         if int(v['blks']) >= opt.num_blks:
-            print 'Checking Inconsistency ... ' + func + '| BLK ...' + v['blks']
+            if bench: print 'Checking Inconsistency ... ' + func + '| BLK ...' + v['blks']
             info = ['--slice-function=' + func.strip()]
             cmd = get_opt(opt,fname) + info
             analyzed.update({func:v})
@@ -190,10 +201,11 @@ def run(all_funcs, fname, opt):
             line_numbers = getLines(debug_info, incs)
             new_result = func + " , " + v['blks'] + " , " + res + " , " + line_numbers + " , " + rounds + " , " + query + "\n"
             all_result += new_result
-            print new_result
+            if bench: print new_result
+            if not bench: print pp_result % (func, v['blks'], res, line_numbers, query)
             f_result.write(new_result)
     f_result.close()
-    print 'Analyzed functions ... ' + str(len(analyzed))
+    if bench: print 'Analyzed functions ... ' + str(len(analyzed))
     return
 
 def getLines (lines_dict, incs):
@@ -215,6 +227,8 @@ def main (argv):
     fname = args[1]
     global verbose
     verbose = opt.verbose
+    global bench
+    bench = opt.bench
     if opt.single:
         run_single(fname, opt)
     else:
@@ -233,5 +247,4 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         f_result.close()
     finally:
-        print '\nDONE ...'
-    sys.exit (res)
+        sys.exit (res)

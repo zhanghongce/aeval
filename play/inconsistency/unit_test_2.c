@@ -59,7 +59,7 @@ int find_in_vector(const my_vector* v, int x) {
 int main() {
   int i;
   my_vector v;
-  
+
   init_vector(&v, 100);
   i = find_in_vector(&v, 10);
   printf("i = %d\n", i);
