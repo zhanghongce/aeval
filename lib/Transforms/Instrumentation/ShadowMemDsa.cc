@@ -85,6 +85,20 @@ namespace seahorn
   
   
   
+  bool ShadowMemDsa::isRead (const DSNodeHandle &nh, const Function &f)
+  {
+    return nh.getNode () ? isRead (nh.getNode (), f) : false;
+  }
+  bool ShadowMemDsa::isModified (const DSNodeHandle &nh, const Function &f)
+  {
+    return nh.getNode () ? isModified (nh.getNode (), f) : false;
+  } 
+  bool ShadowMemDsa::isRead (const DSNode *n, const Function &f)
+  {return n->isReadNode (); }
+
+  bool ShadowMemDsa::isModified (const DSNode *n, const Function &f)
+  {return n->isModifiedNode (); }
+  
   AllocaInst* ShadowMemDsa::allocaForNode (const DSNode *n, const unsigned offset)
   {
     auto &offmap = m_shadows[n];
@@ -361,7 +375,8 @@ namespace seahorn
             
             
             // skip nodes that are not read/written by the callee
-            if (!n->isReadNode () && !n->isModifiedNode ()) continue;
+            if (!isRead (n, CF) && !isModified (n, CF)) continue;
+            // if (!n->isReadNode () && !n->isModifiedNode ()) continue;
 
             /// XXX: it seems that for some nodes in the caller graph
             /// we may be unable to find its corresponding node in the
@@ -384,14 +399,16 @@ namespace seahorn
             
             // -- read only node ignore nodes that are only reachable
             // -- from the return of the function
-            if (n->isReadNode () && !n->isModifiedNode () && retReach.count(n) <= 0)
+            if (isRead (n, CF) && !isModified (n, CF) && retReach.count(n) <= 0)
+            // if (n->isReadNode () && !n->isModifiedNode () && retReach.count(n) <= 0)
             {
               B.CreateCall4 (m_argRefFn, B.getInt32 (id),
                              B.CreateLoad (v),
                              B.getInt32 (idx), getUniqueScalar (ctx, B, mh));
             }
             // -- read/write or new node
-            else if (n->isModifiedNode ())
+            else if (isModified (n, CF))
+            // else if (n->isModifiedNode ())
             {
               // -- n is new node iff it is reachable only from the return node
               Constant* argFn = retReach.count (n) ? m_argNewFn : m_argModFn;
@@ -418,7 +435,8 @@ namespace seahorn
     // -- create shadows for all nodes that are modified by this
     // -- function and escape to a parent function
     for (const DSNode *n : reach)
-      if (n->isModifiedNode () || n->isReadNode ())
+      // if (n->isModifiedNode () || n->isReadNode ())
+      if (isModified (n, F) || isRead (n, F))
       {
         // TODO: allocate for all slices of n, not just offset 0
         allocaForNode (n, 0);
@@ -476,8 +494,8 @@ namespace seahorn
       // n is read and is not only return-node reachable (for
       // return-only reachable nodes, there is no initial value
       // because they are created within this function)
-      if ((n->isReadNode () || n->isModifiedNode ()) 
-          && retReach.count (n) <= 0)
+      if ((isRead (n, F) || isModified (n, F)) && retReach.count (n) <= 0)
+      // if ((n->isReadNode () || n->isModifiedNode ()) && retReach.count (n) <= 0)
       {
         assert (!inits[n].empty());
         /// initial value
@@ -488,7 +506,8 @@ namespace seahorn
                        getUniqueScalar (ctx, B, nh));
       }
       
-      if (n->isModifiedNode ())
+      // if (n->isModifiedNode ())
+      if (isModified (n, F))
       {
         assert (!inits[n].empty());
         /// final value

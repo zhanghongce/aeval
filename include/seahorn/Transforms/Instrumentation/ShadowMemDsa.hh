@@ -60,6 +60,10 @@ namespace seahorn
     { return allocaForNode (nh.getNode (), getOffset (nh)); }
     
     
+    bool isRead (const DSNodeHandle &nh, const Function &f);
+    bool isRead (const DSNode* n, const Function &f);
+    bool isModified (const DSNodeHandle &nh, const Function &f);
+    bool isModified (const DSNode *n, const Function &f);
     
   public:
     static char ID;
