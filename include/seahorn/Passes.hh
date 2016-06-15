@@ -58,6 +58,8 @@ namespace seahorn
 
   llvm::Pass* createPromoteBoolLoadsPass ();
 
+  llvm::Pass* createEnumVerifierCallsPass ();
+
   llvm::Pass* createCanReadUndefPass ();
 
   llvm::Pass* createBmcPass (llvm::raw_ostream* out, bool solve);
@@ -69,6 +71,8 @@ namespace seahorn
   llvm::Pass* createCFGOnlyViewerPass ();
 
   llvm::Pass* createPromoteSeahornAssumePass ();
+  llvm::Pass* createKleeInternalizePass ();
+  llvm::Pass* createWrapMemPass ();
 }
 
 #ifdef HAVE_LLVM_SEAHORN

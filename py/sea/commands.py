@@ -1,8 +1,9 @@
 import sea
 
 import os.path
+import sys
 
-from sea import add_in_out_args, which, createWorkDir
+from sea import add_in_out_args, add_tmp_dir_args, which, createWorkDir
 
 # remaps a file based on working dir and a new extension
 def _remap_file_name (in_file, ext, work_dir):
@@ -35,6 +36,9 @@ class Clang(sea.LimitedCmd):
                          help='Machine architecture MACHINE:[32,64]', default=32)
         ap.add_argument ('-g', default=False, action='store_true',
                          dest='debug_info', help='Compile with debug info')
+        ap.add_argument ('-I', default=None,
+                         dest='include_dir', help='Include')
+        add_tmp_dir_args (ap)
         add_in_out_args (ap)
         _add_S_arg (ap)
         return ap
@@ -77,6 +81,14 @@ class Clang(sea.LimitedCmd):
 
             if args.llvm_asm: argv.append ('-S')
             argv.append ('-m{0}'.format (args.machine))
+
+            if args.include_dir is not None:
+                argv.append ('-I' + args.include_dir)
+
+            include_dir = os.path.dirname (sys.argv[0])
+            include_dir = os.path.dirname (include_dir)
+            include_dir = os.path.join (include_dir, 'include')
+            argv.append ('-I' + include_dir)
 
             if args.debug_info: argv.append ('-g')
         
@@ -197,6 +209,9 @@ class Seapp(sea.LimitedCmd):
         ap.add_argument ('--externalize-functions',
                          help='Externalize these functions',
                          dest='extern_funcs', type=str, metavar='str,...')
+        ap.add_argument ('--enum-verifier-calls', dest='enum_verifier_calls',
+                         help='Assign an unique identifier to each verifier.error call',
+                         default=False, action='store_true')
         ap.add_argument ('--lower-invoke',
                          help='Lower invoke instructions',
                          dest='lower_invoke', default=False,
@@ -279,6 +294,9 @@ class Seapp(sea.LimitedCmd):
             for f in args.slice_funcs.split(','):
                 argv.append ('--slice-function={0}'.format(f))
                 
+        if args.enum_verifier_calls:
+            argv.append ('--enum-verifier-calls')
+
         if args.entry is not None:
             argv.append ('--entry-point={0}'.format (args.entry))
 
@@ -545,9 +563,9 @@ class Seahorn(sea.LimitedCmd):
         ap.add_argument ('--show-invars',
                          help='Display computed invariants',
                          dest='show_invars', default=False, action='store_true')
-        ap.add_argument ('--crab',
-                         help='Enable Crab abstract interpreter',
-                         dest='crab', default=False, action='store_true')
+        # ap.add_argument ('--crab',
+        #                  help='Enable Crab abstract interpreter',
+        #                  dest='crab', default=False, action='store_true')
         ap.add_argument ('--bmc',
                          help='Use BMC engine',
                          dest='bmc', default=False, action='store_true')
@@ -562,9 +580,8 @@ class Seahorn(sea.LimitedCmd):
 
         if args.bmc:
             argv.append ('--horn-bmc')
-            
-        if args.crab:
-            argv.append ('--horn-crab')
+        # if args.crab:
+        #     argv.append ('--horn-crab')
 
         if args.solve or args.out_file is not None:
             argv.append ('--keep-shadows=true')
@@ -575,8 +592,8 @@ class Seahorn(sea.LimitedCmd):
             if args.show_invars:
                 argv.append ('--horn-answer')
         if args.cex is not None and args.solve:
-            argv.append ('-horn-cex')
-            argv.append ('-horn-svcomp-cex={0}'.format (args.cex))
+            argv.append ('-horn-cex-pass')
+            argv.append ('-horn-cex={0}'.format (args.cex))
             #argv.extend (['-log', 'cex'])
         if args.asm_out_file is not None: argv.extend (['-oll', args.asm_out_file])
 
