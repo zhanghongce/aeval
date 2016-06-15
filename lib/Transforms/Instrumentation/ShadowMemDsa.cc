@@ -14,7 +14,7 @@
 #include "boost/range/algorithm/set_algorithm.hpp"
 #include "boost/range/algorithm/binary_search.hpp"
 
-#include "dsa/SplitSteensgaard.hh"
+#include "dsa/Steensgaard.hh"
 
 static llvm::cl::opt<bool>
 SplitFields("horn-split-dsa",
@@ -187,7 +187,7 @@ namespace seahorn
     if (M.begin () == M.end ()) return false;
       
     //m_dsa = &getAnalysis<EQTDDataStructures> ();
-    m_dsa = &getAnalysis<SplitSteensgaardDataStructures> ();
+    m_dsa = &getAnalysis<SteensgaardDataStructures> ();
     
     declareFunctions(M);
     m_node_ids.clear ();
@@ -508,7 +508,7 @@ namespace seahorn
   {
     AU.setPreservesAll ();
     // AU.addRequiredTransitive<llvm::EQTDDataStructures>();
-    AU.addRequiredTransitive<llvm::SplitSteensgaardDataStructures> ();
+    AU.addRequiredTransitive<llvm::SteensgaardDataStructures> ();
     AU.addRequired<llvm::DataLayoutPass>();
     AU.addRequired<llvm::UnifyFunctionExitNodes> ();
   } 
