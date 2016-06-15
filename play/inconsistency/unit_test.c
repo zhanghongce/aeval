@@ -1,3 +1,6 @@
+// RUN : sea_inc ../play/inconsistency/unit_test.c --null --num-blks 3
+// EXPEXT : All infesaible
+
 #include <stdlib.h>
 #include <stdbool.h>
 #include <stdio.h>
