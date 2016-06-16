@@ -7,6 +7,8 @@
 #include "llvm/Transforms/Utils/UnifyFunctionExitNodes.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Local.h"
+#include "llvm/Analysis/CallGraph.h"
+#include "llvm/ADT/SCCIterator.h"
 
 #include "avy/AvyDebug.h"
 #include "boost/range.hpp"
@@ -14,12 +16,18 @@
 #include "boost/range/algorithm/set_algorithm.hpp"
 #include "boost/range/algorithm/binary_search.hpp"
 
+
 #include "dsa/Steensgaard.hh"
 
 static llvm::cl::opt<bool>
 SplitFields("horn-split-dsa",
             llvm::cl::desc("Split DSA nodes by fields"),
             llvm::cl::init (false));
+
+static llvm::cl::opt<bool>
+LocalReadMod ("horn-dsa-local-mod",
+              llvm::cl::desc ("DSA: Compute read/mod info locally"),
+              llvm::cl::init (false));
 
 namespace seahorn
 {
@@ -94,10 +102,32 @@ namespace seahorn
     return nh.getNode () ? isModified (nh.getNode (), f) : false;
   } 
   bool ShadowMemDsa::isRead (const DSNode *n, const Function &f)
-  {return n->isReadNode (); }
+  {
+    LOG("shadow_mod",
+          if (LocalReadMod && n->isReadNode () != (m_readList[&f].count (n) > 0))
+          {
+            errs () << f.getName ()
+                    << " readNode: " << n->isReadNode ()
+                    << " readList: " << m_readList[&f].count(n) << "\n";
+           if (n->isReadNode ()) n->dump ();
+          }
+        );
+    
+    return LocalReadMod ?  m_readList[&f].count(n) > 0 : n->isReadNode ();
+  }
 
   bool ShadowMemDsa::isModified (const DSNode *n, const Function &f)
-  {return n->isModifiedNode (); }
+  {
+    LOG ("shadow_mod",
+         if (LocalReadMod && n->isModifiedNode () != (m_modList[&f].count (n) > 0))
+         {
+           errs () << f.getName ()
+                   << " modNode: " << n->isModifiedNode ()
+                   << " modList: " << m_modList[&f].count(n) << "\n";
+           if (n->isModifiedNode ()) n->dump ();
+         });
+    return LocalReadMod ? m_modList[&f].count (n) > 0 : n->isModifiedNode ();
+  }
   
   AllocaInst* ShadowMemDsa::allocaForNode (const DSNode *n, const unsigned offset)
   {
@@ -203,11 +233,75 @@ namespace seahorn
     //m_dsa = &getAnalysis<EQTDDataStructures> ();
     m_dsa = &getAnalysis<SteensgaardDataStructures> ();
     
+    if (LocalReadMod) computeReadMod ();
+    
     declareFunctions(M);
     m_node_ids.clear ();
     for (Function &f : M) runOnFunction (f);
       
     return false;
+  }
+  
+  void ShadowMemDsa::computeReadMod ()
+  {
+    CallGraph &cg = getAnalysis<CallGraphWrapperPass> ().getCallGraph ();
+    for (auto it = scc_begin (&cg); !it.isAtEnd(); ++it)
+    {
+      const std::vector<CallGraphNode*> &scc = *it;
+      DSNodeSet read;
+      DSNodeSet modified;
+
+      // compute read/mod, sharing information between scc 
+      for (CallGraphNode *cgn : scc)
+      {
+        Function *f = cgn->getFunction ();
+        if (!f) continue;
+        updateReadMod (*f, read, modified);
+      }
+
+      // set the computed read/mod to all functions in the scc
+      for (CallGraphNode *cgn : scc)
+      {
+        Function *f = cgn->getFunction ();
+        if (!f) continue;
+        m_readList[f].insert (read.begin (), read.end ());
+        m_modList[f].insert (modified.begin(), modified.end ());
+      }
+    }
+  }
+  
+  void ShadowMemDsa::updateReadMod (Function &F, DSNodeSet &readSet, DSNodeSet &modSet)
+  {
+    if (!m_dsa->hasDSGraph (F)) return;
+    
+    DSGraph *dsg = m_dsa->getDSGraph (F);
+    for (BasicBlock &bb : F)
+    {
+      for (Instruction &inst : bb)
+      {
+        if (LoadInst *li = dyn_cast<LoadInst> (&inst))
+        {
+          DSNodeHandle &nh = dsg->getNodeForValue (li->getPointerOperand ());
+          if (!nh.isNull()) readSet.insert (nh.getNode ());
+        }
+        else if (StoreInst *si = dyn_cast<StoreInst> (&inst))
+        {
+          DSNodeHandle &nh = dsg->getNodeForValue (si->getPointerOperand ());
+          if (!nh.isNull ()) modSet.insert (nh.getNode ());
+        }
+        else if (CallInst *ci = dyn_cast<CallInst> (&inst))
+        {
+          CallSite CS (ci);
+          Function *cf = CS.getCalledFunction ();
+          if (cf && m_dsa->hasDSGraph (*cf))
+          {            
+            readSet.insert (m_readList[cf].begin (), m_readList[cf].end ());
+            modSet.insert (m_modList[cf].begin (), m_modList[cf].end ());
+          }            
+        }
+        // TODO: handle intrinsics (memset,memcpy) and other library functions
+      }
+    }
   }
   
   static Value *getUniqueScalar (LLVMContext &ctx, IRBuilder<> &B, const DSNodeHandle &nh)
@@ -528,6 +622,7 @@ namespace seahorn
     AU.setPreservesAll ();
     // AU.addRequiredTransitive<llvm::EQTDDataStructures>();
     AU.addRequiredTransitive<llvm::SteensgaardDataStructures> ();
+    AU.addRequired<llvm::CallGraphWrapperPass>();
     AU.addRequired<llvm::DataLayoutPass>();
     AU.addRequired<llvm::UnifyFunctionExitNodes> ();
   } 

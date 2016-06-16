@@ -14,6 +14,7 @@
 #include "dsa/DSGraph.h"
 #include "dsa/DSNode.h"
 
+#include "boost/container/flat_set.hpp"
 
 namespace seahorn
 {
@@ -47,6 +48,10 @@ namespace seahorn
     unsigned m_max_id;
     Type *m_Int32Ty;
     
+    // typedef DenseSet<const DSNode*> DSNodeSet;
+    typedef boost::container::flat_set<const DSNode*> DSNodeSet;
+    DenseMap<const Function *, DSNodeSet> m_readList;
+    DenseMap<const Function *, DSNodeSet > m_modList;
     
     
     void declareFunctions (llvm::Module &M);
@@ -59,6 +64,9 @@ namespace seahorn
     AllocaInst* allocaForNode (const DSNodeHandle &nh)
     { return allocaForNode (nh.getNode (), getOffset (nh)); }
     
+    /// compute read/modified information per function
+    void computeReadMod ();
+    void updateReadMod (Function &F, DSNodeSet &readSet, DSNodeSet &modSet);
     
     bool isRead (const DSNodeHandle &nh, const Function &f);
     bool isRead (const DSNode* n, const Function &f);
