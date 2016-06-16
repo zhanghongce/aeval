@@ -293,11 +293,18 @@ namespace seahorn
         {
           CallSite CS (ci);
           Function *cf = CS.getCalledFunction ();
-          if (cf && m_dsa->hasDSGraph (*cf))
+          if (!cf) continue;
+          if (cf->getName ().equals ("calloc"))
+          {
+            DSNodeHandle &nh = dsg->getNodeForValue (&inst);
+            if (!nh.isNull ()) modSet.insert (nh.getNode ());
+          }
+          else if (m_dsa->hasDSGraph (*cf))
           {            
             readSet.insert (m_readList[cf].begin (), m_readList[cf].end ());
             modSet.insert (m_modList[cf].begin (), m_modList[cf].end ());
           }            
+          
         }
         // TODO: handle intrinsics (memset,memcpy) and other library functions
       }
