@@ -7,13 +7,21 @@
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Constants.h"
-#include "llvm/IR/Dominators.h"
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/CommandLine.h"
 
 #include "avy/AvyDebug.h"
+
+// For proving absence of null dereferences this option better be
+// enabled.
+// However, for finding code inconsistencies it might be useful to
+// disable it.
+static llvm::cl::opt<bool>
+OptimizeNullChecks("null-check-optimize",
+                   llvm::cl::desc ("Minimize the number of instrumented null checks"),
+                   llvm::cl::init (false));
 
 namespace seahorn
 {
@@ -126,7 +134,7 @@ namespace seahorn
     return errBB;
   }
 
-  bool NullCheck::runOnFunction (Function &F, DominatorTree *DT)
+  bool NullCheck::runOnFunction (Function &F)
   {
     if (F.isDeclaration ()) return false;
 
@@ -134,13 +142,13 @@ namespace seahorn
     std::vector<Instruction*> Worklist;
     for (auto&BB : F)  {
       // XXX: uncomment if only consider within a basic block 
-      //TempsToInstrument.clear();
+      TempsToInstrument.clear();
       for (auto &i: BB) {
         Instruction *I = &i;
         if (isa<LoadInst>(I)) {
           if (Value* BasePtr = getBasePtr (I)) {
             // We've checked BasePtr in the current BB.
-            if (!TempsToInstrument.insert(BasePtr).second) {
+            if (OptimizeNullChecks && !TempsToInstrument.insert(BasePtr).second) {
               LOG ("null-check", 
                    errs () << "Skipped " << *BasePtr << " because already checked!\n";);
               continue;  
@@ -150,7 +158,7 @@ namespace seahorn
         } else if (isa<StoreInst>(I)) {
           if (Value* BasePtr = getBasePtr (I)) {
             // We've checked BasePtr in the current BB.
-            if (!TempsToInstrument.insert(BasePtr).second) {
+            if (OptimizeNullChecks && !TempsToInstrument.insert(BasePtr).second) {
               LOG ("null-check", 
                    errs () << "Skipped " << *BasePtr << " because already checked!\n";);
               continue;  
@@ -160,16 +168,6 @@ namespace seahorn
         }
       }
     }
-
-    // std::set<Instruction*> DominatedInsts;    
-    // // set of instructions that are dominated by another checked instruction.
-    // for (auto I1: Worklist) {
-    //   for (auto I2: Worklist) {
-    //     if (I1 == I2) continue;
-    //     if (DT->dominates (I1,I2))
-    //       DominatedInsts.insert(I2);
-    //   }
-    // }
 
     LLVMContext &ctx = F.getContext ();
     IRBuilder<> B (ctx);
@@ -186,46 +184,38 @@ namespace seahorn
 
       if (Ptr) {
 
-        // if (DominatedInsts.count(I) > 0) { 
-        //   LOG ("null-check", 
-        //        errs () << "Skipped " << *Ptr
-        //                << " because already dominated by a checked instruction.\n";);
-        //   continue; 
-        // }
+        Value * Base = nullptr;
+        if (OptimizeNullChecks)
+          Base = getBasePtr(Ptr);
 
-        Value * Base = getBasePtr(Ptr);
         // -- Instrument the memory access
         insertNullCheck (Base ? Base : Ptr, B, I);
 
-        /// XXX : if Base is not null then to add after the memory
-        /// access assume(Base) is redundant since insertNullCheck
-        /// already added assert(Base). Otherwise, we cannot add it
-        /// anyway because it won't be the case that Ptr is a
-        /// in-bounds GEP with zero pointer address space.
+        if (!OptimizeNullChecks) {
+          // -- Add extra memory safety assumption: successful load/store
+          //    implies validity of their arguments.
+          if (GetElementPtrInst* gep = dyn_cast<GetElementPtrInst>(Ptr)) {
+            if (gep->isInBounds() && gep->getPointerAddressSpace() == 0) {
+              Value* base = gep->getPointerOperand ();
+              B.SetInsertPoint (I);
+              auto It = B.GetInsertPoint();
+              ++It;
+              B.SetInsertPoint(I->getParent(), It);
+              CallInst* CI = B.CreateCall(AssumeFn, B.CreateIsNotNull(base));
+              CI->setDebugLoc (I->getDebugLoc ());
+              
+              LOG ("null-check",
+                   errs () << "Added memory safety assumption for " << *base << "\n";);
 
-        // // -- Add extra memory safety assumption: successful load/store
-        // //    implies validity of their arguments.
-        // if (GetElementPtrInst* gep = dyn_cast<GetElementPtrInst>(Ptr)) {
-        //   //if (gep->isInBounds() && gep->getPointerAddressSpace() == 0) {
-        //   if (Value* base = getBasePtr(Ptr)) { //gep->getPointerOperand ();
-        //     B.SetInsertPoint (I);
-        //     auto It = B.GetInsertPoint();
-        //     ++It;
-        //     B.SetInsertPoint(I->getParent(), It);
-        //     CallInst* CI = B.CreateCall(AssumeFn, B.CreateIsNotNull(base));
-        //     CI->setDebugLoc (I->getDebugLoc ());
-
-        //     LOG ("null-check",
-        //          errs () << "Added memory safety assumption for " << *base << "\n";);
-
-        //     // update call graph
-        //     if (CG) {
-        //       auto f1 = CG->getOrInsertFunction (&F);
-        //       auto f2 = CG->getOrInsertFunction (AssumeFn);
-        //       f1->addCalledFunction (CallSite (CI), f2);
-        //     }
-        //   }
-        // }
+              // update call graph
+              if (CG) {
+                auto f1 = CG->getOrInsertFunction (&F);
+                auto f2 = CG->getOrInsertFunction (AssumeFn);
+                f1->addCalledFunction (CallSite (CI), f2);
+              }
+            }
+          }
+        }
         change = true;
       }
     }
@@ -265,8 +255,7 @@ namespace seahorn
     bool change = false;
     for (Function &F : M) {
       if (F.isDeclaration ()) continue;
-      DominatorTreeWrapperPass* DTWP = &getAnalysis<DominatorTreeWrapperPass>(F);
-      change |= runOnFunction (F, &DTWP->getDomTree()); 
+      change |= runOnFunction (F); 
     }
 
     //errs () << "After NullCheck pass \n" << M << "\n";
@@ -280,7 +269,6 @@ namespace seahorn
     AU.setPreservesAll ();
     AU.addRequired<CallGraphWrapperPass> ();
     AU.addPreserved<CallGraphWrapperPass> ();
-    AU.addRequired<DominatorTreeWrapperPass>();
   } 
 
   char NullCheck::ID = 0;

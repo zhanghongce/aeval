@@ -185,7 +185,9 @@ class Seapp(sea.LimitedCmd):
 
         ap.add_argument ('--overflow-check', dest='ioc', help='Insert signed integer overflow checks (OBSOLETE)',
                          default=False, action='store_true')
-        ap.add_argument ('--null-check', dest='ndc', help='Insert null dereference checks (OBSOLETE)',
+        ap.add_argument ('--null-check', dest='ndc', help='Insert null dereference checks',
+                         default=False, action='store_true')
+        ap.add_argument ('--null-check-opt', dest='ndc_opt', help='Minimize the number of null dereference checks',
                          default=False, action='store_true')
         ap.add_argument ('--externalize-addr-taken-functions',
                          help='Externalize uses of address-taken functions',
@@ -267,7 +269,9 @@ class Seapp(sea.LimitedCmd):
             if args.abc_track_base_only: argv.append ('--abc-track-base-only')
 
         if args.ioc: argv.append ('--overflow-check')
-        if args.ndc: argv.append ('--null-check')
+        if args.ndc: 
+            argv.append ('--null-check')
+            if args.ndc_opt: argv.append ('--null-check-optimize')
 
         if args.lower_assert: argv.append('--lower-assert')
 
