@@ -137,7 +137,7 @@ def get_opt(opt, fname):
     save_temps = ['--save-temps'] if opt.save_temps else []
     tmp_dir = ['--temp-dir=' + opt.temp_dir] if opt.temp_dir else []
     tmp = save_temps + tmp_dir
-    boa = ['--abc=2'] if opt.boa else []
+    boa = ['--abc=2','--abc-escape-ptr','--abc-use-deref'] if opt.boa else []
     null = ['--null-check'] if opt.null else []
     reduce_large = ['--horn-large-reduce'] if opt.reduce_large else []
     reduce_weakly = ['--horn-reduce-weakly'] if opt.reduce_weakly else []
@@ -145,10 +145,11 @@ def get_opt(opt, fname):
     reduce = reduce_weakly + reduce_large + reduce_false
     inv = ['--inv'] if opt.inv else []
     cmd = [sea_cmd, 'inc',
-                   '--horn-no-verif', '--lower-invoke', '--lower-assert',
-                   '--devirt-functions', '--step=incsmall',
-                   '--inc_verbose', '--horn-df=bla.txt',
-                   my_timeout, '-g', '-O0', fname] +  inv + boa + null + tmp + reduce
+           '--horn-no-verif', '--lower-invoke', '--lower-assert'
+           , '--devirt-functions', '--step=incsmall'
+           #, '--horn-one-assume-per-block',
+           , '--inc_verbose', '--horn-df=bla.txt',
+           my_timeout, '-g', '-O0', fname] +  inv + boa + null + tmp + reduce
     return cmd
 
 def run_single(fname, opt):

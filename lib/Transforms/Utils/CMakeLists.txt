@@ -11,4 +11,5 @@ add_llvm_library(SeaTransformsUtils
   DevirtFunctions.cc
   SliceFunctions.cc
   Mem2Reg.cc
+  OneAssumePerBlock.cc
   )

@@ -169,9 +169,17 @@ namespace seahorn
         if (const ConstantInt *CI = dyn_cast<const ConstantInt>(p.first->getCondition())) {
           if ((CI->isOne() && p.second) || (CI->isZero() && !p.second)) { 
             // error is definitely reachable
-            llvm::errs () << "lower-assert: " << *CI 
-                          << " could not be lowered to an assume instruction.\n";
-            llvm::errs () << "Moreover, an error location seems to be reachable!\n";
+
+            // llvm::errs () << "lower-assert: " << *CI 
+            //               << " could not be lowered to an assume instruction.\n";
+            // llvm::errs () << "Moreover, an error location seems to be reachable!\n";
+            CallInst* NCI = CallInst::Create(assumeFn, 
+                                             ConstantInt::getFalse(F.getContext()), "", p.first);
+            NCI->setDebugLoc (p.first->getDebugLoc ());
+            if (cg)
+              (*cg)[&F]->addCalledFunction (CallSite (NCI),
+                                            (*cg)[NCI->getCalledFunction ()]);
+
           } 
           // otherwise the call to verifier.error is dead code.
           continue;

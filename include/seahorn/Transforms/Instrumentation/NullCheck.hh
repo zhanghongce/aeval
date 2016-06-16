@@ -7,7 +7,6 @@
 
 namespace llvm {
    class CallGraph;
-   class DominatorTree;
 }
 
 namespace seahorn
@@ -41,7 +40,7 @@ namespace seahorn
           CG (nullptr) { }
     
     virtual bool runOnModule (llvm::Module &M) override;
-    bool runOnFunction (Function &F, DominatorTree* DT);
+    bool runOnFunction (Function &F);
     
     virtual void getAnalysisUsage (llvm::AnalysisUsage &AU) const override;
     virtual const char* getPassName () const {return "NullCheck";}

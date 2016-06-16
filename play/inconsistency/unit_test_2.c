@@ -3,7 +3,7 @@
 #include <stdbool.h>
 
 extern void __VERIFIER_error (void);
-__attribute__((always_inline))void assert (int v) { if (!v) __VERIFIER_error (); }
+#define assert(c) if (!c) __VERIFIER_error ();
 
 typedef struct {
   int* data;

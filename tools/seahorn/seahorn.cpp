@@ -126,6 +126,11 @@ Bmc ("horn-bmc",
      llvm::cl::desc ("Use BMC engine. Currently restricted to intra-procedural analysis"),
      llvm::cl::init (false));
 
+static llvm::cl::opt<bool>
+OneAssumePerBlock ("horn-one-assume-per-block", 
+                   llvm::cl::desc ("Make sure there is at most one call to verifier.assume per block"), 
+                   llvm::cl::init (false));
+
 // removes extension from filename if there is one
 std::string getFileName(const std::string &str) {
   std::string filename = str;
@@ -246,6 +251,11 @@ int main(int argc, char **argv) {
   pass_manager.add (new seahorn::RemoveUnreachableBlocksPass ());
   pass_manager.add (seahorn::createStripLifetimePass ());
   pass_manager.add (seahorn::createDeadNondetElimPass ());
+
+  if (OneAssumePerBlock) {
+    // -- it must be called after all the cfg simplifications
+    pass_manager.add (seahorn::createOneAssumePerBlockPass ());
+  }
 
 #ifdef HAVE_CRAB_LLVM
   if (Crab)
