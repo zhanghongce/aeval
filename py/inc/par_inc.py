@@ -232,7 +232,7 @@ class Feasibility(object):
         new_exist_vars = self.existVars(exist_vars, true_false_vars)
         new_query = z3.Exists(new_exist_vars,and_predicate)
         if debug_cex: print "NEW Query:\n", new_query
-        
+
         #print "NEW Query:\n", new_query
         return new_query
 
@@ -553,10 +553,10 @@ def main (argv):
     jb.spanner(in_name)
 
 
-if __name__ == '__main__':
-    res = None
-    try:
-        main (sys.argv)
-    except Exception as e:
-        print str(e)
-    sys.exit (res)
+# if __name__ == '__main__':
+#     res = None
+#     try:
+#         main (sys.argv)
+#     except Exception as e:
+#         print str(e)
+#     sys.exit (res)

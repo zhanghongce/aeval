@@ -1,3 +1,6 @@
+// sea_inc  tbd1.c ;;  example9 is feasible
+// sea_inc --single tbd1.c ;;  example9 is infeasible
+
 int getInt(int n){
     return 0;
 }

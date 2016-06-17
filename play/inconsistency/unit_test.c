@@ -17,13 +17,13 @@ typedef struct example_s {
 #define hashCode(this) ((size_t) this->bases)
 
 #define EX1
-/* #define EX2 */
-/* #define EX3 */
-/* #define EX4 */
-/* #define EX6 */
-/* #define EX7 */
-/* #define EX8 */
-/* #define EX9 */
+ #define EX2
+ #define EX3
+ #define EX4
+ #define EX6
+ #define EX7
+ #define EX8
+ #define EX9
 
 
 #ifdef EX0
@@ -36,7 +36,7 @@ void example0(int c, int d){
     result = result / 0;
  }
 }
-#endif 
+#endif
 
 #ifdef EX1
 // Run with --null
@@ -55,7 +55,7 @@ bool example1(example* this, const example* other) {
 
   return true;
 }
-#endif 
+#endif
 
 #ifdef EX2
 // Run with --boa
@@ -66,7 +66,7 @@ int example2(int n) {
   arr[3] = 3;
   return arr[n]; // Inconsistent with 28
 }
-#endif 
+#endif
 
 #ifdef EX3
 // Run with --null
@@ -78,7 +78,7 @@ int example3(example* o) {
   printf("%s does not exist\n", o->repr); //inconsistent with line 34
   return 2;
 }
-#endif 
+#endif
 
 #ifdef EX4
 // Run with --boa
@@ -92,14 +92,14 @@ void example4(int n) {
 	  arr[i]=i; // inconsistent off by one
             // XXX do something with arr[i] otherwise trivial dead
             // code elimination will remove it
-            // 
+            //
             // XXX this is not enough because llvm replaces arr[i]
             //     with i so arr[i] is still removed:
             //printf("%d\n", arr[i]);
             if (nd ()) printf("%d\n", arr[i]);
           }
 }
-#endif 
+#endif
 
 #ifdef EX5
 // XXX: seahorn does not instrument division instructions so nothing
@@ -110,18 +110,18 @@ void example5(int a, int b) {
   b=1/b;
 	if (a<=0) b=1/(1-b);
 }
-#endif 
+#endif
 
 #ifdef EX6
 // Run with --null
-// 
+//
 // XXX: we cannot find the inconsistency because "if (o == NULL)" is
-// not used as a condition in a branch by llvm. So we cannot find 
-// an inconsistency between blocks. 
-// 
+// not used as a condition in a branch by llvm. So we cannot find
+// an inconsistency between blocks.
+//
 // "if (o == NULL) { ... return false; }" is simply translated by LLVM to:
-// 
-// %r = icmp ne o NULL; 
+//
+// %r = icmp ne o NULL;
 // return %r
 bool example6(example* o) {
   printf("%s\n", o->repr);
@@ -131,7 +131,7 @@ bool example6(example* o) {
   }
   return true;
 }
-#endif 
+#endif
 
 #ifdef EX7
 // Run wiht --boa
@@ -139,7 +139,7 @@ bool example6(example* o) {
 int example7(int arr[]) {
 	return arr[-1]; // inconsistent
 }
-#endif 
+#endif
 
 #ifdef EX8
 // XXX: here we cannot find the inconsistency because of the same
@@ -161,7 +161,7 @@ int example8(int length) {
   }
   return repos;
 }
-#endif 
+#endif
 
 
 #ifdef EX9
@@ -187,7 +187,7 @@ int example9(int index, int ints_size, int chars_size, int bytes_size, int boole
 		//if max!=0, then one of the cases above
 		//was taken s.t. max is always set to index+1
 		// hence the line above always sets index to 1
-                    // 
+                    //
                     // XXX: this is not true!!!!!
                     ///     max is not always index+1 because the above conditions are
                     ///     index < 63 rather than index == 63, ....
@@ -199,4 +199,4 @@ int example9(int index, int ints_size, int chars_size, int bytes_size, int boole
 	}
 	return index;
 }
-#endif 
+#endif

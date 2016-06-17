@@ -47,6 +47,7 @@ def parseOpt (argv):
                        help="Temporary directory",
                        default=None)
     parser.add_option ('--finfo', dest='finfo', help='Funcs Info file', default='finfo_inc')
+    parser.add_option ('--only-func', dest='only_func', help='Check incosistency of this function only', default=None)
     parser.add_option ('--num-blks', dest='num_blks', help='Number of Basic Blocks', default=0, type=int)
     parser.add_option ('--timeout', dest='timeout', help='Timeout per function', default=10.00, type=float)
     parser.add_option ('--verbose', help='Talk a lot', action='store_true', default=False, dest="verbose")
@@ -58,6 +59,7 @@ def parseOpt (argv):
     parser.add_option ('--reduce-constraints', help='Reduce False Constraints', action='store_true', default=False, dest="reduce_false")
     parser.add_option ('--single', help='Check inconsistency of the whole program', action='store_true', default=False, dest="single")
     parser.add_option ('--inv', help='Get Invariants', action='store_true', default=False, dest="inv")
+    parser.add_option ('--spacer_verbose', help='Spacer Verbose', action='store_true', default=False, dest="spacer_verbose")
     (options, args) = parser.parse_args (argv)
     return (options, args)
 
@@ -142,6 +144,7 @@ def get_opt(opt, fname):
     reduce_large = ['--horn-large-reduce'] if opt.reduce_large else []
     reduce_weakly = ['--horn-reduce-weakly'] if opt.reduce_weakly else []
     reduce_false = ['--horn-reduce-constraints'] if opt.reduce_false else []
+    spacer_verbose = ['--spacer_verbose'] if opt.spacer_verbose else []
     reduce = reduce_weakly + reduce_large + reduce_false
     inv = ['--inv'] if opt.inv else []
     cmd = [sea_cmd, 'inc',
@@ -149,7 +152,7 @@ def get_opt(opt, fname):
            , '--devirt-functions', '--step=incsmall'
            #, '--horn-one-assume-per-block',
            , '--inc_verbose', '--horn-df=bla.txt',
-           my_timeout, '-g', '-O0', fname] +  inv + boa + null + tmp + reduce
+           my_timeout, '-g', '-O0', fname] +  inv + boa + null + tmp + reduce + spacer_verbose
     return cmd
 
 def run_single(fname, opt):
@@ -160,6 +163,37 @@ def run_single(fname, opt):
     if verbose: print " ".join(cmd)
     result, _ = p.communicate()
     print result
+    return
+
+def run_one_function(function_name, fname, opt):
+    """ Check inconsistency of one function """
+    sea_cmd = getSea()
+    name = os.path.splitext (os.path.basename (fname))[0]
+    if bench: print 'Checking Inconsistency ... ' + function_name
+    info = ['--slice-function=' + function_name.strip()]
+    cmd = get_opt(opt,fname) + info
+    p = sub.Popen(cmd, shell=False, stdout=sub.PIPE, stderr=sub.STDOUT)
+    if verbose: print " ".join(cmd)
+    result, _ = p.communicate()
+    if verbose: print result
+    func_res = ""
+    debug_info = {}
+    for r in result.split('\n'):
+        if 'INC_STAT' in r:
+            func_res += r + "\n"
+        if 'DINFO' in r:
+            tmp = r.split(":")
+            debug_info.update({tmp[1].strip():tmp[2]})
+    tmp_split = func_res.split("\n")
+    try:
+        res = (tmp_split[0]).split('|')[2]
+        incs = (tmp_split[2]).split('|')[2]
+        rounds = (tmp_split[3]).split('|')[2]
+        query = (tmp_split[4]).split('|')[2]
+    except Exception as e:
+        print 'WARNING: wrong format \n' + func_res
+    line_numbers = getLines(debug_info, incs)
+    print pp_result % (function_name, "", res, line_numbers, query)
     return
 
 def run(all_funcs, fname, opt):
@@ -230,11 +264,16 @@ def main (argv):
     verbose = opt.verbose
     global bench
     bench = opt.bench
+    if opt.spacer_verbose: verbose = True
     if opt.single:
         run_single(fname, opt)
     else:
-        funcInfos = getFuncInfo(workdir, fname, opt)
-        if funcInfos: run(funcInfos, fname, opt)
+        if opt.only_func is None:
+                run(funcInfos, fname, opt)
+        else:
+            funcInfos = getFuncInfo(workdir, fname, opt)
+            if funcInfos:
+                run_one_function(opt.only_func, fname, opt)
     return returnvalue
 
 
