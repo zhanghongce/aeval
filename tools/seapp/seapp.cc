@@ -95,6 +95,16 @@ SymbolizeLoops ("horn-symbolize-loops",
                llvm::cl::desc ("Convert constant loop bounds into symbolic bounds"),
                llvm::cl::init (false));
 
+static llvm::cl::opt<bool>
+SimplifyPointerLoops ("simplify-pointer-loops", 
+               llvm::cl::desc ("Simplify loops that iterate over pointers"),
+               llvm::cl::init (false));
+
+static llvm::cl::opt<bool>
+UnfoldLoopsForDsa ("unfold-loops-for-dsa", 
+               llvm::cl::desc ("Unfold the first loop iteration if useful for DSA analysis"),
+               llvm::cl::init (false));
+
 // The number refers to the encoding id. If zero no bounds check.
 static llvm::cl::opt<unsigned>
 ArrayBoundsChecks ("abc", 
@@ -369,14 +379,19 @@ int main(int argc, char **argv) {
 
     pass_manager.add(llvm::createUnifyFunctionExitNodesPass ());
 
-    if (ArrayBoundsChecks > 0)
-    { 
-      // XXX: probably this is a pass that we should always run
+    if (SimplifyPointerLoops) {
+      // --- simplify loops that iterate over pointers
       pass_manager.add (seahorn::createSimplifyPointerLoopsPass ());
-      // XXX: help DSA to be more precise
-      //      we might want to also run always this pass
+    }
+
+    if (UnfoldLoopsForDsa) {
+      // --- help DSA to be more precise
       pass_manager.add (llvm_seahorn::createFakeLatchExitPass());
       pass_manager.add (seahorn::createUnfoldLoopForDsaPass());
+    }
+
+    if (ArrayBoundsChecks > 0)
+    { 
       switch (ArrayBoundsChecks) {
         case 1: 
           pass_manager.add (new seahorn::LowerCstExprPass ());

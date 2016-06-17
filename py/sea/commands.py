@@ -155,6 +155,12 @@ class Seapp(sea.LimitedCmd):
         ap.add_argument ('--promote-arrays', dest='promote_arrays', 
                          help='Promote sized arrays to packed structs',
                          default=False, action='store_true')
+        ap.add_argument ('--simplify-pointer-loops', dest='simp_ptr_loops', 
+                         help='Simplify loops that iterate over pointers',
+                         default=False, action='store_true')
+        ap.add_argument ('--unfold-loops-for-dsa', dest='unfold_loops_for_dsa', 
+                         help='Unfold the first loop iteration if useful for DSA analysis',
+                         default=False, action='store_true')
         ap.add_argument ('--entry', dest='entry', help='Make entry point if main does not exist',
                          default=None, metavar='str')
         ap.add_argument ('--abc', 
@@ -255,6 +261,12 @@ class Seapp(sea.LimitedCmd):
         if args.promote_arrays:
             argv.append ('--promote-arrays')
 
+        if args.simp_ptr_loops:
+            argv.append('--simplify-pointer-loops')
+
+        if args.unfold_loops_for_dsa:
+            argv.append('--unfold-loops-for-dsa')
+            
         if args.lower_invoke:
             argv.append ('--lower-invoke')
 
