@@ -7,6 +7,8 @@
 #include "llvm/Transforms/Utils/UnifyFunctionExitNodes.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Local.h"
+#include "llvm/Analysis/CallGraph.h"
+#include "llvm/ADT/SCCIterator.h"
 
 #include "avy/AvyDebug.h"
 #include "boost/range.hpp"
@@ -14,7 +16,18 @@
 #include "boost/range/algorithm/set_algorithm.hpp"
 #include "boost/range/algorithm/binary_search.hpp"
 
+
 #include "dsa/Steensgaard.hh"
+
+static llvm::cl::opt<bool>
+SplitFields("horn-split-dsa",
+            llvm::cl::desc("Split DSA nodes by fields"),
+            llvm::cl::init (false));
+
+static llvm::cl::opt<bool>
+LocalReadMod ("horn-dsa-local-mod",
+              llvm::cl::desc ("DSA: Compute read/mod info locally"),
+              llvm::cl::init (false));
 
 namespace seahorn
 {
@@ -80,35 +93,71 @@ namespace seahorn
   
   
   
-  AllocaInst* ShadowMemDsa::allocaForNode (const DSNode *n)
+  bool ShadowMemDsa::isRead (const DSNodeHandle &nh, const Function &f)
   {
-    auto it = m_shadows.find (n);
-    if (it != m_shadows.end ()) return it->second;
-      
+    return nh.getNode () ? isRead (nh.getNode (), f) : false;
+  }
+  bool ShadowMemDsa::isModified (const DSNodeHandle &nh, const Function &f)
+  {
+    return nh.getNode () ? isModified (nh.getNode (), f) : false;
+  } 
+  bool ShadowMemDsa::isRead (const DSNode *n, const Function &f)
+  {
+    LOG("shadow_mod",
+          if (LocalReadMod && n->isReadNode () != (m_readList[&f].count (n) > 0))
+          {
+            errs () << f.getName ()
+                    << " readNode: " << n->isReadNode ()
+                    << " readList: " << m_readList[&f].count(n) << "\n";
+           if (n->isReadNode ()) n->dump ();
+          }
+        );
+    
+    return LocalReadMod ?  m_readList[&f].count(n) > 0 : n->isReadNode ();
+  }
+
+  bool ShadowMemDsa::isModified (const DSNode *n, const Function &f)
+  {
+    LOG ("shadow_mod",
+         if (LocalReadMod && n->isModifiedNode () != (m_modList[&f].count (n) > 0))
+         {
+           errs () << f.getName ()
+                   << " modNode: " << n->isModifiedNode ()
+                   << " modList: " << m_modList[&f].count(n) << "\n";
+           if (n->isModifiedNode ()) n->dump ();
+         });
+    return LocalReadMod ? m_modList[&f].count (n) > 0 : n->isModifiedNode ();
+  }
+  
+  AllocaInst* ShadowMemDsa::allocaForNode (const DSNode *n, const unsigned offset)
+  {
+    auto &offmap = m_shadows[n];
+    
+    auto it = offmap.find (offset);
+    if (it != offmap.end ()) return it->second;
+    
     AllocaInst *a = new AllocaInst (m_Int32Ty, 0);
-    m_shadows [n] = a;
+    offmap [offset] = a;
     return a;
   }
     
-  unsigned ShadowMemDsa::getId (const DSNode *n)
+  unsigned ShadowMemDsa::getId (const DSNode *n, unsigned offset)
   {
     auto it = m_node_ids.find (n);
-    if (it != m_node_ids.end ()) return it->second;
-    unsigned id = m_node_ids.size ();
+    if (it != m_node_ids.end ()) return it->second + offset;
+    
+    unsigned id = m_max_id;
     m_node_ids[n] = id;
-    return id;
+
+    // -- allocate enough ids for every byte of the object
+    assert (n->getSize() > 0);
+    m_max_id += n->getSize ();
+    return id + offset;
   }
     
     
-  
-  bool ShadowMemDsa::runOnModule (llvm::Module &M)
+  void ShadowMemDsa::declareFunctions (llvm::Module &M)
   {
-    if (M.begin () == M.end ()) return false;
-      
-      
-    //m_dsa = &getAnalysis<EQTDDataStructures> ();
-    m_dsa = &getAnalysis<SteensgaardDataStructures> ();
-    
     LLVMContext &ctx = M.getContext ();
     m_Int32Ty = Type::getInt32Ty (ctx);
     m_memLoadFn = M.getOrInsertFunction ("shadow.mem.load", 
@@ -146,55 +195,148 @@ namespace seahorn
                                         Type::getInt8PtrTy (ctx),
                                         (Type*) 0);
     
-     m_argModFn = M.getOrInsertFunction ("shadow.mem.arg.mod",
-                                         Type::getInt32Ty (ctx),
-                                         Type::getInt32Ty (ctx),
-                                         Type::getInt32Ty (ctx),
-                                         Type::getInt32Ty (ctx),
-                                         Type::getInt8PtrTy (ctx),
-                                         (Type*) 0);
-     m_argNewFn = M.getOrInsertFunction ("shadow.mem.arg.new",
-                                         Type::getInt32Ty (ctx),
-                                         Type::getInt32Ty (ctx),
-                                         Type::getInt32Ty (ctx),
-                                         Type::getInt32Ty (ctx),
-                                         Type::getInt8PtrTy (ctx),
-                                         (Type*) 0);
+    m_argModFn = M.getOrInsertFunction ("shadow.mem.arg.mod",
+                                        Type::getInt32Ty (ctx),
+                                        Type::getInt32Ty (ctx),
+                                        Type::getInt32Ty (ctx),
+                                        Type::getInt32Ty (ctx),
+                                        Type::getInt8PtrTy (ctx),
+                                        (Type*) 0);
+    m_argNewFn = M.getOrInsertFunction ("shadow.mem.arg.new",
+                                        Type::getInt32Ty (ctx),
+                                        Type::getInt32Ty (ctx),
+                                        Type::getInt32Ty (ctx),
+                                        Type::getInt32Ty (ctx),
+                                        Type::getInt8PtrTy (ctx),
+                                        (Type*) 0);
     
-     m_markIn = M.getOrInsertFunction ("shadow.mem.in",
+    m_markIn = M.getOrInsertFunction ("shadow.mem.in",
+                                      Type::getVoidTy (ctx),
+                                      Type::getInt32Ty (ctx),
+                                      Type::getInt32Ty (ctx),
+                                      Type::getInt32Ty (ctx),
+                                      Type::getInt8PtrTy (ctx),
+                                      (Type*) 0);
+    m_markOut = M.getOrInsertFunction ("shadow.mem.out",
                                        Type::getVoidTy (ctx),
                                        Type::getInt32Ty (ctx),
                                        Type::getInt32Ty (ctx),
                                        Type::getInt32Ty (ctx),
                                        Type::getInt8PtrTy (ctx),
                                        (Type*) 0);
-     m_markOut = M.getOrInsertFunction ("shadow.mem.out",
-                                        Type::getVoidTy (ctx),
-                                        Type::getInt32Ty (ctx),
-                                        Type::getInt32Ty (ctx),
-                                        Type::getInt32Ty (ctx),
-                                        Type::getInt8PtrTy (ctx),
-                                        (Type*) 0);
-     m_node_ids.clear ();
-     for (Function &f : M) runOnFunction (f);
-      
-     return false;
   }
   
-  static Value *getUniqueScalar (LLVMContext &ctx, IRBuilder<> &B, const DSNode *n)
+  bool ShadowMemDsa::runOnModule (llvm::Module &M)
   {
-    Value *v = const_cast<Value*>(n->getUniqueScalar ());
+    if (M.begin () == M.end ()) return false;
+      
+    //m_dsa = &getAnalysis<EQTDDataStructures> ();
+    m_dsa = &getAnalysis<SteensgaardDataStructures> ();
     
-    // -- a unique scalar is a single-cell global variable. We might be
-    // -- able to extend this to single-cell local pointers, but these
-    // -- are probably not very common.
-    if (v)
-      if (GlobalVariable *gv = dyn_cast<GlobalVariable> (v))
-        if (gv->getType ()->getElementType ()->isSingleValueType ())
-          return B.CreateBitCast (v, Type::getInt8PtrTy (ctx));
+    if (LocalReadMod) computeReadMod ();
     
+    declareFunctions(M);
+    m_node_ids.clear ();
+    for (Function &f : M) runOnFunction (f);
+      
+    return false;
+  }
+  
+  void ShadowMemDsa::computeReadMod ()
+  {
+    CallGraph &cg = getAnalysis<CallGraphWrapperPass> ().getCallGraph ();
+    for (auto it = scc_begin (&cg); !it.isAtEnd(); ++it)
+    {
+      const std::vector<CallGraphNode*> &scc = *it;
+      DSNodeSet read;
+      DSNodeSet modified;
+
+      // compute read/mod, sharing information between scc 
+      for (CallGraphNode *cgn : scc)
+      {
+        Function *f = cgn->getFunction ();
+        if (!f) continue;
+        updateReadMod (*f, read, modified);
+      }
+
+      // set the computed read/mod to all functions in the scc
+      for (CallGraphNode *cgn : scc)
+      {
+        Function *f = cgn->getFunction ();
+        if (!f) continue;
+        m_readList[f].insert (read.begin (), read.end ());
+        m_modList[f].insert (modified.begin(), modified.end ());
+      }
+    }
+  }
+  
+  void ShadowMemDsa::updateReadMod (Function &F, DSNodeSet &readSet, DSNodeSet &modSet)
+  {
+    if (!m_dsa->hasDSGraph (F)) return;
+    
+    DSGraph *dsg = m_dsa->getDSGraph (F);
+    for (BasicBlock &bb : F)
+    {
+      for (Instruction &inst : bb)
+      {
+        if (LoadInst *li = dyn_cast<LoadInst> (&inst))
+        {
+          DSNodeHandle &nh = dsg->getNodeForValue (li->getPointerOperand ());
+          if (!nh.isNull()) readSet.insert (nh.getNode ());
+        }
+        else if (StoreInst *si = dyn_cast<StoreInst> (&inst))
+        {
+          DSNodeHandle &nh = dsg->getNodeForValue (si->getPointerOperand ());
+          if (!nh.isNull ()) modSet.insert (nh.getNode ());
+        }
+        else if (CallInst *ci = dyn_cast<CallInst> (&inst))
+        {
+          CallSite CS (ci);
+          Function *cf = CS.getCalledFunction ();
+          if (!cf) continue;
+          if (cf->getName ().equals ("calloc"))
+          {
+            DSNodeHandle &nh = dsg->getNodeForValue (&inst);
+            if (!nh.isNull ()) modSet.insert (nh.getNode ());
+          }
+          else if (m_dsa->hasDSGraph (*cf))
+          {            
+            readSet.insert (m_readList[cf].begin (), m_readList[cf].end ());
+            modSet.insert (m_modList[cf].begin (), m_modList[cf].end ());
+          }            
+          
+        }
+        // TODO: handle intrinsics (memset,memcpy) and other library functions
+      }
+    }
+  }
+  
+  static Value *getUniqueScalar (LLVMContext &ctx, IRBuilder<> &B, const DSNodeHandle &nh)
+  {
+    DSNode* n = nh.getNode ();
+    if (n && nh.getOffset () == 0)
+    {
+      Value *v = const_cast<Value*>(n->getUniqueScalar ());
+    
+      // -- a unique scalar is a single-cell global variable. We might be
+      // -- able to extend this to single-cell local pointers, but these
+      // -- are probably not very common.
+      if (v)
+        if (GlobalVariable *gv = dyn_cast<GlobalVariable> (v))
+          if (gv->getType ()->getElementType ()->isSingleValueType ())
+            return B.CreateBitCast (v, Type::getInt8PtrTy (ctx));
+    }
     return ConstantPointerNull::get (Type::getInt8PtrTy (ctx));
   }
+
+  static Value *getUniqueScalar (LLVMContext &ctx, IRBuilder<> &B, const DSNode *n)
+  {
+    DSNodeHandle nh (const_cast<DSNode*>(n), 0);
+    return getUniqueScalar (ctx, B, nh);
+  }
+  
+  unsigned ShadowMemDsa::getOffset (const DSNodeHandle &nh)
+  {return SplitFields ? nh.getOffset() : 0;}
   
   bool ShadowMemDsa::runOnFunction (Function &F)
   {
@@ -230,26 +372,29 @@ namespace seahorn
       {
         if (const LoadInst *load = dyn_cast<LoadInst> (&inst))
         {
-          DSNode* n = dsg->getNodeForValue (load->getOperand (0)).getNode ();
-          if (!n) n = gDsg->getNodeForValue (load->getOperand (0)).getNode ();
+          if (!dsg->hasNodeForValue (load->getOperand (0))) continue;
+          DSNodeHandle &nh = dsg->getNodeForValue (load->getOperand (0));
+          DSNode* n = nh.getNode ();
           if (!n) continue;
           
           B.SetInsertPoint (&inst);
-          B.CreateCall3 (m_memLoadFn, B.getInt32 (getId (n)),
-                         B.CreateLoad (allocaForNode (n)),
-                         getUniqueScalar (ctx, B, n));
+          B.CreateCall3 (m_memLoadFn, B.getInt32 (getId (nh)),
+                         B.CreateLoad (allocaForNode (nh)),
+                         getUniqueScalar (ctx, B, nh));
         }
         else if (const StoreInst *store = dyn_cast<StoreInst> (&inst))
         {
-          DSNode* n = dsg->getNodeForValue (store->getOperand (1)).getNode ();
-          if (!n) n = gDsg->getNodeForValue (store->getOperand (1)).getNode ();
+          if (!dsg->hasNodeForValue (store->getOperand (1))) continue;
+          DSNodeHandle &nh = dsg->getNodeForValue (store->getOperand (1));
+          DSNode *n = nh.getNode ();
           if (!n) continue;
+          
           B.SetInsertPoint (&inst);
-          AllocaInst *v = allocaForNode (n);
+          AllocaInst *v = allocaForNode (nh);
           B.CreateStore (B.CreateCall3 (m_memStoreFn, 
-                                        B.getInt32 (getId (n)),
+                                        B.getInt32 (getId (nh)),
                                         B.CreateLoad (v),
-                                        getUniqueScalar (ctx, B, n)),
+                                        getUniqueScalar (ctx, B, nh)),
                          v);           
         }
         else if (CallInst *call = dyn_cast<CallInst> (&inst))
@@ -277,14 +422,18 @@ namespace seahorn
           
           if (CS.getCalleeFunc ()->getName ().equals ("calloc"))
           {
-            DSNode* n = dsg->getNodeForValue (call).getNode ();
+            DSNodeHandle &nh = dsg->getNodeForValue (call);
+            DSNode* n = nh.getNode ();
             if (!n) continue;
+
+            // TODO: handle multiple nodes
+            assert (nh.getOffset () == 0 && "TODO");
             B.SetInsertPoint (call);
-            AllocaInst *v = allocaForNode (n);
+            AllocaInst *v = allocaForNode (nh);
             B.CreateStore (B.CreateCall3 (m_memStoreFn,
-                                          B.getInt32 (getId (n)),
+                                          B.getInt32 (getId (nh)),
                                           B.CreateLoad (v),
-                                          getUniqueScalar (ctx, B, n)),
+                                          getUniqueScalar (ctx, B, nh)),
                            v);
           }
           
@@ -327,7 +476,8 @@ namespace seahorn
             
             
             // skip nodes that are not read/written by the callee
-            if (!n->isReadNode () && !n->isModifiedNode ()) continue;
+            if (!isRead (n, CF) && !isModified (n, CF)) continue;
+            // if (!n->isReadNode () && !n->isModifiedNode ()) continue;
 
             /// XXX: it seems that for some nodes in the caller graph
             /// we may be unable to find its corresponding node in the
@@ -342,17 +492,24 @@ namespace seahorn
             if (nodeMapIt != nodeMap.end ())
               m = nodeMapIt->second.getNode ();
              
-            AllocaInst *v = allocaForNode (m);
-            unsigned id = getId (m);
+            // TODO: This must be done for every possible offset of m,
+            // TODO: not just for offset 0
+            DSNodeHandle mh (const_cast<DSNode*>(m), 0);
+            AllocaInst *v = allocaForNode (mh);
+            unsigned id = getId (mh);
             
             // -- read only node ignore nodes that are only reachable
             // -- from the return of the function
-            if (n->isReadNode () && !n->isModifiedNode () && retReach.count(n) <= 0)
+            if (isRead (n, CF) && !isModified (n, CF) && retReach.count(n) <= 0)
+            // if (n->isReadNode () && !n->isModifiedNode () && retReach.count(n) <= 0)
+            {
               B.CreateCall4 (m_argRefFn, B.getInt32 (id),
                              B.CreateLoad (v),
-                             B.getInt32 (idx), getUniqueScalar (ctx, B, n));
+                             B.getInt32 (idx), getUniqueScalar (ctx, B, mh));
+            }
             // -- read/write or new node
-            else if (n->isModifiedNode ())
+            else if (isModified (n, CF))
+            // else if (n->isModifiedNode ())
             {
               // -- n is new node iff it is reachable only from the return node
               Constant* argFn = retReach.count (n) ? m_argNewFn : m_argModFn;
@@ -360,7 +517,7 @@ namespace seahorn
                                             B.getInt32 (id),
                                             B.CreateLoad (v),
                                             B.getInt32 (idx),
-                                            getUniqueScalar (ctx, B, n)), v);
+                                            getUniqueScalar (ctx, B, mh)), v);
             }
             idx++;
           }
@@ -379,21 +536,31 @@ namespace seahorn
     // -- create shadows for all nodes that are modified by this
     // -- function and escape to a parent function
     for (const DSNode *n : reach)
-      if (n->isModifiedNode () || n->isReadNode ()) allocaForNode (n); 
+      // if (n->isModifiedNode () || n->isReadNode ())
+      if (isModified (n, F) || isRead (n, F))
+      {
+        // TODO: allocate for all slices of n, not just offset 0
+        allocaForNode (n, 0);
+      }
     
     // allocate initial value for all used shadows
-    DenseMap<const DSNode*, Value*> inits;
+    DenseMap<const DSNode*, DenseMap<unsigned, Value*> > inits;
     B.SetInsertPoint (&*F.getEntryBlock ().begin ());
     for (auto it : m_shadows)
     {
       const DSNode *n = it.first;
-      AllocaInst *a = it.second;
-      B.Insert (a, "shadow.mem");
-      CallInst *ci;
       Constant *fn = reach.count (n) <= 0 ? m_memShadowInitFn : m_memShadowArgInitFn;
-      ci = B.CreateCall2 (fn, B.getInt32 (getId (n)), getUniqueScalar (ctx, B, n));
-      inits[n] = ci;
-      B.CreateStore (ci, a);
+      
+      for (auto jt : it.second)
+      {
+        DSNodeHandle nh (const_cast<DSNode*>(n), jt.first);
+        AllocaInst *a = jt.second;
+        B.Insert (a, "shadow.mem");
+        CallInst *ci;
+        ci = B.CreateCall2 (fn, B.getInt32 (getId (nh)), getUniqueScalar (ctx, B, nh));
+        inits[nh.getNode()][getOffset(nh)] = ci;
+        B.CreateStore (ci, a);
+      }
     }
      
     UnifyFunctionExitNodes &ufe = getAnalysis<llvm::UnifyFunctionExitNodes> (F);
@@ -422,30 +589,34 @@ namespace seahorn
     unsigned idx = 0;
     for (const DSNode* n : reach)
     {
+      // TODO: extend to work with all slices
+      DSNodeHandle nh (const_cast<DSNode*>(n), 0);
+      
       // n is read and is not only return-node reachable (for
       // return-only reachable nodes, there is no initial value
       // because they are created within this function)
-      if ((n->isReadNode () || n->isModifiedNode ()) 
-          && retReach.count (n) <= 0)
+      if ((isRead (n, F) || isModified (n, F)) && retReach.count (n) <= 0)
+      // if ((n->isReadNode () || n->isModifiedNode ()) && retReach.count (n) <= 0)
       {
-        assert (inits.count (n));
+        assert (!inits[n].empty());
         /// initial value
         B.CreateCall4 (m_markIn,
-                       B.getInt32 (getId (n)),
-                       inits[n], 
+                       B.getInt32 (getId (nh)),
+                       inits[n][0], 
                        B.getInt32 (idx),
-                       getUniqueScalar (ctx, B, n));
+                       getUniqueScalar (ctx, B, nh));
       }
       
-      if (n->isModifiedNode ())
+      // if (n->isModifiedNode ())
+      if (isModified (n, F))
       {
-        assert (inits.count (n));
+        assert (!inits[n].empty());
         /// final value
         B.CreateCall4 (m_markOut, 
-                       B.getInt32 (getId (n)),
-                       B.CreateLoad (allocaForNode (n)),
+                       B.getInt32 (getId (nh)),
+                       B.CreateLoad (allocaForNode (nh)),
                        B.getInt32 (idx),
-                       getUniqueScalar (ctx, B, n));
+                       getUniqueScalar (ctx, B, nh));
       }
       ++idx;
     }
@@ -458,6 +629,7 @@ namespace seahorn
     AU.setPreservesAll ();
     // AU.addRequiredTransitive<llvm::EQTDDataStructures>();
     AU.addRequiredTransitive<llvm::SteensgaardDataStructures> ();
+    AU.addRequired<llvm::CallGraphWrapperPass>();
     AU.addRequired<llvm::DataLayoutPass>();
     AU.addRequired<llvm::UnifyFunctionExitNodes> ();
   } 
