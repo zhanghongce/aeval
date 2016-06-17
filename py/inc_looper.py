@@ -269,11 +269,11 @@ def main (argv):
         run_single(fname, opt)
     else:
         if opt.only_func is None:
-                run(funcInfos, fname, opt)
-        else:
             funcInfos = getFuncInfo(workdir, fname, opt)
             if funcInfos:
-                run_one_function(opt.only_func, fname, opt)
+                run(funcInfos, fname, opt)
+        else:
+            run_one_function(opt.only_func, fname, opt)
     return returnvalue
 
 
