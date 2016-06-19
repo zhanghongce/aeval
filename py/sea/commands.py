@@ -803,11 +803,12 @@ class SeaTerm(sea.LimitedCmd):
 
 class SeaAbc(sea.LimitedCmd):
     def __init__ (self, quiet=False):
-        super (SeaAbc, self).__init__ ('abc', 'SeaHorn array bounds check analysis ',
-                                       allow_extra=True)
+        super (SeaAbc, self).__init__ ('abc', allow_extra=True)
+        self.hepl = 'SeaHorn array bounds check analysis '
+
     @property
     def stdout (self):
-        return 
+        return
 
     def name_out_file (self, in_files, args=None, work_dir=None):
         return _remap_file_name (in_files[0], '.smt2', work_dir)
@@ -844,8 +845,8 @@ class SeaAbc(sea.LimitedCmd):
 
     def run(self, args, extra):
         try:
-            import abc.array_bounds as ab
-            ab.seaAbc(args, extra)
+            import sea.abc as abc
+            return abc.seaAbc(args, extra)
         except Exception as e:
             raise IOError(str(e))
 
@@ -865,7 +866,6 @@ BndSmt = sea.SeqCmd ('bnd-smt', 'alias for fe|unroll|cut-loops|ms|opt|horn',
 Bpf = sea.SeqCmd ('bpf', 'alias for fe|unroll|cut-loops|opt|horn --solve',
                   FrontEnd.cmds + [Unroll(), CutLoops(), Seaopt(), Seahorn(solve=True)])
 feCrab = sea.SeqCmd ('fe-crab', 'alias for fe|crab', FrontEnd.cmds + [Crab()])
-
 ## Specialized SeaHorn analyses 
 seaTerm = sea.SeqCmd ('term', 'SeaHorn termination analysis', Smt.cmds + [SeaTerm()])
 seaAbc = sea.SeqCmd ('abc', 'SeaHorn array bounds check analysis', [SeaAbc()])
