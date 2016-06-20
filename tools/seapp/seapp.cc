@@ -414,6 +414,17 @@ int main(int argc, char **argv) {
       pass_manager.add (new seahorn::LowerCstExprPass ());
       pass_manager.add (new seahorn::IntegerOverflowCheck ());
     }
+
+    if (NullChecks)
+    {
+      pass_manager.add (new seahorn::LowerCstExprPass ());
+      pass_manager.add (new seahorn::NullCheck ());
+    }
+
+    if (!MixedSem && EnumVerifierCalls)  
+    { 
+      pass_manager.add (seahorn::createEnumVerifierCallsPass ());
+    }
     
     pass_manager.add (new seahorn::RemoveUnreachableBlocksPass ());
     pass_manager.add (seahorn::createPromoteMallocPass ());
