@@ -123,6 +123,7 @@ void example5(int a, int b) {
 //
 // %r = icmp ne o NULL;
 // return %r
+// Update: with option -horn-one-assume-per-block we find the inconsistency
 bool example6(example* o) {
   printf("%s\n", o->repr);
   if (o == NULL) {

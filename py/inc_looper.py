@@ -60,6 +60,7 @@ def parseOpt (argv):
     parser.add_option ('--single', help='Check inconsistency of the whole program', action='store_true', default=False, dest="single")
     parser.add_option ('--inv', help='Get Invariants', action='store_true', default=False, dest="inv")
     parser.add_option ('--spacer_verbose', help='Spacer Verbose', action='store_true', default=False, dest="spacer_verbose")
+
     (options, args) = parser.parse_args (argv)
     return (options, args)
 
@@ -132,7 +133,9 @@ def getFuncInfo (workdir, fname, opt):
         print 'Functions info ...  KO'
         return None
 
-
+"""
+    Function to construct the different options for SeaHorn
+"""
 def get_opt(opt, fname):
     sea_cmd = getSea()
     my_timeout = '--timeout=' + str(opt.timeout)
@@ -145,12 +148,14 @@ def get_opt(opt, fname):
     reduce_weakly = ['--horn-reduce-weakly'] if opt.reduce_weakly else []
     reduce_false = ['--horn-reduce-constraints'] if opt.reduce_false else []
     spacer_verbose = ['--spacer_verbose'] if opt.spacer_verbose else []
+    spacer_verbose = ['--spacer_verbose'] if opt.debug_cex else []
     reduce = reduce_weakly + reduce_large + reduce_false
     inv = ['--inv'] if opt.inv else []
+    # The list of options sent to seahorn
     cmd = [sea_cmd, 'inc',
            '--horn-no-verif', '--lower-invoke', '--lower-assert'
            , '--devirt-functions', '--step=incsmall'
-           #, '--horn-one-assume-per-block',
+           , '--horn-one-assume-per-block'
            , '--inc_verbose', '--horn-df=bla.txt',
            my_timeout, '-g', '-O0', fname] +  inv + boa + null + tmp + reduce + spacer_verbose
     return cmd

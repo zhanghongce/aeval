@@ -1,0 +1,11 @@
+Limitations
+
+1. We are missing inconsistency in the case of small step semantics due to
+   the body of a clause could contain multiple paths (e.g. ite). Our approach
+   works at the level of a predicate (i.e. Basic Block) therefore, it might miss inconsistency inside the body. See example unit_test_3.c.
+
+
+
+New techniques
+
+1. We split a basic blocl that has two or more assumptions.
