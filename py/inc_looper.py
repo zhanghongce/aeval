@@ -148,7 +148,6 @@ def get_opt(opt, fname):
     reduce_weakly = ['--horn-reduce-weakly'] if opt.reduce_weakly else []
     reduce_false = ['--horn-reduce-constraints'] if opt.reduce_false else []
     spacer_verbose = ['--spacer_verbose'] if opt.spacer_verbose else []
-    spacer_verbose = ['--spacer_verbose'] if opt.debug_cex else []
     reduce = reduce_weakly + reduce_large + reduce_false
     inv = ['--inv'] if opt.inv else []
     # The list of options sent to seahorn
