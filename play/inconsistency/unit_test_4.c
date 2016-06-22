@@ -1,12 +1,12 @@
 #include<assert.h>
 
-// rdl_atom_is_assigned is feasible
+// There is no inconsistencies in this code.  This is an example to
+// show that we lower C assert's into assume's correctly.
 
 typedef struct example_s {
     int natoms;
     char *mark;
 } example;
-
 
 
 int tst_bit(char *bv, int i) {

@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
+// There is no inconsistencies in this code with --boa or --null
+
 extern void __VERIFIER_error (void);
 #define assert(c) if (!c) __VERIFIER_error ();
 

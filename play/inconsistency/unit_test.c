@@ -17,14 +17,13 @@ typedef struct example_s {
 #define hashCode(this) ((size_t) this->bases)
 
 #define EX1
- #define EX2
- #define EX3
- #define EX4
- #define EX6
- #define EX7
- #define EX8
- #define EX9
-
+#define EX2 
+#define EX3
+#define EX4
+#define EX6
+#define EX7
+#define EX8 
+#define EX9 
 
 #ifdef EX0
 /// XXX: Clang gets rid of "result = result / 0;" so there is no way
@@ -40,15 +39,19 @@ void example0(int c, int d){
 
 #ifdef EX1
 // Run with --null
+// We miss the inconsistency because we find three paths that visit
+// all basic blocks even if blocks A and B are inconsistent with each
+// other.
 bool example1(example* this, const example* other) {
 
 	if (this->bases == NULL) {
             if (other->bases != NULL) {
               return false;
-            } // here we know that this->base==other->base==NULL
+            } // A: here we know that this->base==other->base==NULL
 	}
 
 	if (hashCode(this->bases) != hashCode(other->bases)) { //inconsistent with 17
+            // B 
             printf ("this is inconsistent!\n");
             return false;
 	}
@@ -166,6 +169,8 @@ int example8(int length) {
 
 
 #ifdef EX9
+// We need to run with option --single because the inconsistency
+// requires interprocedural reasoning.
 int getInt(int n) {
    return 0;
 }
