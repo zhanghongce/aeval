@@ -2,12 +2,12 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/CallSite.h"
-#include "llvm/IR/InstIterator.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/CFG.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Analysis/CallGraph.h"
-
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "avy/AvyDebug.h"
 
 using namespace llvm;
@@ -17,13 +17,19 @@ using namespace llvm;
 namespace seahorn
 {
 
-  struct LowerAssert : public ModulePass
+  class LowerAssert : public ModulePass
   {
     static char ID;
     
     Function *assumeFn;
-    
-    LowerAssert () : ModulePass (ID) {}
+    unsigned num_lowered_asserts;
+
+    void LowerErrorCall (CallInst* CI, CallGraph *cg,
+                         Function *assumeFn, LLVMContext &ctx);
+
+   public:
+
+    LowerAssert () : ModulePass (ID), num_lowered_asserts(0) {}
       
     bool runOnModule (Module &M);
     
@@ -62,42 +68,94 @@ namespace seahorn
     bool Changed = false;
     for (auto &F : M) 
       Changed |= runOnFunction (F);
+
+    errs () << "-- Number of asserts converted to assumes=" << num_lowered_asserts << "\n";
     return Changed;
   }
 
-  // Return a pair of a branch B and a Boolean V such that I is
-  // reachable if the condition of B evaluates to V.
-  //
-  // Post: the branch is conditional and its condition is either
-  // CmpInst or ConstantInt
-  std::pair<BranchInst*, bool> getDominantBranch(BasicBlock *B) {
-    // Skip all the single predecessors to find the branch that
-    // dominates B
-    BasicBlock *Parent = B->getSinglePredecessor();
-    if (Parent && Parent->getSinglePredecessor()) {
-      TerminatorInst* TI = Parent->getTerminator ();
+  
+  void getBranchToInsertAssume(BasicBlock *BB, 
+                               std::vector<std::pair<BranchInst*, bool> > &Branches) {
+    for (auto it = pred_begin(BB), et = pred_end(BB); it != et; ++it) {
+      BasicBlock* Pred = *it;
+      TerminatorInst* TI = Pred->getTerminator ();
       if (BranchInst* BI = dyn_cast<BranchInst> (TI)) {
         if (!BI->isConditional ())
-          return getDominantBranch(Parent);
+          return getBranchToInsertAssume(Pred, Branches);
+        else  
+          Branches.push_back(std::make_pair(BI, (BI->getSuccessor(0)==BB)));
       }
     }
-    
-    if (Parent) { 
-      TerminatorInst* TI = Parent->getTerminator ();
-      if (BranchInst* BI = dyn_cast<BranchInst> (TI)) {
-        if (BI->isConditional ()) {
-          Value* BICond = BI->getCondition();
-          if (isa<CmpInst>(BICond) || isa<ConstantInt>(BICond))
-            return std::make_pair(BI, (BI->getSuccessor(0)==B));
-        }
-      }
-    }
-    return std::make_pair(nullptr, false);
   }
 
   CmpInst* inverseCmpInst (CmpInst* CI) {
     return CmpInst::Create(CI->getOpcode(), CI->getInversePredicate(), 
                            CI->getOperand(0), CI->getOperand(1), "", CI);
+  }
+ 
+  // CI is a call to verifier.error, __assert_fail, etc.
+  void LowerAssert::LowerErrorCall (CallInst* CI, CallGraph *cg,
+                                    Function *assumeFn, LLVMContext &ctx) {
+    Function*F = CI->getParent()->getParent();
+
+    std::vector<std::pair<BranchInst*, bool> > branches;
+    getBranchToInsertAssume(CI->getParent(), branches);
+
+    for (auto p: branches) {
+      // p is pair of a branch and a flag such that CI is reachable
+      // when the branch condition evaluates to the flag value.
+      assert (p.first);
+
+      if (const ConstantInt *CI = dyn_cast<const ConstantInt>(p.first->getCondition())) {
+        if ((CI->isOne() && p.second) || (CI->isZero() && !p.second)) { 
+          // error is definitely reachable
+          CallInst* NCI = CallInst::Create(assumeFn, 
+                                           ConstantInt::getFalse(ctx), "", p.first);
+          NCI->setDebugLoc (p.first->getDebugLoc ());
+          if (cg)
+            (*cg)[F]->addCalledFunction (CallSite (NCI),
+                                          (*cg)[NCI->getCalledFunction ()]);
+          num_lowered_asserts++;        
+          
+        } 
+        // otherwise the call to verifier.error is dead code.
+        continue;
+      }
+
+      // verifier.error is reachable if the branch condition is true.
+      // Replace with assume(not condition).
+      Value* assumeCond = p.first->getCondition();
+      if (p.second) { 
+        if (CmpInst *Cond = dyn_cast<CmpInst>(p.first->getCondition())) {
+          // if it's a comparison we flip the operator
+          assumeCond = inverseCmpInst(Cond);
+        } else {
+          // otherwise (e.g., function argument) negate the condition
+          // flag.
+          IRBuilder<> Builder (ctx);
+          Builder.SetInsertPoint(CI);
+          assumeCond = Builder.CreateXor(p.first->getCondition(), ConstantInt::getTrue(ctx));
+        }
+        assumeCond->setName(p.first->getCondition()->getName());
+      } 
+      
+      // convert the conditional branch into an unconditional one
+      if (p.second) // error is reachable if the branch condition is true
+        p.first->setCondition(ConstantInt::getFalse(ctx));
+      else // error is reachable if the branch condition is false
+        p.first->setCondition(ConstantInt::getTrue(ctx));
+      
+      CallInst* NCI = CallInst::Create(assumeFn, assumeCond, "", p.first);
+      NCI->setDebugLoc (p.first->getDebugLoc ());
+      
+      LOG ("lower-assert",
+           errs () << "Replaced " << *CI << " with " << *NCI << "\n");
+      num_lowered_asserts++;        
+      
+      if (cg)
+        (*cg)[F]->addCalledFunction (CallSite (NCI),
+                                     (*cg)[NCI->getCalledFunction ()]);
+    }
   }
             
   bool LowerAssert::runOnFunction (Function &F)
@@ -148,7 +206,8 @@ namespace seahorn
 
         LOG ("lower-assert",
              errs () << "Replaced " << *CI << " with " << *NCI << "\n");
-        
+
+        num_lowered_asserts++;        
         ReplaceInstWithInst (CI,  NCI);
 
         if (cg)
@@ -158,58 +217,7 @@ namespace seahorn
       else if (CF->getName ().equals ("__assert_fail") || 
                CF->getName ().equals ("verifier.error")) 
       {
-
-        auto p = getDominantBranch(CI->getParent());
-        if (!(p.first)) {
-          llvm::errs () << "lower-assert: " << *CI 
-                        << " could not be lowered to an assume instruction.\n";
-          continue;
-        }
-
-        if (const ConstantInt *CI = dyn_cast<const ConstantInt>(p.first->getCondition())) {
-          if ((CI->isOne() && p.second) || (CI->isZero() && !p.second)) { 
-            // error is definitely reachable
-
-            // llvm::errs () << "lower-assert: " << *CI 
-            //               << " could not be lowered to an assume instruction.\n";
-            // llvm::errs () << "Moreover, an error location seems to be reachable!\n";
-            CallInst* NCI = CallInst::Create(assumeFn, 
-                                             ConstantInt::getFalse(F.getContext()), "", p.first);
-            NCI->setDebugLoc (p.first->getDebugLoc ());
-            if (cg)
-              (*cg)[&F]->addCalledFunction (CallSite (NCI),
-                                            (*cg)[NCI->getCalledFunction ()]);
-
-          } 
-          // otherwise the call to verifier.error is dead code.
-          continue;
-        }
-
-        Value* assumeCond = p.first->getCondition();
-        if (p.second) { 
-          // here error is reachable if the branch condition is true.
-          // Replace with assume(not condition)
-          assumeCond = inverseCmpInst(cast<CmpInst>(p.first->getCondition()));
-          assumeCond->setName(p.first->getCondition()->getName());
-        } 
-
-        // convert the conditional branch into an unconditional one
-        if (p.second) // error is reachable if the branch condition is true
-          p.first->setCondition(ConstantInt::getFalse(F.getContext()));
-        else // error is reachable if the branch condition is false
-          p.first->setCondition(ConstantInt::getTrue(F.getContext()));
- 
-        
-        CallInst* NCI = CallInst::Create(assumeFn, assumeCond, "", p.first);
-        NCI->setDebugLoc (p.first->getDebugLoc ());
-
-        LOG ("lower-assert",
-             errs () << "Replaced " << *CI << " with " << *NCI << "\n");
-
-        if (cg)
-          (*cg)[&F]->addCalledFunction (CallSite (NCI),
-                                        (*cg)[NCI->getCalledFunction ()]);
-        
+        LowerErrorCall(CI, cg, assumeFn, F.getContext());
       }
     }
 
