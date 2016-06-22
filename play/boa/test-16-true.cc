@@ -4,7 +4,7 @@
  * Converges with -DCONVERGE. Diverges otherwise.
  * */
 
-// RUN: %sea pf -O3 --lower-invoke --symbolize-constant-loop-bounds --abc=%abc_encoding --abc-escape-ptr "%s" 2>&1 | OutputCheck %s
+// RUN: %sea pf -O3 --lower-invoke --symbolize-constant-loop-bounds --simplify-pointer-loops --abc=%abc_encoding --abc-escape-ptr "%s" 2>&1 | OutputCheck %s
 // CHECK: ^unsat$
 
 extern "C" int nd ();
