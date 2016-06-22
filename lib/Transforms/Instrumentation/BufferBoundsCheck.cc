@@ -2424,19 +2424,21 @@ namespace seahorn {
               << " Total number of trivially safe memory reads/writes (not instrumented)\n"
               << "-- " << abc.m_mem_accesses - abc.m_trivial_checks
               << " Total number of non-trivial memory reads/writes\n"
-              << "   " << abc.m_checks_added - abc.m_intrinsics_checks_added
+              << "-- " << abc.m_checks_added
+              << " Total number of added checks\n"
+              << "      " << abc.m_checks_added - abc.m_intrinsics_checks_added
               << " Total number of added checks for load and store\n"
-              << "   " << abc.m_intrinsics_checks_added
+              << "      " << abc.m_intrinsics_checks_added
               << " Total number of added checks for memory intrinsics\n"
-              << "       " << abc.m_gep_known_size_and_offset_checks_added
+              << "          " << abc.m_gep_known_size_and_offset_checks_added
               << " Total number of added checks for gep pointers with known size and offset\n"
-              << "       " << abc.m_gep_known_size_checks_added
+              << "          " << abc.m_gep_known_size_checks_added
               << " Total number of added checks for gep pointers with known size\n"
-              << "       " << abc.m_gep_unknown_size_checks_added
+              << "          " << abc.m_gep_unknown_size_checks_added
               << " Total number of added checks for gep pointers with unknown size\n"
-              << "       " << abc.m_non_gep_known_size_checks_added
+              << "          " << abc.m_non_gep_known_size_checks_added
               << " Total number of added checks for non-gep pointers with known size\n"
-              << "       " << abc.m_non_gep_unknown_size_checks_added
+              << "          " << abc.m_non_gep_unknown_size_checks_added
               << " Total number of added checks for non-gep pointers with unknown size\n";
       
       if (TrackedDSNode != 0) {
