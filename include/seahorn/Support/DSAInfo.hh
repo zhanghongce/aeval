@@ -110,11 +110,11 @@ namespace seahorn
       }
     }
 
-    void findDSNodeForValue (const Value* v, std::set<unsigned int>& nodes);
+    void findDSNodeForValue(const Value* v, std::set<unsigned int>& nodes);
 
-    void WriteDSInfo (llvm::raw_ostream& o);
+    void WriteDSAnalysisInfo(llvm::raw_ostream& o);
 
-    void WriteAllocaInfo (llvm::raw_ostream& o);
+    void WriteAllocSitesInfo(llvm::raw_ostream& o, bool isFile);
 
   public:
  

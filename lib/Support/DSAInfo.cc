@@ -1,10 +1,18 @@
 #include "seahorn/Support/DSAInfo.hh"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/raw_ostream.h"
 
 static llvm::cl::opt<bool>
-DSAInfoPrint("dsa-info",
-    llvm::cl::desc ("Print all DSA and allocation information"),
+DSAInfoToOutput("dsa-info",
+    llvm::cl::desc ("Print all DSA analysis and allocation information to standard output"),
     llvm::cl::init (false),
+    llvm::cl::Hidden);
+
+static llvm::cl::opt<std::string>
+DSAInfoToFile("dsa-info-to-file",
+    llvm::cl::desc ("Write all allocation sites to a file"),
+    llvm::cl::init (""),
     llvm::cl::Hidden);
 
 #ifdef HAVE_DSA
@@ -67,8 +75,8 @@ namespace seahorn
     m_alloc_sites.clear();
   }
 
-  // Print statistics 
-  void DSAInfo::WriteDSInfo (llvm::raw_ostream& o) {
+  // Print information about DSA analysis
+  void DSAInfo::WriteDSAnalysisInfo (llvm::raw_ostream& o) {
 
       o << " ========== DSAInfo  ==========\n";
     
@@ -115,7 +123,7 @@ namespace seahorn
         }
       }
 
-      if (!DSAInfoPrint) return;
+      if (!DSAInfoToOutput) return;
 
       o << "Detailed information about all DS nodes\n";
       std::sort (nodes_vector.begin (), nodes_vector.end (),
@@ -214,8 +222,10 @@ namespace seahorn
     }
   }
 
-  void DSAInfo::WriteAllocaInfo (llvm::raw_ostream& o) {
-    o << " ========== Allocation sites  ==========\n";
+  // Print information about all alllocation sites
+  void DSAInfo::WriteAllocSitesInfo (llvm::raw_ostream& o, bool isFile) {
+    if (!isFile)
+      o << " ========== Allocation sites  ==========\n";
 
     // -- total number of allocations in the program
     // o << m_alloc_sites.right.size ()  
@@ -233,10 +243,12 @@ namespace seahorn
     //    ever read or written. Some DSNodes are never read or written
     //    because after they are created they are only passed to
     //    external calls.
-    o << actual_alloc_sites
-      << " Total number of allocation sites from an accessed DSNode.\n";     
+    if (!isFile) {
+      o << actual_alloc_sites
+        << " Total number of allocation sites from an accessed DSNode.\n";     
+    }
     
-    if (!DSAInfoPrint) return;
+    if (!DSAInfoToOutput && !isFile) return;
 
     std::set <unsigned int> seen;
     for (auto p: m_alloc_sites.right) {
@@ -248,15 +260,21 @@ namespace seahorn
 
       // -- Sanity check: an alloca site belongs only to one DSNode
       if (nodes.size () > 1) {
-        errs () << "DSAInfo: alloca site " << p.first 
-                << " belongs to multiple DSNodes {";
-        for (auto NodeId: nodes) o << NodeId << ","; 
-        errs () << "}\n";
+        if (!isFile) {
+          errs () << "DSAInfo: alloca site " << p.first 
+                  << " belongs to multiple DSNodes {";
+          for (auto NodeId: nodes) o << NodeId << ","; 
+          errs () << "}\n";
+        }
         continue;
       }
 
-      o << "  [Alloc site Id " << p.first << " DSNode Id " << *(nodes.begin ())
-        << "]  " << *p.second  << "\n";
+      if (isFile) {
+        o << p.first << "," << *(nodes.begin ()) << "\n";
+      } else {
+        o << "  [Alloc site Id " << p.first << " DSNode Id " << *(nodes.begin ())
+          << "]  " << *p.second  << "\n";
+      }
       seen.insert (*(nodes.begin ()));
     }
 
@@ -267,17 +285,20 @@ namespace seahorn
       // An ID can be 0 (undefined) if the node did not have any
       // access
       if (NodeID > 0) {
-        errs () << "DSAInfo: DSNode ID " << NodeID << " has no allocation site\n";
-        LOG ("dsa-info", 
-             const ValueSet& referrers = get_referrers (kv.second.m_n);
-             for (auto const& r : referrers) {
-               if (r->hasName ())
-                 o << "\t  " << r->getName ();
-               else 
-                 o << "\t" << *r; 
+        if (isFile) {
+          o << "," << NodeID << "\n";
+        } else {
+          errs () << "DSAInfo: DSNode ID " << NodeID << " has no allocation site\n";
+          LOG ("dsa-info", 
+               const ValueSet& referrers = get_referrers (kv.second.m_n);
+               for (auto const& r : referrers) {
+                 if (r->hasName ())
+                   o << "\t  " << r->getName ();
+                 else 
+                   o << "\t" << *r; 
                o << "\n";
-             });
-        
+               });
+        }
       }
     }
   }
@@ -442,8 +463,16 @@ namespace seahorn
       }
 
 
-      WriteDSInfo (errs ());
-      WriteAllocaInfo (errs ());
+      WriteDSAnalysisInfo(errs ());
+      WriteAllocSitesInfo(errs (), false);
+      if (DSAInfoToFile != "") {
+        std::string filename(DSAInfoToFile);
+        std::error_code EC;
+        raw_fd_ostream File(filename, EC, sys::fs::F_Text);
+        File << "alloc_site,ds_node\n";
+        WriteAllocSitesInfo(File, true);
+        File.close();
+      }
 
       return false;
   }
