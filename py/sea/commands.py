@@ -202,6 +202,9 @@ class Seapp(sea.LimitedCmd):
         ap.add_argument ('--dsa-info', dest='dsa_info',
                          help='Print information about DSA nodes and allocation sites',
                          default=False, action='store_true')
+        ap.add_argument ('--dsa-info-to-file', dest='dsa_info_to_file',
+                         help='Write all allocation sites to files',
+                         metavar='DIR', default=None)
         ap.add_argument ('--overflow-check', dest='ioc', help='Insert signed integer overflow checks (OBSOLETE)',
                          default=False, action='store_true')
         ap.add_argument ('--null-check', dest='ndc', help='Insert null dereference checks (OBSOLETE)',
@@ -277,6 +280,8 @@ class Seapp(sea.LimitedCmd):
         if args.abc:
             argv.append ('--abc={id}'.format(id=args.abc))
             if args.dsa_info: argv.append ('--dsa-info')
+            if args.dsa_info_to_file is not None: 
+                argv.append ('--dsa-info-to-file={n}'.format(n=args.dsa_info_to_file))
             argv.append ('--abc-dsa-node={n}'.format (n=args.abc_dsa))
             argv.append ('--abc-alloc-site={n}'.format (n=args.abc_site))
             if args.abc_only_types: 
@@ -804,7 +809,7 @@ class SeaTerm(sea.LimitedCmd):
 class SeaAbc(sea.LimitedCmd):
     def __init__ (self, quiet=False):
         super (SeaAbc, self).__init__ ('abc', allow_extra=True)
-        self.hepl = 'SeaHorn array bounds check analysis '
+        self.help = 'SeaHorn array bounds check analysis '
 
     @property
     def stdout (self):
@@ -815,38 +820,16 @@ class SeaAbc(sea.LimitedCmd):
 
     def mk_arg_parser (self, ap):
         ap = super (SeaAbc, self).mk_arg_parser (ap)
-
-        add_in_out_args (ap)
-        ap.add_argument ('--externalize-functions',
-                         help='Externalize these functions',
-                         dest='extern_funcs', type=str, metavar='str,...')
-        ap.add_argument ('--abc-disable-underflow', dest='abc_no_under',
-                         help='Do not instrument underflow checks',
-                         default=False, action='store_true')
-        ap.add_argument ('--abc-disable-reads', dest='abc_no_reads',
-                         help='Do not instrument memory reads',
-                         default=False, action='store_true')
-        ap.add_argument ('--abc-disable-writes', dest='abc_no_writes',
-                         help='Do not instrument memory writes',
-                         default=False, action='store_true')
-        ap.add_argument ('--abc-disable-mem-intrinsics', dest='abc_no_intrinsics',
-                         help='Do not instrument memcpy, memmove, and memset',
-                         default=False, action='store_true')
-        ap.add_argument ('--abc-escape-ptr', dest='abc_escape_ptr',
-                         help='Keep track whether a pointer escapes',
-                         default=False, action='store_true')
-        ap.add_argument ('--abc-use-deref', dest='abc_use_deref',
-                         help='Use dereferenceable attribute to add extra assumptions',
-                         default=False, action='store_true')
-        ap.add_argument ('--abc-track-base-only', dest='abc_track_base_only',
-                         help='Track only accesses to base pointers',
-                         default=False, action='store_true')
+        add_in_out_args(ap)
+        add_tmp_dir_args(ap)
+        import sea.abc as abc
+        abc.add_abc_args(ap)
         return ap
 
     def run(self, args, extra):
         try:
             import sea.abc as abc
-            return abc.seaAbc(args, extra)
+            return abc.sea_abc(args, extra)
         except Exception as e:
             raise IOError(str(e))
 
@@ -868,4 +851,4 @@ Bpf = sea.SeqCmd ('bpf', 'alias for fe|unroll|cut-loops|opt|horn --solve',
 feCrab = sea.SeqCmd ('fe-crab', 'alias for fe|crab', FrontEnd.cmds + [Crab()])
 ## Specialized SeaHorn analyses 
 seaTerm = sea.SeqCmd ('term', 'SeaHorn termination analysis', Smt.cmds + [SeaTerm()])
-seaAbc = sea.SeqCmd ('abc', 'SeaHorn array bounds check analysis', [SeaAbc()])
+seaClangAbc = sea.SeqCmd ('clang-abc', 'alias for clang|abc', [Clang(), SeaAbc()])

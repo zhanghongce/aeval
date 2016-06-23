@@ -29,7 +29,8 @@ def main (argv):
             sea.commands.feCrab,
             sea.commands.Unroll(),
             sea.commands.seaTerm,
-            sea.commands.SeaAbc()
+            sea.commands.SeaAbc(),
+            sea.commands.seaClangAbc
     ]
 
 
