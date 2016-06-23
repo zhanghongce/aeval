@@ -376,6 +376,11 @@ def get_alloc_sites (in_file, work_dir, args):
             reader = csv.DictReader(csvfile)
             try:
                 for row in reader:
+                    ## XXX: these are comming from dsa nodes without
+                    ## allocation site. The reason should be because the allocation 
+                    ## site is located in an external function.
+                    if row["alloc_site"] == '': continue
+
                     allocas.append(row["alloc_site"])
             except csv.Error as e:
                 report_fatal_error('file %s, line %d: %s' % (alloca_file, reader.line_num, e))
