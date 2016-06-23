@@ -14,6 +14,7 @@ import re
 import fileinput
 import shutil
 import itertools
+from multiprocessing import Process, Pool
 
 
 root = os.path.dirname (os.path.dirname (os.path.realpath (__file__)))
@@ -259,6 +260,83 @@ def getLines (lines_dict, incs):
             continue
     return line
 
+def jobStarter(func, fname, blks, opt):
+    if bench: print 'Checking Inconsistency ... ' + func + '| BLK ...' + blks
+    info = ['--slice-function=' + func.strip()]
+    cmd = get_opt(opt,fname) + info
+    p = sub.Popen(cmd, shell=False, stdout=sub.PIPE, stderr=sub.STDOUT)
+    if verbose: print " ".join(cmd)
+    result, _ = p.communicate()
+    if verbose: print result
+    func_res = ""
+    debug_info = {}
+    for r in result.split('\n'):
+        if 'INC_STAT' in r:
+            func_res += r + "\n"
+        if 'DINFO' in r:
+            tmp = r.split(":")
+            debug_info.update({tmp[1].strip():tmp[2]})
+    res, incs, rounds, query = "", "","",""
+    tmp_split = func_res.split("\n")
+    try:
+        res = (tmp_split[0]).split('|')[2]
+        incs = (tmp_split[2]).split('|')[2]
+        rounds = (tmp_split[3]).split('|')[2]
+        query = (tmp_split[4]).split('|')[2]
+    except Exception as e:
+        print 'WARNING: wrong format \n' + func_res
+    line_numbers = getLines(debug_info, incs)
+    if bench:
+        return func + " , " + blks + " , " + res + " , " + line_numbers + " , " + rounds + " , " + query + "\n"
+    else:
+        return pp_result % (func, blks, res, line_numbers, query)
+    
+  
+    
+    
+
+def runParallel(all_funcs, fname, opt):
+    """ Iterates over each function and check inconsistency -- parallel version"""
+    sea_cmd = getSea()
+    name = os.path.splitext (os.path.basename (fname))[0]
+    analyzed = {}
+    jobs = []
+    global f_result
+    f_result = open (fname+"_result.txt", "w")
+    all_result = "FUNCTION, NUM_BLKS, RESULT, LINE_NUMBER(S), ROUNDS, QUERY_TIME\n"
+    f_result.write(all_result)
+    func_tba = {} # dict of functions to be analyzed
+    for (func, v) in all_funcs.iteritems():
+        if int(v['blks']) >= opt.num_blks:
+            func_tba.update({func:v})
+    pool_jobs = Pool(processes=len(func_tba))
+    all_results = ""
+    try:
+        for func, v in func_tba.iteritems():      
+            job_result = pool_jobs.apply_async(jobStarter, (func,fname, v['blks'],opt, ))
+            job_result.wait(timeout=opt.timeout)
+            if job_result.ready():
+                out = ""
+                try:
+                    result = job_result.get()
+                    if bench: f_result.write(result)
+                    print result
+                except Exception as e:
+                    print str(e)
+                    continue
+            else:
+                out = func + " , " + v['blks'] + " , TIMEOUT ,  ,  , \n"
+                if bench: f_result.write(result)
+                print result
+        pool_jobs.close()
+        pool_jobs.terminate()
+        pool_jobs.join()
+        f_result.close()
+    except Exception as e:
+        print str(e)
+        
+        
+
 def main (argv):
     (opt, args) = parseOpt (argv)
     workdir = createWorkDir (opt.temp_dir, opt.save_temps)
@@ -275,10 +353,13 @@ def main (argv):
         if opt.only_func is None:
             funcInfos = getFuncInfo(workdir, fname, opt)
             if funcInfos:
-                run(funcInfos, fname, opt)
+                #run(funcInfos, fname, opt)
+                runParallel(funcInfos, fname, opt)
         else:
             run_one_function(opt.only_func, fname, opt)
     return returnvalue
+
+
 
 
 if __name__ == '__main__':
