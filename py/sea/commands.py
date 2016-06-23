@@ -269,7 +269,7 @@ class Seapp(sea.LimitedCmd):
             if args.abc_track_base_only: argv.append ('--abc-track-base-only')
 
         if args.ioc: argv.append ('--overflow-check')
-        if args.ndc: 
+        if args.ndc:
             argv.append ('--null-check')
             if args.ndc_opt: argv.append ('--null-check-optimize')
 
@@ -828,7 +828,8 @@ class SeaInc(sea.LimitedCmd):
           # tt.solve(extra[len(extra)-1])
           from inc.par_inc import JobsSpanner
           jb = JobsSpanner(args)
-          jb.spanner(extra[len(extra)-1])
+          smt2_file = extra[len(extra)-1]
+          jb.singleRun(smt2_file)
       except Exception as e:
           raise IOError(str(e))
 

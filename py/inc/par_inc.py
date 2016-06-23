@@ -306,6 +306,14 @@ def jobStarter(args, query_index, smt2_file):
     return out
 
 
+def checkFeas(args, query_index, smt2_file):
+    """
+    Start feasibility jobs
+    """
+    job = Feasibility(args, smt2_file)
+    out = job.run(query_index)
+    print out
+
 
 class JobsSpanner(object):
     """
@@ -338,8 +346,50 @@ class JobsSpanner(object):
             return str(query.decl()).split("@")[0]
 
 
+    def singleRun(self, smt2_file):
+        """
+        Single run
+        """
+        ctx = z3.Context ()
+        fp = z3.Fixedpoint (ctx=ctx)
+        with stats.timer ('Parse'):
+            self.log.info('Parsing  ... ' + str(smt2_file))
+            queries = fp.parse_file (smt2_file)
+            stats.stop('Parse')
+            self.log.info("Parsing time ... " + str(stats.get('Parse')) + " ms")
+            n_function = len(queries)
+            n_query = n_function if self.args.func < 0 or self.args.func > n_function else self.args.func
+            self.log.info("Number of functions ...  " + str(n_function))
+            self.log.info("Number of jobs ... " + str(n_query))
+            all_results = ""
+            try:
+                for q in range(n_query):
+                    query = queries[q]
+                    function_name  = self.getFunctionName(query)
+                    self.log.info("Checking feasibility of ...  " + str(function_name))
+                    out = ""
+                    try:
+                        p = multiprocessing.Process(target=checkFeas, args=(self.args, q, smt2_file, ))
+                        p.start()
+                        p.join(self.args.timeout)
+                        if p.is_alive():
+                            out = out_message % (function_name, "TIMEOUT", "", "", "", "", "")
+                            out = bcolors.WARNING + out + bcolors.ENDC
+                            p.terminate()
+                            p.join()
+                    except Exception as e:
+                        self.log.exception(str(e))
+                        continue
+                        all_results += out + "\n-----------------------\n"
+                if self.args.save:
+                    f_name = ntpath.basename(smt2_file)+"_feas.txt"
+                    with open (f_name, "w") as f:
+                        f.write(all_results)
+            except Exception as e:
+                self.log.exception(str(e))
 
-    def spanner(self, smt2_file):
+
+    def parallelRun(self, smt2_file):
         """
         Job spanner
         """
