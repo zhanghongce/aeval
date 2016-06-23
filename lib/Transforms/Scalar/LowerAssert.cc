@@ -24,7 +24,7 @@ namespace seahorn
     Function *assumeFn;
     unsigned num_lowered_asserts;
 
-    void LowerErrorCall (CallInst* CI, CallGraph *cg,
+    void LowerFailCall (CallInst* CI, CallGraph *cg,
                          Function *assumeFn, LLVMContext &ctx);
 
    public:
@@ -41,6 +41,29 @@ namespace seahorn
     virtual const char* getPassName () const 
     {return "LowerAssert";}
   };
+
+  // C assert function is just a macro that calls an assertion handler
+  // in case of failure. Here we try to detect those assertion
+  // handlers.
+  bool isAssertionHandler(Function *F) {
+    // --- first, some known assertion handlers
+
+    // on Linux
+    if (F->getName().equals("__assert_fail")) 
+      return true;
+
+    // on Mac OS X
+    if (F->getName().equals("__assert_rtn")) 
+      return true;
+        
+    // --- otherwise, we consider the function an assertion handler if
+    //     the function does not return.
+
+    if (F->getName().startswith("__assert") && F->doesNotReturn())
+      return true;
+
+    return false;
+  }
 
   bool LowerAssert::runOnModule (Module &M)
   {
@@ -94,7 +117,7 @@ namespace seahorn
   }
  
   // CI is a call to verifier.error, __assert_fail, etc.
-  void LowerAssert::LowerErrorCall (CallInst* CI, CallGraph *cg,
+  void LowerAssert::LowerFailCall (CallInst* CI, CallGraph *cg,
                                     Function *assumeFn, LLVMContext &ctx) {
     Function*F = CI->getParent()->getParent();
 
@@ -176,14 +199,13 @@ namespace seahorn
         if (CF->getName ().equals ("verifier.assert")) {
           // verifier assert
           Worklist.push_back (CI);
-        }
-        else if (CF->getName ().equals ("__assert_fail")) {
-          // assert from assert.h is translated to __assert_fail
-          Worklist.push_back (CI);
         } else if (CF->getName ().equals ("verifier.error")) {
           // verifier error
           Worklist.push_back (CI);
-        }
+        } else if (isAssertionHandler(CF)) {
+          // assertion handler: __assert_fail, __assert_rtn, etc
+          Worklist.push_back (CI);
+        } 
       }    
         
     if (Worklist.empty ()) return true;
@@ -214,10 +236,9 @@ namespace seahorn
           (*cg)[&F]->addCalledFunction (CallSite (NCI),
                                         (*cg)[NCI->getCalledFunction ()]);
       }
-      else if (CF->getName ().equals ("__assert_fail") || 
-               CF->getName ().equals ("verifier.error")) 
+      else if (isAssertionHandler(CF) || CF->getName ().equals ("verifier.error")) 
       {
-        LowerErrorCall(CI, cg, assumeFn, F.getContext());
+        LowerFailCall(CI, cg, assumeFn, F.getContext());
       }
     }
 
