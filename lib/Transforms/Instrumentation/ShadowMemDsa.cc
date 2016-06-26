@@ -149,6 +149,13 @@ namespace seahorn
     unsigned id = m_max_id;
     m_node_ids[n] = id;
 
+    if (n->getSize() == 0) {
+      // XXX: nodes can have zero size
+      assert (offset == 0);
+      m_max_id++;
+      return id;
+    }
+    
     // -- allocate enough ids for every byte of the object
     assert (n->getSize() > 0);
     m_max_id += n->getSize ();
