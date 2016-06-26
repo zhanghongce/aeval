@@ -224,17 +224,31 @@ namespace seahorn {
   Constant* PromoteArrays::ConvertConstant (Constant *C) {
 
     if (isa<ConstantInt> (C)) return C;
-
     if (isa<ConstantFP> (C)) return C;
 
     auto It = ConstantMap.find(C);
     if (It != ConstantMap.end ())
       return It->second;
 
+    if (GlobalValue * GV= dyn_cast<GlobalValue>(C)) {
+      auto It = GlobalValueMap.find(GV);
+      if (It != GlobalValueMap.end ())
+        return It->second;
+    }
+      
+    if (ConstantExpr *CE = dyn_cast<ConstantExpr>(C)) {      
+      std::vector<Constant*> newOps;
+      newOps.reserve(CE->getNumOperands());
+      for (unsigned i=0, e = CE->getNumOperands(); i!=e;++i) {
+        newOps.push_back (ConvertConstant(CE->getOperand(i)));
+      }
+      Constant *NCE = CE->getWithOperands(newOps);
+      return ConstantMap[C] = ConstantExpr::getBitCast(NCE, ConvertType(CE->getType()));
+    }
+
     if (ConstantAggregateZero* CAZ = dyn_cast<ConstantAggregateZero>(C)) {
       return ConstantMap[C] = ConstantAggregateZero::get(
           ConvertType(CAZ->getType()));
-                      
     } 
 
     if (ConstantStruct* CS = dyn_cast<ConstantStruct>(C)) {
@@ -261,13 +275,12 @@ namespace seahorn {
           cast<ArrayType>(ConvertType(CA->getType())), NElems);
     } 
 
-
     if (ConstantVector* CV = dyn_cast<ConstantVector>(C)) {
       std::vector<Constant*> NElems;
       NElems.reserve (CV->getType()->getNumElements());
       for (unsigned I = 0, N = CV->getType()->getNumElements(); I != N; ++I) {
-        Constant *Elem = C->getAggregateElement(I);
-        if (!Elem) return C;
+        Constant *Elem = CV->getAggregateElement(I);
+        if (!Elem)  return C;
         NElems.push_back (ConvertConstant(Elem));
       }
       return ConstantMap[C] = ConstantVector::get(NElems);
@@ -281,16 +294,34 @@ namespace seahorn {
     if (UndefValue* Undef = dyn_cast<UndefValue>(C)) {
       return ConstantMap[C] = UndefValue::get(ConvertType(C->getType()));
     }
-     
-    // otherwise, we don not convert the constant
-    return C;
+
+    if (ConstantDataSequential* CDS = dyn_cast<ConstantDataSequential>(C)) {
+      if (ConstantDataArray* CDA = dyn_cast<ConstantDataArray>(CDS)) {
+        // array of i8,i16,i32,i64,float or double
+        // should we convert it to a struct constant of i8,i16,i32,i64,float or double?
+        return ConstantMap[C] = C;
+      }
+      if (ConstantDataVector* CDV = dyn_cast<ConstantDataVector>(CDS)) {
+        // vector of i8,i16,i32,i64,float or double
+        // should we convert it to a struct constant of i8,i16,i32,i64,float or double?
+        return ConstantMap[C] = C;
+      }
+    }
+
+    if (isa<BlockAddress>(C) || isa<GlobalValue>(C)) {
+      // ignore BlockAddress and GlobalValue: they are treated separately
+      return C;
+    } 
+      
+    errs () << *C << "\n";
+    report_fatal_error("PromoteArrays unknown constant");
   }
 
 
   Value* PromoteArrays::
   ConvertValue (Value*V, DenseMap<Value*,Value*> &LocalValueMap) {
 
-    // Ignore null values and simple constants..
+    // Ignore null values..
     if (!V) return nullptr;
 
     // Check to see if this is an out of function reference first...
@@ -304,23 +335,18 @@ namespace seahorn {
     }
   
     auto I = LocalValueMap.find(V);
-    if (I != LocalValueMap.end()) {
+    if (I != LocalValueMap.end())
       return I->second;
-    }
 
     if (BasicBlock *BB = dyn_cast<BasicBlock>(V)) {
       // Create placeholder block to represent the basic block we
       // haven't seen yet. This will be used when the block gets
       // created.
-
       return LocalValueMap[V] = BasicBlock::Create(V->getContext(), BB->getName());
     }
 
-    if (Constant *CPV = dyn_cast<Constant>(V)) {
-      if (isa<ConstantExpr>(CPV))
-        report_fatal_error("PromoteArrays does not support constant expressions!");
-
-      return ConvertConstant (CPV);
+    if (Constant *Cst = dyn_cast<Constant>(V)){
+      return ConvertConstant (Cst);
     }
 
     // Otherwise make a value to represent it
@@ -416,11 +442,8 @@ namespace seahorn {
     } else {
 
       LOG ("promote-arrays",       
-           errs () << *GEPI << "\n"
-           //errs () << "Type " << *(GEPI->getPointerOperand()->getType()) 
-                   << "  has a non-constant access\n";
-           );
-
+           errs () << *GEPI << "\n" << "  has a non-constant access\n";);
+           
       Type* OldType = nullptr;
       auto LocalValueMapI = LocalValueMap.find (GEPI->getPointerOperand());
       if (LocalValueMapI != LocalValueMap.end ())
@@ -487,6 +510,7 @@ namespace seahorn {
     NF->takeName(F);
     NF->copyAttributesFrom(F);
     F->getParent()->getFunctionList().insert(F, NF);
+
     GlobalValueMap[F] = NF;
   }
 
@@ -501,7 +525,7 @@ namespace seahorn {
     Function* NF = nullptr;
     auto GlobalValueMapI = GlobalValueMap.find(F);
     if (GlobalValueMapI == GlobalValueMap.end ())
-      return; // this should not happen
+      report_fatal_error("PromoteArrays unreachable!");
     else
       NF = cast<Function>(GlobalValueMapI->second);
 
@@ -699,8 +723,8 @@ namespace seahorn {
             Args.reserve(I.getNumOperands());
             for (unsigned i=0; i < CS.arg_size(); i++)
               Args.push_back(ConvertValue(CS.getArgument(i),LocalValueMap));
-            NewI = CallInst::Create(ConvertValue(CS.getCalledValue(),
-                                                 LocalValueMap), Args);
+            NewI = CallInst::Create(ConvertValue(CS.getCalledValue(), LocalValueMap), 
+                                    Args);
             cast<CallInst>(NewI)->setAttributes(CS.getAttributes());
             break;
           }
@@ -784,7 +808,7 @@ namespace seahorn {
       }
     }
 
-    // promote allocas of sized arrays
+    // --- promote allocas of sized arrays
     for (auto &F: M) 
       for (inst_iterator II = inst_begin(&F), IE = inst_end(&F); II!=IE; ++II) {
         Instruction *I = &*II;
@@ -818,12 +842,16 @@ namespace seahorn {
     if (NamedMDNode* CU = M.getNamedMetadata("llvm.dbg.cu"))
       CU->eraseFromParent();
 
+    // --- Convert function signatures from old system to new one
+    for (auto &F: M)
+      RewriteFunctionDecl(&F);
+
     // --- Create conversion map for globals from old system to new one 
     std::vector<GlobalVariable*> Globals;
     Globals.reserve (std::distance(M.global_begin(), M.global_end()));
-    for (auto &GV: M.globals()) { 
+    for (auto &GV: M.globals()) 
       Globals.push_back (&GV);
-    }
+
     for (auto GV: Globals) {
       // FIXME: llvm.global_ctors defines the initialization order
       // between static objects in different translation units. If the
@@ -874,8 +902,6 @@ namespace seahorn {
     
     // --- Create conversion map from old type system to the new one
     //     for each function
-    for (auto &F: M)
-      RewriteFunctionDecl(&F);
     for (auto &F: M)
       RewriteFunctionBody(&F);
 
