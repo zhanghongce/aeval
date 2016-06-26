@@ -176,9 +176,24 @@ def get_time (output):
             return float (str(match.group(1)) + "." + str(match.group(2)))
     return None
 
+def get_invars_size (output):
+    pattern1 = re.compile(r'BRUNCH_STAT NumOfBlocksWithInvariants (\d+).*')
+    pattern2 = re.compile(r'BRUNCH_STAT SizeOfInvariants (\d+).*')
+    total_num_of_blocks = -1
+    total_invars_size = -1
+    for line in output.splitlines():
+        match = pattern1.search(str(line))
+        if match:
+            total_num_of_blocks = int (str(match.group(1)))
+        match = pattern2.search(str(line))
+        if match:
+            total_invars_size = int (str(match.group(1)))
+    return (total_num_of_blocks, total_invars_size)
+
 def get_results (output, returnvalue, timeout):
     num_checks = get_num_checks (output)
     total_time = get_time(output)
+    num_blks, invars_size = get_invars_size(output)
     exitcode = returnvalue // 256
     signalcode = returnvalue % 256
     ans = None
@@ -186,8 +201,7 @@ def get_results (output, returnvalue, timeout):
         ans = get_answer (output)
     else:
         if timeout > -1 : total_time = float(timeout)
-            
-    return (num_checks, ans, total_time, exitcode, signalcode)
+    return (num_checks, ans, total_time, num_blks, invars_size, exitcode, signalcode)
 
 # options for `sea pp` with array bounds checks
 def abc_opts(args):
@@ -239,14 +253,15 @@ def horn_opts(args):
             '--horn-make-undef-warning-error=false',
             '--horn-child-order=false',
             '--horn-reduce-constraints',
-            '--horn-use-write'
+            '--horn-use-write',
+            '--horn-estimate-size-invars'
             ]
     if args.add_cuts is not 'h0':
         opts = opts + ['--horn-extra-cps={0}'.format(args.add_cuts)]
     return opts
 
 def csv_results_keys ():
-    fmt = ['AllocId','NumChecks','Answer','Time']
+    fmt = ['AllocId','NumChecks','Answer','Time','InvarsSize','BlocksWithInvars']
     return fmt
 
 # flds is a list of fields    
@@ -406,7 +421,7 @@ def sea_abc(args, extra): # extra is unused
     in_file = args.in_files[0]
 
     if args.dont_split_proof: 
-        num_checks,ans,time,_,_ = prove_abc(in_file, None, args)
+        num_checks,ans,time,num_blks,invars_size,_,_ = prove_abc(in_file, None, args)
         print "************** BRUNCH STATS ***************** "
         print "BRUNCH_STAT Number of array bounds checks " + str(num_checks)
         print "BRUNCH_STAT Time " + str(time)
@@ -417,6 +432,14 @@ def sea_abc(args, extra): # extra is unused
         else:
             print "BRUNCH_STAT Result UNKNOWN"
         print "************** BRUNCH STATS END ***************** "
+        ## XXX: do not write to a csv file because there is just one entry anyway.
+        # fmt = csv_results_keys()
+        # csv_results_header(args.csv_file, fmt)
+        # results = dict ()
+        # results['AllocId'] = -1; results['NumChecks'] = num_checks
+        # results['Answer'] = ans; results['Time'] = time; 
+        # results['InvarsSize'] = invars_size; results['BlocksWithInvars'] = num_blks
+        # csv_results_line (args.csv_file, fmt, results)    
         return
     else:
         (allocas, num_checks) = get_alloc_sites (in_file, work_dir, args)
@@ -428,10 +451,11 @@ def sea_abc(args, extra): # extra is unused
 
         if args.sequential:  # for debugging purposes
             for alloca_id in allocas:
-                num_checks,ans,time,_,_ = prove_abc(in_file, alloca_id, args)
+                num_checks,ans,time,num_blks,invars_size,_,_ = prove_abc(in_file, alloca_id, args)
                 results = dict ()
                 results['AllocId'] = alloca_id; results['NumChecks'] = num_checks
-                results['Answer'] = ans; results['Time'] = time
+                results['Answer'] = ans; results['Time'] = time; 
+                results['InvarsSize'] = invars_size; results['BlocksWithInvars'] = num_blks
                 csv_results_line (args.csv_file, fmt, results)    
         else:
             xargs = []
@@ -512,11 +536,12 @@ def main (argv):
 
     #print "Started analysis for allocation site " +  str(args.alloca_id) + " ..."
 
-    num_checks,ans,time,_,_ = prove_abc(args.in_files[0], args.alloca_id, args)
+    num_checks,ans,time,num_blks,invars_size,_,_ = prove_abc(args.in_files[0], args.alloca_id, args)
     fmt = csv_results_keys()
     results = dict ()
     results['AllocId'] = args.alloca_id; results['NumChecks'] = num_checks
     results['Answer'] = ans; results['Time'] = time
+    results['InvarsSize'] = invars_size; results['BlocksWithInvars'] = num_blks
     csv_results_line (args.csv_file, fmt, results)    
     #print "num_checks" + str(num_checks)            
     #print "ans" + str(ans)            
