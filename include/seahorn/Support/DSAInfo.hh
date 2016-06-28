@@ -33,6 +33,11 @@ namespace seahorn
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/Support/Debug.h"
 
+namespace llvm {
+   class DataLayout;
+   class TargetLibraryInfo;
+}
+
 namespace seahorn
 {
   using namespace llvm;
@@ -42,22 +47,26 @@ namespace seahorn
     typedef std::set <const Value*> ValueSet;
 
    public:
+
     struct WrapperDSNode {
       const DSNode* m_n;
       unsigned m_id;
       std::string m_rep_name;
       unsigned m_accesses;
 
-      WrapperDSNode (const DSNode* n): 
-          m_n (n), m_id (0), m_accesses (0) { }
+      WrapperDSNode (const DSNode* n)
+          : m_n (n), m_id (0), m_accesses (0) { }
 
-      bool operator==(const WrapperDSNode& o) const {
-         return m_n == o.m_n;
-      }
+      // use m_n for ordering 
+      bool operator<(const WrapperDSNode& o) const 
+      { return m_n < o.m_n; }
 
-      unsigned num_types () const {
-        return std::distance (m_n->type_begin (), m_n->type_end ());
-      }
+      bool operator==(const WrapperDSNode& o) const 
+      { return m_n == o.m_n; }
+
+      // unsigned numOfTypes () const {
+      //   return std::distance (m_n->type_begin (), m_n->type_end ());
+      // }
     };
 
    private:
@@ -68,53 +77,24 @@ namespace seahorn
     DenseMap<const DSNode*, ValueSet> m_referrers_map;
     boost::bimap<const Value*, unsigned int> m_alloc_sites;
 
-    void add_node (const DSNode* n) {
-      auto it = m_nodes.find (n);
-      if (it == m_nodes.end ())
-        m_nodes.insert (std::make_pair(n, WrapperDSNode (n)));
-    }
+    void addNode (const DSNode* n);
 
-    void insert_referrers_map (const DSNode* n, const Value* v) {
-      auto it = m_referrers_map.find (n);
-      if (it != m_referrers_map.end ())
-        it->second.insert (v);
-      else {
-        ValueSet s;
-        s.insert (v);
-        m_referrers_map.insert (std::make_pair (n, s));
-      }
-    }
+    void insertReferrersMap (const DSNode* n, const Value* v); 
 
-    bool has_referrers (const DSNode* n) const {
-      return m_referrers_map.find (n) != m_referrers_map.end ();
-    }
+    bool hasReferrers (const DSNode* n) const;
 
-    const ValueSet& get_referrers (const DSNode* n) const {
-      auto it = m_referrers_map.find (n);
-      assert (has_referrers (n));
-      return it->second;
-    }
+    const ValueSet& getReferrers (const DSNode* n) const; 
 
-    bool add_alloc_site (const Value* v, unsigned int & site_id) {
-      typedef boost::bimap<const Value*, unsigned int>::value_type bm_type;
+    bool addAllocSite (const Value* v, unsigned int & site_id); 
 
-      site_id = 0;
-      auto it = m_alloc_sites.left.find (v);
-      if (it == m_alloc_sites.left.end ()) {
-        site_id = m_alloc_sites.size () + 1;
-        m_alloc_sites.insert (bm_type (v, site_id));
-        return true;
-      } else {
-        site_id = it->second;
-        return false;
-      }
-    }
-
+    void countAccesses (const DataLayout* dl, const TargetLibraryInfo* tli,
+                        DSGraph* dsg, Value* V);
+                        
     void findDSNodeForValue(const Value* v, std::set<unsigned int>& nodes);
 
-    void WriteDSAnalysisInfo(llvm::raw_ostream& o);
+    void writeDSAnalysisInfo(llvm::raw_ostream& o);
 
-    void WriteAllocSitesInfo(llvm::raw_ostream& o, bool isFile);
+    void writeAllocSitesInfo(llvm::raw_ostream& o, bool isFile);
 
   public:
  
@@ -132,26 +112,17 @@ namespace seahorn
 
     // return unique numeric identifier for Value if it is an
     // allocation site, otherwise 0.
-    const unsigned int getAllocSiteID (const Value* V) const {
-      auto it = m_alloc_sites.left.find (V);
-      if (it != m_alloc_sites.left.end ())
-        return it->second;
-      else
-        return 0; // not found
-    }
+    const unsigned int getAllocSiteID (const Value* V) const;
 
     // the inverse of getAllocSiteID
-    const Value* getAllocValue (unsigned int alloc_site_id) const {
-      auto it = m_alloc_sites.right.find (alloc_site_id);
-      if (it != m_alloc_sites.right.end ())
-        return it->second;
-      else
-        return nullptr; //not found
-    }
+    const Value* getAllocValue (unsigned int alloc_site_id) const;
 
     virtual bool runOnModule (llvm::Module &M);
+
     virtual void getAnalysisUsage (llvm::AnalysisUsage &AU) const;
+
     void releaseMemory();
+
     virtual const char* getPassName () const {return "DSAInfo";}
 
   };

@@ -3,6 +3,34 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
 
+/*
+
+ - A DS node is a memory object identified by the DSA analysis.
+
+ - A program variable of pointer type can be mapped to a DS node plus
+   an offset.
+
+ - An allocation site is either a global variable, alloca instruction
+   or malloc-like function. Allocation sites creates memory objects. 
+
+ - An identified DS node might not have an allocation site if the
+   allocation site is defined in an external function.
+
+ This analysis pass provides the following functionality:
+
+ - Identify all DS nodes and the number of read (load) and write
+   (store) accesses to each one, and assign deterministically a
+   numeric identifier to each DS node. These identifiers are useful
+   for other passes (such as abc)
+
+ - Identify allocation sites and assign deterministically a numeric
+   identifier to each one.
+
+ - For each allocation site identify its DS node(s). Ideally, we
+   should have one DS node per allocation site.
+
+*/
+
 static llvm::cl::opt<bool>
 DSAInfoToOutput("dsa-info",
     llvm::cl::desc ("Print all DSA analysis and allocation information to standard output"),
@@ -37,18 +65,61 @@ namespace seahorn
     
     return false; 
   }
+
+  void DSAInfo::addNode (const DSNode* n) {
+    auto it = m_nodes.find (n);
+    if (it == m_nodes.end ()) {
+      auto wn = WrapperDSNode (n);
+      m_nodes.insert (std::make_pair(n, wn));
+    }
+  }
+
+  void DSAInfo::insertReferrersMap (const DSNode* n, const Value* v) {
+   auto it = m_referrers_map.find (n);
+   if (it != m_referrers_map.end ())
+        it->second.insert (v);
+   else {
+     ValueSet s;
+     s.insert (v);
+     m_referrers_map.insert (std::make_pair (n, s));
+   }
+ }
+
+  bool DSAInfo::hasReferrers (const DSNode* n) const {
+    return m_referrers_map.find (n) != m_referrers_map.end ();
+  }
+
+  const DSAInfo::ValueSet& DSAInfo::getReferrers (const DSNode* n) const {
+    auto it = m_referrers_map.find (n);
+    assert (hasReferrers (n));
+    return it->second;
+  }
+
+  bool DSAInfo::addAllocSite (const Value* v, unsigned int & site_id) {
+    typedef boost::bimap<const Value*, unsigned int>::value_type bm_type;
+    
+    site_id = 0;
+     auto it = m_alloc_sites.left.find (v);
+     if (it == m_alloc_sites.left.end ()) {
+       site_id = m_alloc_sites.size () + 1;
+       m_alloc_sites.insert (bm_type (v, site_id));
+       return true;
+     } else {
+       site_id = it->second;
+       return false;
+     }
+  }
+
    
-  inline void countAccesses (const DataLayout* dl,
-                             const TargetLibraryInfo* tli,
-                             DSGraph* dsg, DSGraph* gDsg,
-                             DenseMap<const DSNode*, DSAInfo::WrapperDSNode>& nodes,
-                             Value* V) {    
+  void DSAInfo::countAccesses (const DataLayout* dl, const TargetLibraryInfo* tli,
+                               DSGraph* dsg, Value* V) {    
+                               
     const DSNode* n = dsg->getNodeForValue (V).getNode ();
-    if (!n) n = gDsg->getNodeForValue (V).getNode ();
+    if (!n) n = m_gDsg->getNodeForValue (V).getNode ();
     if (!n) return;
 
-    auto It = nodes.find (n);
-    if (It != nodes.end () && !IsStaticallyKnown (dl, tli, V))
+    auto It = m_nodes.find (n);
+    if (It != m_nodes.end () && !IsStaticallyKnown (dl, tli, V))
       It->second.m_accesses++;
   }        
 
@@ -69,6 +140,22 @@ namespace seahorn
      return it->second.m_accesses > 0;
   }
 
+  const unsigned int DSAInfo::getAllocSiteID (const Value* V) const {
+    auto it = m_alloc_sites.left.find (V);
+    if (it != m_alloc_sites.left.end ())
+      return it->second;
+    else
+      return 0; // not found
+  }
+
+  const Value* DSAInfo::getAllocValue (unsigned int alloc_site_id) const {
+    auto it = m_alloc_sites.right.find (alloc_site_id);
+    if (it != m_alloc_sites.right.end ())
+      return it->second;
+    else
+      return nullptr; //not found
+  }
+
   void DSAInfo::releaseMemory () {
     m_nodes.clear();
     m_referrers_map.clear();
@@ -76,7 +163,7 @@ namespace seahorn
   }
 
   // Print information about DSA analysis
-  void DSAInfo::WriteDSAnalysisInfo (llvm::raw_ostream& o) {
+  void DSAInfo::writeDSAnalysisInfo (llvm::raw_ostream& o) {
 
       o << " ========== DSAInfo  ==========\n";
     
@@ -87,9 +174,7 @@ namespace seahorn
           nodes_vector.push_back (kv.second); 
       }
 
-      //o << m_nodes.size () 
-      //  << " Total number of DS nodes.\n";     
-
+      //o << m_nodes.size () << " Total number of DS nodes.\n";      
       // -- Some DSNodes are never read or written because after they
       //    are created they are only passed to external calls.
       o << nodes_vector.size ()  
@@ -99,8 +184,7 @@ namespace seahorn
       for (auto &n: nodes_vector) 
         total_accesses += n.m_accesses;
 
-      o << total_accesses
-        << " Total number of accessed DS nodes.\n";     
+      o << total_accesses << " Total number of memory accesses.\n";     
 
       {  //  Print a summary of accesses
         unsigned int sum_size = 5;
@@ -132,8 +216,8 @@ namespace seahorn
                  });
       
       for (auto &n: nodes_vector) {
-        if (!has_referrers (n.m_n)) continue;
-        const ValueSet& referrers = get_referrers (n.m_n);
+        if (!hasReferrers (n.m_n)) continue;
+        const ValueSet& referrers = getReferrers (n.m_n);
         o << "  [Node Id " << n.m_id  << "] ";
         
         if (n.m_rep_name != "") {
@@ -214,16 +298,16 @@ namespace seahorn
   }        
 
   void DSAInfo::findDSNodeForValue (const Value* v, std::set<unsigned int>& nodes) {
-    for (auto &p: m_referrers_map) {
-      const ValueSet& referrers = p.second;
+    for (auto &kv: m_referrers_map) {
+      const ValueSet& referrers = kv.second;
       if (referrers.count (v) > 0)
-        if (getDSNodeID (p.first) > 0)
-          nodes.insert( getDSNodeID (p.first));
+        if (getDSNodeID (kv.first) > 0)
+          nodes.insert( getDSNodeID (kv.first));
     }
   }
 
   // Print information about all alllocation sites
-  void DSAInfo::WriteAllocSitesInfo (llvm::raw_ostream& o, bool isFile) {
+  void DSAInfo::writeAllocSitesInfo (llvm::raw_ostream& o, bool isFile) {
     if (!isFile)
       o << " ========== Allocation sites  ==========\n";
 
@@ -245,10 +329,10 @@ namespace seahorn
     //    external calls.
     if (!isFile) {
       o << actual_alloc_sites
-        << " Total number of allocation sites from an accessed DSNode.\n";     
+        << " Total number of allocation sites that go to some accessed DS node.\n";     
     }
     
-    if (!DSAInfoToOutput && !isFile) return;
+    //if (!DSAInfoToOutput && !isFile) return;
 
     std::set <unsigned int> seen;
     for (auto p: m_alloc_sites.right) {
@@ -261,8 +345,8 @@ namespace seahorn
       // -- Sanity check: an alloca site belongs only to one DSNode
       if (nodes.size () > 1) {
         if (!isFile) {
-          errs () << "DSAInfo: alloca site " << p.first 
-                  << " belongs to multiple DSNodes {";
+          errs () << "DSAInfo found an allocation site " << p.first 
+                  << " associated with multiple DSNodes {";
           for (auto NodeId: nodes) o << NodeId << ","; 
           errs () << "}\n";
         }
@@ -271,14 +355,18 @@ namespace seahorn
 
       if (isFile) {
         o << p.first << "," << *(nodes.begin ()) << "\n";
-      } else {
-        o << "  [Alloc site Id " << p.first << " DSNode Id " << *(nodes.begin ())
-          << "]  " << *p.second  << "\n";
+      } else if (DSAInfoToOutput){
+        o << "  [Alloc site Id " << p.first << " DSNode Id " << *(nodes.begin ()) << "]"
+          << "  " << *p.second  << "\n";
       }
       seen.insert (*(nodes.begin ()));
     }
 
     // -- Sanity check: each DSNode has an allocation site
+
+    // Number of accesses that have an allocation site
+    unsigned num_accesses_without_alloc_site = 0;
+    unsigned num_nodes_without_alloc_site = 0;
     for (auto& kv: m_nodes) {
       unsigned int NodeID = kv.second.m_id;
       if (seen.count (NodeID) > 0) continue;
@@ -288,9 +376,12 @@ namespace seahorn
         if (isFile) {
           o << "," << NodeID << "\n";
         } else {
-          errs () << "DSAInfo: DSNode ID " << NodeID << " has no allocation site\n";
+          if (DSAInfoToOutput)
+            errs () << "DSAInfo cannot find allocation site for DSNode ID=" << NodeID << "\n";
+          num_nodes_without_alloc_site ++;
+          num_accesses_without_alloc_site += kv.second.m_accesses;
           LOG ("dsa-info", 
-               const ValueSet& referrers = get_referrers (kv.second.m_n);
+               const ValueSet& referrers = getReferrers (kv.second.m_n);
                for (auto const& r : referrers) {
                  if (r->hasName ())
                    o << "\t  " << r->getName ();
@@ -301,6 +392,10 @@ namespace seahorn
         }
       }
     }
+    errs () << "DSAInfo found " << num_nodes_without_alloc_site 
+            << " nodes without allocation site.\n";
+    errs () << "DSAInfo found " << num_accesses_without_alloc_site 
+            << " memory accesses without allocation site.\n";
   }
 
   bool DSAInfo::runOnModule (llvm::Module &M) {  
@@ -319,8 +414,8 @@ namespace seahorn
         if (lN.isForwarding ()) continue;
 
         if (const DSNode* n = lN.getNode ()) {
-          add_node (n);
-          insert_referrers_map  (n, v);
+          addNode (n);
+          insertReferrersMap  (n, v);
         }
       }
 
@@ -338,8 +433,8 @@ namespace seahorn
           if (lN.isForwarding ()) continue;
 
           if (const DSNode* n = lN.getNode ()) {
-            add_node (n);
-            insert_referrers_map  (n, v);
+            addNode (n);
+            insertReferrersMap  (n, v);
           }
         }     
       }
@@ -358,27 +453,27 @@ namespace seahorn
         for (inst_iterator i = inst_begin(F), e = inst_end(F); i != e; ++i)  {
           Instruction *I = &*i;
           if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
-            countAccesses (dl, tli, dsg, gDsg, m_nodes, LI->getPointerOperand ());
+            countAccesses (dl, tli, dsg, LI->getPointerOperand ());
           } else if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
-            countAccesses (dl, tli, dsg, gDsg, m_nodes, SI->getPointerOperand ());
+            countAccesses (dl, tli, dsg, SI->getPointerOperand ());
           } else if (MemTransferInst *MTI = dyn_cast<MemTransferInst>(I)) {
-            countAccesses (dl, tli, dsg, gDsg, m_nodes, MTI->getDest ());
-            countAccesses (dl, tli, dsg, gDsg, m_nodes, MTI->getSource ());
+            countAccesses (dl, tli, dsg, MTI->getDest ());
+            countAccesses (dl, tli, dsg, MTI->getSource ());
           } else if (MemSetInst *MSI = dyn_cast<MemSetInst>(I)) {
-            countAccesses (dl, tli, dsg, gDsg, m_nodes, MSI->getDest ());
+            countAccesses (dl, tli, dsg, MSI->getDest ());
           }   
         }
       }
 
       // figure out deterministically a representative name for each DSNode
-      for (auto &p: m_nodes) {
-        WrapperDSNode& n = p.second;
-        if (!has_referrers (n.m_n) || n.m_accesses == 0) continue;
+      for (auto &kv: m_nodes) {
+        WrapperDSNode& n = kv.second;
+        if (!hasReferrers (n.m_n) || n.m_accesses == 0) continue;
 
         // we collect all referrers and sort by their names in order
         // to make sure that the representative is always
         // chosen deterministically.
-        const ValueSet& referrers = get_referrers (n.m_n);
+        const ValueSet& referrers = getReferrers (n.m_n);
         std::vector<std::string> named_referrers;
         named_referrers.reserve (referrers.size ());
         for (auto &r: referrers) {
@@ -430,15 +525,21 @@ namespace seahorn
       // Identify allocation sites and assign a numeric id to each one
       for (auto &GV: M.globals ()) {
         Type *Ty = cast<PointerType>(GV.getType())->getElementType();
-        if (!Ty->isSized()) continue;
-        if (!GV.hasInitializer()) continue;
+        if (!Ty->isSized()) {
+          errs () << "DSAInfo ignored unsized " << GV << " as allocation site\n";
+          continue;
+        }
+        if (!GV.hasInitializer()) {
+          errs () << "DSAInfo ignored uninitialized " << GV << " as allocation site\n";
+          continue;
+        }
         if (GV.hasSection()) {
           StringRef Section(GV.getSection());
           // Globals from llvm.metadata aren't emitted, do not instrument them.
           if (Section == "llvm.metadata") continue;
         }
         unsigned int alloc_site_id; 
-        add_alloc_site (&GV, alloc_site_id);
+        addAllocSite (&GV, alloc_site_id);
       }
       
       for (auto &F: M) {
@@ -447,30 +548,29 @@ namespace seahorn
           if (AllocaInst* AI = dyn_cast<AllocaInst> (I)) {
             Type *Ty = AI->getAllocatedType();
             if (!Ty->isSized() || dl->getTypeAllocSize(Ty) <= 0) {
-              errs () << "DSAInfo " << *AI 
-                      << " will be ignored because it is not sized\n";
+              errs () << "DSAInfo ignored unsized " << *AI << " as allocation site\n";
               continue;
             }
             unsigned int alloc_site_id; 
-            add_alloc_site (AI, alloc_site_id);
+            addAllocSite (AI, alloc_site_id);
           } else if (isAllocationFn (I, tli, true)) {
             Value *V = I;
             V = V->stripPointerCasts();
             unsigned int alloc_site_id; 
-            add_alloc_site (V, alloc_site_id);
+            addAllocSite (V, alloc_site_id);
           }
         }
       }
 
 
-      WriteDSAnalysisInfo(errs ());
-      WriteAllocSitesInfo(errs (), false);
+      writeDSAnalysisInfo(errs ());
+      writeAllocSitesInfo(errs (), false);
       if (DSAInfoToFile != "") {
         std::string filename(DSAInfoToFile);
         std::error_code EC;
         raw_fd_ostream File(filename, EC, sys::fs::F_Text);
         File << "alloc_site,ds_node\n";
-        WriteAllocSitesInfo(File, true);
+        writeAllocSitesInfo(File, true);
         File.close();
       }
 
