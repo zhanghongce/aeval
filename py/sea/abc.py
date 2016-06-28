@@ -104,6 +104,8 @@ def add_abc_args(ap):
                            "each allocation site separately but sequentially "
                            "(default parallel) ",
                      default=False, action='store_true')
+    ap.add_argument ('--only-alloc-site', dest='alloc_site', type=int, default=-1,
+                     help='Only instrument checks from this allocation site', metavar='N')
     ap.add_argument ('--add-extra-cutpoints', 
                      help="Add additional cutpoints:\n"
                           "- h0: none\n"
@@ -420,8 +422,10 @@ def sea_abc(args, extra): # extra is unused
     assert (len(args.in_files) == 1)
     in_file = args.in_files[0]
 
-    if args.dont_split_proof: 
-        num_checks,ans,time,num_blks,invars_size,_,_ = prove_abc(in_file, None, args)
+    if args.dont_split_proof or args.alloc_site >= 0:
+        alloc_site = None
+        if args.alloc_site >= 0: alloc_site = args.alloc_site
+        num_checks,ans,time,num_blks,invars_size,_,_ = prove_abc(in_file, alloc_site, args)
         print "************** BRUNCH STATS ***************** "
         print "BRUNCH_STAT Number of array bounds checks " + str(num_checks)
         print "BRUNCH_STAT Time " + str(time)
