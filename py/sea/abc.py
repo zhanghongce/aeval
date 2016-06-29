@@ -449,7 +449,10 @@ def sea_abc(args, extra): # extra is unused
         (allocas, num_checks) = get_alloc_sites (in_file, work_dir, args)
         if verbose: print "Allocation sites = " + str(allocas)
         print "The analysis found " + str(len(allocas)) + " allocation sites."
-
+        if len(allocas) == 0:
+            print "No allocation sites found so do nothing"
+            return
+        
         fmt = csv_results_keys()
         csv_results_header(args.csv_file, fmt)
 
