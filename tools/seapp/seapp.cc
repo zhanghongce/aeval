@@ -41,6 +41,8 @@
 #include "seahorn/Transforms/Instrumentation/NullCheck.hh"
 #include "seahorn/Transforms/Instrumentation/MixedSemantics.hh"
 
+#include "seahorn/Analysis/DSA/Info.hh"
+
 #include "llvm_seahorn/Transforms/Scalar.h"
 
 #include "ufo/Smt/EZ3.hh"
@@ -188,6 +190,12 @@ static llvm::cl::opt<bool>
 WrapMem ("wrap-mem",
          llvm::cl::desc ("Wrap memory accesses with special functions"),
          llvm::cl::init (false));
+
+/// XXX: temporary
+static llvm::cl::opt<bool>
+EnableNewDsaInfo ("new-dsa-info", 
+     llvm::cl::desc ("Run new dsa info pass"), 
+     llvm::cl::init (false));
 
 // removes extension from filename if there is one
 std::string getFileName(const std::string &str) {
@@ -400,6 +408,8 @@ int main(int argc, char **argv) {
           pass_manager.add (seahorn::createNondetInitPass ());
           break;
         case 2: 
+          if (EnableNewDsaInfo) // XXX: temporary to measure effectiveness of new dsa 
+            pass_manager.add (new seahorn::dsa::Info ());
           pass_manager.add (new seahorn::ABC2 ());
           break;
         default:

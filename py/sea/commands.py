@@ -235,6 +235,10 @@ class Seapp(sea.LimitedCmd):
         ap.add_argument ('--slice-functions', 
                          help='Slice program onto these functions',
                          dest='slice_funcs', type=str, metavar='str,...')
+        ### XXX: temporary
+        ap.add_argument ('--new-dsa-info', dest='new_dsa_info',
+                         help='Shows some stats about new dsa pass',
+                         default=False, action='store_true')
         add_in_out_args (ap)
         _add_S_arg (ap)
         return ap
@@ -319,7 +323,10 @@ class Seapp(sea.LimitedCmd):
             argv.append('--kill-vaarg=true')
         else:
             argv.append('--kill-vaarg=false')
-            
+
+        if args.new_dsa_info:
+            argv.append('--new-dsa-info')
+
         if args.llvm_asm: argv.append ('-S')
         argv.extend (args.in_files)
         return self.seappCmd.run (args, argv)
@@ -443,7 +450,8 @@ class Seaopt(sea.LimitedCmd):
                          help='Unrolling threshold (default = 150)',
                          dest='unroll_threshold',
                          default=150, metavar='NUM')
-
+        ap.add_argument ('--enable-vectorize', dest='enable_vectorize', default=False,
+                         action='store_true', help='Enable LLVM vectorization optimizations')
         add_in_out_args (ap)
         _add_S_arg (ap)
         return ap
@@ -466,12 +474,14 @@ class Seaopt(sea.LimitedCmd):
         if not args.enable_nondet_init:
             argv.append ('--enable-nondet-init=false')
         if args.inline_threshold is not None:
-            argv.append ('--inline-threshold={t}'.format
-                         (t=args.inline_threshold))
+            argv.append ('--inline-threshold={t}'.format(t=args.inline_threshold))
         if args.unroll_threshold is not None:
             argv.append ('--unroll-threshold={t}'.format
                          (t=args.unroll_threshold))
-
+        if not args.enable_vectorize:
+            argv.extend (['--disable-loop-vectorization=true',
+                          '--disable-slp-vectorization=true',
+                          '--vectorize-slp-aggressive=false'])
         argv.extend (args.in_files)
         if args.llvm_asm: argv.append ('-S')
         return self.seaoptCmd.run (args, argv)

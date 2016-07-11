@@ -21,6 +21,8 @@
 #include "llvm/IR/Verifier.h"
 
 #include "seahorn/Passes.hh"
+#include "seahorn/Analysis/DSA/Global.hh"
+#include "seahorn/Analysis/DSA/Info.hh"
 
 static llvm::cl::opt<std::string>
 InputFilename(llvm::cl::Positional, llvm::cl::desc("<input LLVM bitcode file>"),
@@ -57,6 +59,11 @@ static llvm::cl::opt<bool>
 CfgOnlyViewer("cfg-only-viewer",
               llvm::cl::desc("View CFG of function (with no function bodies)"),
               llvm::cl::init(false));
+
+static llvm::cl::opt<bool>
+RunDsa("dsa",
+       llvm::cl::desc("Print an abstraction of the heap"),
+       llvm::cl::init(false));
 
 
 int main(int argc, char **argv) {
@@ -114,6 +121,14 @@ int main(int argc, char **argv) {
 
   if (CfgOnlyViewer)
     pass_manager.add (seahorn::createCFGOnlyViewerPass ());
+
+  // XXX: for now we just call the analysis pass.
+  // Later we will have a pass that call this analysis pass and do
+  // some pretty printer of the heap.
+  if (RunDsa) {
+    pass_manager.add (new seahorn::dsa::Global ());
+    //pass_manager.add (new seahorn::dsa::Info ());
+  }
 
   pass_manager.run(*module.get());
 
