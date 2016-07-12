@@ -290,6 +290,11 @@ namespace
   void IntraBlockBuilder::visitBitCastInst(BitCastInst &I)
   {
     if (isSkip (I)) return;
+
+    if (isa<Constant> (I.getOperand (0)) && 
+        cast<Constant> (I.getOperand (0))->isNullValue ()) 
+      return;  // do nothing if null
+
     dsa::Cell arg = valueCell  (*I.getOperand (0));
     assert (!arg.isNull ());
     m_graph.mkCell (I, arg);

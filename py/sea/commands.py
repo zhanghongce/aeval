@@ -487,6 +487,7 @@ class Seaopt(sea.LimitedCmd):
             argv.extend (['--disable-loop-vectorization=true',
                           '--disable-slp-vectorization=true',
                           '--vectorize-slp-aggressive=false'])
+
         argv.extend (args.in_files)
         if args.llvm_asm: argv.append ('-S')
         return self.seaoptCmd.run (args, argv)
