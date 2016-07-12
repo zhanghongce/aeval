@@ -239,6 +239,9 @@ class Seapp(sea.LimitedCmd):
         ap.add_argument ('--new-dsa-info', dest='new_dsa_info',
                          help='Shows some stats about new dsa pass',
                          default=False, action='store_true')
+        ap.add_argument ('--new-dsa-info-details', dest='new_dsa_info_details',
+                         help='Shows more details',
+                         default=False, action='store_true')
         add_in_out_args (ap)
         _add_S_arg (ap)
         return ap
@@ -326,6 +329,8 @@ class Seapp(sea.LimitedCmd):
 
         if args.new_dsa_info:
             argv.append('--new-dsa-info')
+        if args.new_dsa_info_details:
+            argv.append('--new-dsa-info-details')
 
         if args.llvm_asm: argv.append ('-S')
         argv.extend (args.in_files)
