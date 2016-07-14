@@ -4,33 +4,23 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/CallSite.h"
 #include "llvm/IR/InstIterator.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/Target/TargetLibraryInfo.h"
 #include "llvm/Pass.h"
 #include "llvm/PassManager.h"
-
-#include "llvm/IR/DataLayout.h"
-
 #include "llvm/Analysis/CallGraph.h"
-
 #include "llvm/ADT/SCCIterator.h"
 
+#include "seahorn/Analysis/DSA/Graph.hh"
 #include "seahorn/Analysis/DSA/Global.hh"
 #include "seahorn/Analysis/DSA/Local.hh"
+#include "seahorn/Analysis/DSA/CallSite.hh"
 
 #include "avy/AvyDebug.h"
 
+#include "boost/range/iterator_range.hpp"
+
 using namespace llvm;
-
-static Value* getRetVal (const CallSite &CS)
-{
-  if (Function *F = CS.getCalledFunction ())
-  {
-    FunctionType *FTy = F->getFunctionType ();
-    if (!(FTy->getReturnType()->isVoidTy ()))
-      return CS.getInstruction ();
-  }
-  return nullptr;
-}
-
 
 namespace seahorn
 {
@@ -38,49 +28,51 @@ namespace seahorn
   {
       
     Global::Global () 
-        : ModulePass (ID), m_dl (nullptr), m_graph (nullptr) {}
+      : ModulePass (ID), m_dl (nullptr), m_tli (nullptr)  {}
           
     void Global::getAnalysisUsage (AnalysisUsage &AU) const 
     {
       AU.addRequired<DataLayoutPass> ();
-      AU.addRequired<seahorn::dsa::Local> ();
+      AU.addRequired<TargetLibraryInfo> ();
       AU.addRequired<CallGraphWrapperPass> ();
       AU.setPreservesAll ();
     }
     
 
-    void Global::resolveCallSite (const CallSite &CS)
+    void Global::resolveCallSite (DsaCallSite &CS)
     {
-      // Handle the return value of the function...
-      Function &F = *CS.getCalledFunction ();
-      Value* retVal = getRetVal(CS);
-      if ((retVal && m_graph->hasCell(*retVal)) && m_graph->hasRetCell(F))
+
+      // unify return
+      const Function &callee = *CS.getCallee ();
+      if (m_graph->hasCell(*CS.getInstruction()) && m_graph->hasRetCell(callee))
       {
-        Cell &c  = m_graph->mkCell(*retVal, Cell());
-        c.unify(m_graph->mkRetCell(F, Cell()));
+        Cell &nc = m_graph->mkCell(*CS.getInstruction(), Cell());
+        const Cell& r = m_graph->getRetCell(callee);
+        Cell c (*r.getNode (), r.getOffset ());
+        nc.unify(c);
       }
 
-      // Loop over all arguments, unifying them with the formal ones
-      unsigned argIdx = 0;
-      for (Function::const_arg_iterator AI = F.arg_begin(), AE = F.arg_end();
-           AI != AE && argIdx < CS.arg_size(); ++AI, ++argIdx) 
+      // unify actuals and formals
+      DsaCallSite::const_actual_iterator AI = CS.actual_begin(), AE = CS.actual_end();
+      for (DsaCallSite::const_formal_iterator FI = CS.formal_begin(), FE = CS.formal_end();
+           FI != FE && AI != AE; ++FI, ++AI) 
       {
-        const Value *arg = &*AI;
-        if (m_graph->hasCell(*arg) &&
-            m_graph->hasCell(*(CS.getArgument(argIdx)))) {
-          Cell &c = m_graph->mkCell(*(CS.getArgument(argIdx)), Cell());
-          Cell &d = m_graph->mkCell (*arg, Cell ());
+        const Value *arg = (*AI).get();
+        const Value *farg = &*FI;
+        if (m_graph->hasCell(*farg) && m_graph->hasCell(*arg)) {
+          Cell &c = m_graph->mkCell(*arg, Cell());
+          Cell &d = m_graph->mkCell (*farg, Cell ());
           c.unify (d);
         }
       }
+
     }                                      
     
     bool Global::runOnModule (Module &M)
     {
       m_dl = &getAnalysis<DataLayoutPass>().getDataLayout ();
+      m_tli = &getAnalysis<TargetLibraryInfo> ();
 
-      // --- Get the local graphs for each function
-      Local *graphs = &getAnalysis<seahorn::dsa::Local> ();
 
       // LOG ("dsa-global",
       //      errs () << "==============\n";
@@ -94,8 +86,9 @@ namespace seahorn
       //      });
 
       // -- the global graph
-      m_graph.reset (new Graph(*m_dl));
+      m_graph.reset (new Graph(*m_dl, m_setFactory));
 
+      LocalAnalysis la (*m_dl, *m_tli);
       // -- bottom-up inline of all graphs
       CallGraph &CG = getAnalysis<CallGraphWrapperPass> ().getCallGraph ();
       for (auto it = scc_begin (&CG); !it.isAtEnd (); ++it)
@@ -110,14 +103,16 @@ namespace seahorn
           LOG ("dsa-inlining", errs () << "\t"; cgn->print (errs ()); errs () << "\n");
 
           Function *F = cgn->getFunction ();
-          if (F && graphs->hasGraph(*F)) 
-          {
+          if (!F || F->isDeclaration () || F->empty ()) continue;
+          
+          // compute local graph
+          Graph fGraph (*m_dl, m_setFactory);
+          la.runOnFunction (*F, fGraph);
 
-            LOG ("dsa-inlining",
-                 errs () << "\tImported graph from " << F->getName() <<"\n";);
+          LOG ("dsa-inlining",
+               errs () << "\tImporting graph of " << F->getName() << "\n";);
 
-            m_graph->import(graphs->getGraph(*F), true);
-          }
+          m_graph->import(fGraph, true);
         }
       }
 
@@ -128,29 +123,35 @@ namespace seahorn
         for (CallGraphNode *cgn : scc)
         {
           Function *F = cgn->getFunction ();
-          if (!F || !graphs->hasGraph(*F)) continue;
+          
+          // XXX probably not needed since if the function is external
+          // XXX it will have no call records
+          if (!F || F->isDeclaration () || F->empty ()) continue;
           
           // -- iterate over all call instructions of the current function F
           // -- they are indexed in the CallGraphNode data structure
           for (auto &CallRecord : *cgn) 
           {
 
-            CallSite CS (CallRecord.first);
-            Function *Callee = CS.getCalledFunction();
-            if (Callee && graphs->hasGraph(*Callee)) 
+            ImmutableCallSite CS(CallRecord.first);
+            DsaCallSite dsa_cs(CS);
+            const Function *Callee = dsa_cs.getCallee();
+            // XXX We want to resolve external calls as well.
+            // XXX By not resolving them, we pretend that they have no
+            // XXX side-effects. This should be an option, not the only behavior
+            if (Callee && !Callee->isDeclaration () && !Callee->empty ())
             {
               LOG ("dsa-resolve",
-                   errs () << "Resolving call site " << *(CS.getInstruction()) << "\n");
+                   errs () << "Resolving call site " << *(dsa_cs.getInstruction()) << "\n");
               
-              assert (F == CS.getCaller ());
-              resolveCallSite (CS);
+              assert (F == dsa_cs.getCaller ());
+              resolveCallSite (dsa_cs);
             }
 
           }
         }
         m_graph->compress();
       }
-      m_graph->compress();
 
       LOG ("dsa-global",
            errs () << "==============\n";

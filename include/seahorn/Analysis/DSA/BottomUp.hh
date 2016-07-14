@@ -4,6 +4,7 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Function.h"
 #include "llvm/Pass.h"
+#include "llvm/ADT/DenseMap.h"
 
 #include "seahorn/Analysis/DSA/Graph.hh"
 #include "seahorn/Analysis/DSA/CallSite.hh"
@@ -21,11 +22,12 @@ namespace seahorn
   namespace dsa
   {
 
-    class Global : public ModulePass
+    class BottomUp : public ModulePass
     {
       const DataLayout *m_dl;
       const TargetLibraryInfo *m_tli;
-      std::unique_ptr<Graph> m_graph;
+      typedef std::shared_ptr<Graph> GraphRef;
+      llvm::DenseMap<const Function *, GraphRef> m_graphs;
       Graph::SetFactory m_setFactory;
       
       void resolveCallSite (DsaCallSite &cs);
@@ -34,17 +36,17 @@ namespace seahorn
 
       static char ID;
 
-      Global ();
+      BottomUp ();
 
       void getAnalysisUsage (AnalysisUsage &AU) const override;
 
       bool runOnModule (Module &M) override;
 
       const char * getPassName() const override 
-      { return "Context-insensitive Dsa global pass"; }
+      { return "BottomUp DSA pass"; }
 
-      Graph& getGraph ();
-      const Graph& getGraph () const;
+      Graph& getGraph (const Function &F) const;
+      bool hasGraph (const Function &F) const;
 
     };
   }

@@ -4,9 +4,13 @@
 #include <boost/container/flat_map.hpp>
 #include <boost/container/flat_set.hpp>
 #include <boost/iterator/indirect_iterator.hpp>
+#include "boost/iterator/filter_iterator.hpp"
+#include <boost/functional/hash.hpp>
 
 #include "llvm/ADT/ImmutableSet.h"
 #include "llvm/ADT/DenseMap.h"
+
+#include <functional>
 
 namespace llvm
 {
@@ -26,28 +30,34 @@ namespace seahorn
     class Cell;
     typedef std::unique_ptr<Cell> CellRef;
     
+    class FunctionalMapper;
+    class DsaCallSite;
+
     class Graph
     {
       friend class Node;
+    public:
+      typedef llvm::ImmutableSet<llvm::Type*> Set;
+      typedef typename Set::Factory SetFactory;
     protected:
       
       const llvm::DataLayout &m_dl;
-      typedef llvm::ImmutableSet<llvm::Type*> Set;
-      typedef typename Set::Factory SetFactory;
-      SetFactory m_setFactory;
-      
+      SetFactory &m_setFactory;
       /// DSA nodes owned by this graph
       typedef std::vector<std::unique_ptr<Node> > NodeVector;
       NodeVector m_nodes;
             
       /// Map from scalars to cells in this graph
-      llvm::DenseMap<const llvm::Value*, CellRef> m_values;
+      typedef llvm::DenseMap<const llvm::Value*, CellRef> ValueMap;
+      ValueMap m_values;
 
       /// Map from formal arguments to cells
-      llvm::DenseMap<const llvm::Argument*, CellRef> m_formals;
+      typedef llvm::DenseMap<const llvm::Argument*, CellRef> ArgumentMap;
+      ArgumentMap m_formals;
       
       /// Map from formal returns of functions to cells
-      llvm::DenseMap<const llvm::Function*, CellRef> m_returns;
+      typedef llvm::DenseMap<const llvm::Function*, CellRef> ReturnMap;
+      ReturnMap m_returns;
       
       SetFactory &getSetFactory () { return m_setFactory; }
       Set emptySet () { return m_setFactory.getEmptySet (); }
@@ -56,10 +66,12 @@ namespace seahorn
 
       const llvm::DataLayout &getDataLayout () const { return m_dl; }
       
+      struct IsGlobal 
+      {bool operator() (const ValueMap::value_type &kv) const;};
       
     public:
 
-      Graph (const llvm::DataLayout &dl) : m_dl (dl) {}
+      Graph (const llvm::DataLayout &dl, SetFactory &sf) : m_dl (dl), m_setFactory (sf) {}
       /// remove all forwarding nodes
       void compress ();
 
@@ -73,6 +85,26 @@ namespace seahorn
       const_iterator begin() const;
       const_iterator end() const;
 
+      /// iterate over scalars
+      typedef ValueMap::const_iterator scalar_const_iterator; 
+      scalar_const_iterator scalar_begin() const;
+      scalar_const_iterator scalar_end() const;
+
+      typedef boost::filter_iterator<IsGlobal,
+                                     typename ValueMap::const_iterator>
+      global_const_iterator;
+      global_const_iterator globals_begin () const;
+      global_const_iterator globals_end () const;
+      
+      /// iterate over formal parameters of functions
+      typedef ArgumentMap::const_iterator formal_const_iterator; 
+      formal_const_iterator formal_begin() const;
+      formal_const_iterator formal_end() const;
+
+      /// iterate over returns of functions
+      typedef ReturnMap::const_iterator return_const_iterator; 
+      return_const_iterator return_begin() const;
+      return_const_iterator return_end() const;
       /// creates a cell for the value or returns existing cell if
       /// present
       Cell &mkCell (const llvm::Value &v, const Cell &c);
@@ -86,6 +118,12 @@ namespace seahorn
       
       bool hasRetCell (const llvm::Function &fn) const
       { return m_returns.count (&fn) > 0; }
+
+      const Cell &getRetCell (const llvm::Function &fn) const; 
+
+      void computeCalleeCallerRenaming (const DsaCallSite &cs, 
+                                        Graph& calleeGraph,
+                                        FunctionalMapper& remap);
       
       /// import the given graph into the current one
       /// copies all nodes from g and unifies all common scalars
@@ -97,7 +135,7 @@ namespace seahorn
     
     /** 
         A memory cell (or a field). An offset into a memory object.
-     */
+    */
     class Cell
     {
       /// memory object
@@ -116,6 +154,8 @@ namespace seahorn
       
       bool operator== (const Cell &o) const
       {return m_node == o.m_node && m_offset == o.m_offset;}
+      bool operator!= (const Cell &o) const
+      { return !operator==(o); }
       bool operator< (const Cell &o) const
       { return m_node < o.m_node || (m_node == o.m_node && m_offset < o.m_offset); }
 
@@ -158,6 +198,7 @@ namespace seahorn
 
       /// for gdb
       void dump () const;
+      
     };
     
     
@@ -166,6 +207,8 @@ namespace seahorn
     {
       friend class Graph;
       friend class Cell;
+
+      friend class FunctionalMapper;
       struct NodeType
       {
         unsigned shadow:1;
@@ -454,7 +497,22 @@ namespace seahorn
 
     const Node* Node::getNode () const
     { return isForwarding () ? m_forward.getNode () : this;}
-  }
+  }  
+
+}
+
+namespace std
+{
+  template<> struct hash<seahorn::dsa::Cell>
+  {
+    size_t operator() (const seahorn::dsa::Cell &c) const
+    {
+      size_t seed = 0;
+      boost::hash_combine (seed, c.getNode ());
+      boost::hash_combine (seed, c.getOffset ());
+      return seed;
+    }
+  };
 }
 
 #endif

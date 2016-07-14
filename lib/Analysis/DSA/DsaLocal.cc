@@ -479,8 +479,14 @@ namespace
     if (!isSkip (I))
     {
       // -- create a new node if there is no link at this offset yet
-      if (!in.hasLink ())
-        in.setLink (0, Cell (&m_graph.mkNode (), 0));
+      if (!in.hasLink ()) {
+        dsa::Node &n = m_graph.mkNode ();
+        in.setLink (0, Cell (&n, 0));
+        // -- record allocation site
+        n.addAllocSite(I);
+        // -- mark node as a stack node
+        n.setAlloca();
+      }
       // create cell for the read value and point it to where the link points to
       m_graph.mkCell (I, in.getLink ());
     }
@@ -607,6 +613,10 @@ namespace
     
     dsa::Node &n = m_graph.mkNode ();
     n.setIntToPtr();
+    // -- record allocation site
+    n.addAllocSite(dest);
+    // -- mark node as an alloca node
+    n.setAlloca();
     m_graph.mkCell (dest, dsa::Cell (n, 0));
 
   }
@@ -657,6 +667,63 @@ namespace seahorn
   namespace dsa
   {
 
+    void LocalAnalysis::runOnFunction (Function &F, dsa::Graph &g)
+    {
+      // create cells and nodes for formal arguments
+      for (Argument &a : F.args ())
+        if (a.getType ()->isPointerTy () && !g.hasCell (a)) {
+          Node &n = g.mkNode ();
+          g.mkCell (a, Cell (n, 0));
+          // -- record allocation site
+          n.addAllocSite(a);
+          // -- mark node as a stack node
+          n.setAlloca();
+        }
+      
+      std::vector<const BasicBlock *> bbs;
+      RevTopoSort (F, bbs);
+      boost::reverse (bbs);
+      
+      IntraBlockBuilder intraBuilder (F, g, m_dl, m_tli);
+      InterBlockBuilder interBuilder (F, g, m_dl, m_tli);
+      for (const BasicBlock *bb : bbs)
+        intraBuilder.visit (*const_cast<BasicBlock*>(bb));
+      for (const BasicBlock *bb : bbs)
+        interBuilder.visit (*const_cast<BasicBlock*>(bb));
+
+      g.compress ();
+
+      LOG ("dsa",
+           // --- Sanity check
+           for (auto &kv: boost::make_iterator_range(g.scalar_begin(),
+                                                     g.scalar_end())) 
+             if (kv.second->isRead() || kv.second->isModified()) 
+               if (kv.second->getNode ()->begin() == kv.second->getNode ()->end()) {
+                 errs () << "SCALAR " << *(kv.first) << "\n";
+                 errs () << "WARNING: a node has no allocation site\n";
+               }
+           for (auto &kv: boost::make_iterator_range(g.formal_begin(),
+                                                     g.formal_end())) 
+             if (kv.second->isRead() || kv.second->isModified()) 
+               if (kv.second->getNode ()->begin() == kv.second->getNode ()->end()) {
+                 errs () << "FORMAL " << *(kv.first) << "\n";
+                 errs () << "WARNING: a node has no allocation site\n";
+               }
+           for (auto &kv: boost::make_iterator_range(g.return_begin(),
+                                                     g.return_end())) 
+             if (kv.second->isRead() || kv.second->isModified()) 
+               if (kv.second->getNode ()->begin() == kv.second->getNode ()->end()) {
+                 errs () << "RETURN " << kv.first->getName() << "\n";
+                 errs () << "WARNING: a node has no allocation site\n";
+               }
+           );
+
+      LOG ("dsa-local", 
+           errs () << "Dsa graph after " << F.getName () << "\n";
+           g.write(errs()));
+      
+    }
+    
     Local::Local () : 
         ModulePass (ID), m_dl (nullptr), m_tli (nullptr) {}
 
@@ -671,6 +738,7 @@ namespace seahorn
     {
       m_dl = &getAnalysis<DataLayoutPass>().getDataLayout ();
       m_tli = &getAnalysis<TargetLibraryInfo> ();
+
       for (Function &F : M) runOnFunction (F);                
         return false;
     }
@@ -681,30 +749,9 @@ namespace seahorn
       
       LOG("progress", errs () << "DSA: " << F.getName () << "\n";);
       
-      Graph_ptr g = boost::make_shared<Graph> (*m_dl);
-      
-      // create cells and nodes for formal arguments
-      for (Argument &a : F.args ())
-        if (a.getType ()->isPointerTy ())
-            g->mkCell (a, Cell (g->mkNode (), 0));
-      
-      std::vector<const BasicBlock *> bbs;
-      RevTopoSort (F, bbs);
-      boost::reverse (bbs);
-      
-      IntraBlockBuilder intraBuilder (F, *g, *m_dl, *m_tli);
-      InterBlockBuilder interBuilder (F, *g, *m_dl, *m_tli);
-      for (const BasicBlock *bb : bbs)
-        intraBuilder.visit (*const_cast<BasicBlock*>(bb));
-      for (const BasicBlock *bb : bbs)
-        interBuilder.visit (*const_cast<BasicBlock*>(bb));
-
-      g->compress ();
-
-      LOG ("dsa-local", 
-           errs () << "Dsa graph after " << F.getName () << "\n";
-           g->write(errs()));
-      
+      LocalAnalysis la (*m_dl, *m_tli);
+      GraphRef g = std::make_shared<seahorn::dsa::Graph> (*m_dl, m_setFactory);
+      la.runOnFunction (F, *g);
       m_graphs [&F] = g;
       return false;
     }
