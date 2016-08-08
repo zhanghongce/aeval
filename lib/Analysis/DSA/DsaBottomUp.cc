@@ -10,6 +10,7 @@
 #include "llvm/PassManager.h"
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/ADT/SCCIterator.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include "seahorn/Analysis/DSA/Graph.hh"
 #include "seahorn/Analysis/DSA/BottomUp.hh"
@@ -26,6 +27,120 @@ namespace seahorn
 {
   namespace dsa
   {
+
+    // Clone callee nodes into caller and resolve arguments
+    void BottomUpAnalysis::
+    cloneAndResolveArguments (const DsaCallSite &CS, Graph& calleeG, Graph& callerG)
+    {      
+      Cloner C (callerG);
+      
+      // clone and unify globals 
+      for (auto &kv : boost::make_iterator_range (calleeG.globals_begin (),
+                                                  calleeG.globals_end ()))
+      {          
+        Node &n = C.clone (*kv.second->getNode ());
+        Cell c (n, kv.second->getOffset ());
+        Cell &nc = callerG.mkCell (*kv.first, Cell ());
+        nc.unify (c);
+      }
+
+      // clone and unify return
+      const Function &callee = *CS.getCallee ();
+      if (calleeG.hasRetCell (callee))
+      {
+        Node &n = C.clone (*calleeG.getRetCell (callee).getNode ());
+        Cell c (n, calleeG.getRetCell (callee).getOffset ());
+        Cell &nc = callerG.mkCell (*CS.getInstruction (), Cell());
+        nc.unify (c);
+      }
+
+      // clone and unify actuals and formals
+      DsaCallSite::const_actual_iterator AI = CS.actual_begin(), AE = CS.actual_end();
+      for (DsaCallSite::const_formal_iterator FI = CS.formal_begin(), FE = CS.formal_end();
+           FI != FE && AI != AE; ++FI, ++AI) 
+      {
+        const Value *arg = (*AI).get();
+        const Value *fml = &*FI;
+        if (calleeG.hasCell (*fml))
+        {
+          Node &n = C.clone (*calleeG.getCell (*fml).getNode ());
+          Cell c (n, calleeG.getCell (*fml).getOffset ());
+          Cell &nc = callerG.mkCell (*arg, Cell ());
+          nc.unify (c);
+        }
+      }
+
+      callerG.compress();
+    }
+
+    bool BottomUpAnalysis::runOnModule(Module &M, GraphMap &graphs) 
+    {
+
+      LOG("dsa-bu", errs () << "Started bottom-up analysis ... \n");
+
+      LocalAnalysis la (m_dl, m_tli);
+
+      for (auto it = scc_begin (&m_cg); !it.isAtEnd (); ++it)
+      {
+        auto &scc = *it;
+
+        // -- compute a local graph shared between all functions in the scc
+        GraphRef fGraph = nullptr;
+        for (CallGraphNode *cgn : scc)
+        {
+          Function *fn = cgn->getFunction ();
+          if (!fn || fn->isDeclaration () || fn->empty ()) continue;
+
+          if (!fGraph) {
+            assert (graphs.find(fn) != graphs.end());
+            fGraph = graphs[fn];
+            assert (fGraph);
+          }
+
+          la.runOnFunction (*fn, *fGraph);
+          graphs[fn] = fGraph;
+        }
+
+        // -- resolve all function calls in the graph
+        for (CallGraphNode *cgn : scc)
+        {
+          Function *fn = cgn->getFunction ();
+          if (!fn || fn->isDeclaration () || fn->empty ()) continue;
+
+          // -- visit all callsites in the callgraph node
+          for (auto &callRecord : *cgn)
+          {
+            ImmutableCallSite CS (callRecord.first);
+            DsaCallSite dsaCS (CS);
+            const Function *callee = dsaCS.getCallee ();
+            if (!callee || callee->isDeclaration () || callee->empty ()) continue;
+            
+            assert (graphs.count (dsaCS.getCaller ()) > 0);
+            assert (graphs.count (dsaCS.getCallee ()) > 0);
+      
+            Graph &callerG = *(graphs.find (dsaCS.getCaller())->second);
+            Graph &calleeG = *(graphs.find (dsaCS.getCallee())->second);
+  
+            cloneAndResolveArguments (dsaCS, calleeG, callerG);
+
+            SimulationMapperRef sm (new SimulationMapper());
+            bool res = Graph::computeCalleeCallerMapping(dsaCS, calleeG, callerG, true, *sm);
+            LOG ("dsa-bu", 
+                 if (!res) errs () << *(dsaCS.getInstruction())  << "\n"
+                                   << "  --- Caller does not simulate callee\n";);
+            assert (res);
+            m_callee_caller_map.insert(std::make_pair(dsaCS.getInstruction(), sm));
+
+          }
+        }
+        if (fGraph) fGraph->compress();        
+      }
+
+      LOG("dsa-bu", errs () << "Finished bottom-up analysis\n");
+      return false;
+    }
+
+  
     BottomUp::BottomUp () 
       : ModulePass (ID), m_dl (nullptr), m_tli (nullptr)  {}
           
@@ -36,104 +151,21 @@ namespace seahorn
       AU.addRequired<CallGraphWrapperPass> ();
       AU.setPreservesAll ();
     }
-    
-
-    void BottomUp::resolveCallSite (DsaCallSite &CS)
-    {
-      assert (m_graphs.count (CS.getCaller ()) > 0);
-      assert (m_graphs.count (CS.getCallee ()) > 0);
-      
-      const Function &caller = *CS.getCaller ();
-      const Function &callee = *CS.getCallee ();
-      Graph &callerG = *(m_graphs.find (&caller)->second);
-      Graph &calleeG = *(m_graphs.find (&callee)->second);
-      
-      Cloner C (callerG);
-      
-      // import and unify globals 
-      for (auto &kv : boost::make_iterator_range (calleeG.globals_begin (),
-                                                  calleeG.globals_end ()))
-      {
-        Node &n = C.clone (*kv.second->getNode ());
-        Cell c (n, kv.second->getOffset ());
-        Cell &nc = callerG.mkCell (*kv.first, Cell ());
-        nc.unify (c);
-      }
-
-      // import and unify return
-      if (calleeG.hasRetCell (callee) && callerG.hasCell (*CS.getInstruction ()))
-      {
-        Node &n = C.clone (*calleeG.getRetCell (callee).getNode ());
-        Cell c (n, calleeG.getRetCell (callee).getOffset ());
-        Cell &nc = callerG.mkCell (*CS.getInstruction (), Cell());
-        nc.unify (c);
-      }
-
-      // import and unify actuals and formals
-      DsaCallSite::const_actual_iterator AI = CS.actual_begin(), AE = CS.actual_end();
-      for (DsaCallSite::const_formal_iterator FI = CS.formal_begin(), FE = CS.formal_end();
-           FI != FE && AI != AE; ++FI, ++AI) 
-      {
-        const Value *arg = (*AI).get();
-        const Value *fml = &*FI;
-        if (callerG.hasCell (*arg) && calleeG.hasCell (*fml))
-        {
-          Node &n = C.clone (*calleeG.getCell (*fml).getNode ());
-          Cell c (n, calleeG.getCell (*fml).getOffset ());
-          Cell &nc = callerG.mkCell (*arg, Cell ());
-          nc.unify (c);
-        }
-      }
-    }
 
     bool BottomUp::runOnModule (Module &M)
     {
       m_dl = &getAnalysis<DataLayoutPass>().getDataLayout ();
       m_tli = &getAnalysis<TargetLibraryInfo> ();
-
-      LocalAnalysis la (*m_dl, *m_tli);
-
       CallGraph &cg = getAnalysis<CallGraphWrapperPass> ().getCallGraph ();
-      for (auto it = scc_begin (&cg); !it.isAtEnd (); ++it)
-      {
-        auto &scc = *it;
+
+      BottomUpAnalysis bu (*m_dl, *m_tli, cg);
+      for (auto &F: M)
+      { // XXX: the graphs must be created here
         GraphRef fGraph = std::make_shared<Graph> (*m_dl, m_setFactory);
-        
-        // -- compute a local graph shared between all functions in the scc
-        for (CallGraphNode *cgn : scc)
-        {
-          Function *fn = cgn->getFunction ();
-          if (!fn || fn->isDeclaration () || fn->empty ()) continue;
-          la.runOnFunction (*fn, *fGraph);
-          m_graphs[fn] = fGraph;
-        }
-
-        // -- resolve all function calls in the graph
-        for (auto it = scc_begin (&cg); !it.isAtEnd (); ++it)
-        {
-          auto &scc = *it;
-          for (CallGraphNode *cgn : scc)
-          {
-            Function *fn = cgn->getFunction ();
-            if (!fn || fn->isDeclaration () || fn->empty ()) continue;
-
-            for (auto &callRecord : *cgn)
-            {
-              ImmutableCallSite CS (callRecord.first);
-              DsaCallSite dsaCS (CS);
-              const Function *callee = dsaCS.getCallee ();
-              if (!callee || callee->isDeclaration () || callee->empty ()) continue;
-              
-              resolveCallSite (dsaCS);
-            }
-          }
-        }
-
-        fGraph->compress ();
+        m_graphs[&F] = fGraph;
       }
-      
-      
-      return false;
+
+      return bu.runOnModule (M, m_graphs);
     }
 
     Graph &BottomUp::getGraph (const Function &F) const

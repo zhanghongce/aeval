@@ -1,6 +1,5 @@
 #include "seahorn/Transforms/Instrumentation/ShadowMemDsa.hh"
 
-#ifdef HAVE_DSA
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/IRBuilder.h"
@@ -9,6 +8,7 @@
 #include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/ADT/SCCIterator.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include "avy/AvyDebug.h"
 #include "boost/range.hpp"
@@ -16,8 +16,10 @@
 #include "boost/range/algorithm/set_algorithm.hpp"
 #include "boost/range/algorithm/binary_search.hpp"
 
-
-#include "dsa/Steensgaard.hh"
+#include "seahorn/Analysis/DSA/CallSite.hh"
+#include "seahorn/Analysis/DSA/Graph.hh"
+#include "seahorn/Analysis/DSA/Global.hh"
+#include "seahorn/Analysis/DSA/Mapper.hh"
 
 static llvm::cl::opt<bool>
 SplitFields("horn-split-dsa",
@@ -29,38 +31,69 @@ LocalReadMod ("horn-dsa-local-mod",
               llvm::cl::desc ("DSA: Compute read/mod info locally"),
               llvm::cl::init (false));
 
+static llvm::cl::opt<bool>
+DsaCsGlobalAnalysis ("horn-dsa-cs-global",
+                   llvm::cl::desc ("DSA: context-sensitive analysis"),
+                   llvm::cl::init (true));
+
+
 namespace seahorn
 {
   using namespace llvm;
-  
+  using namespace dsa;
+    
   template <typename Set>
-  void markReachableNodes (const DSNode *n, Set &set)
+  void markReachableNodes (const Node *n, Set &set)
   {
     if (!n) return;
-    
     assert (!n->isForwarding () && "Cannot mark a forwarded node");
-    if (set.insert (n).second)
-      for (auto &edg : boost::make_iterator_range (n->edge_begin (), n->edge_end ()))
-        markReachableNodes (edg.second.getNode (), set);
+
+    if (set.insert (n).second) 
+      for (auto const &edg : n->links ())
+        markReachableNodes (edg.second->getNode (), set);
   }
-  
+
   template <typename Set>
-  void inputReachableNodes (const DSCallSite &cs, DSGraph &dsg, Set &set)
+  void reachableNodes (const Function &fn, Graph &g, Set &inputReach, Set& retReach)
   {
-    markReachableNodes (cs.getVAVal().getNode (), set);
-    if (cs.isIndirectCall ()) markReachableNodes (cs.getCalleeNode (), set);
-    for (unsigned i = 0, e = cs.getNumPtrArgs (); i != e; ++i)
-      markReachableNodes (cs.getPtrArg (i).getNode (), set);
-    
+    // formal parameters
+    for (Function::const_arg_iterator I = fn.arg_begin(), E = fn.arg_end(); I != E; ++I)
+    {
+      const Value &arg = *I;
+      if (g.hasCell (arg)) 
+      {
+        Cell &c = g.mkCell (arg, Cell ());
+        markReachableNodes (c.getNode (), inputReach);
+      }
+    }
+
     // globals
-    DSScalarMap &sm = dsg.getScalarMap ();
-    for (auto &gv : boost::make_iterator_range (sm.global_begin(), sm.global_end ()))
-      markReachableNodes (sm[gv].getNode (), set);
+    for (auto &kv : boost::make_iterator_range (g.globals_begin (),
+                                                g.globals_end ()))
+      markReachableNodes (kv.second->getNode (), inputReach);
+
+    // return value
+    if (g.hasRetCell (fn))
+      markReachableNodes (g.getRetCell (fn).getNode(), retReach);
   }
+
+  // template <typename Set>
+  // void inputReachableNodes (const DSCallSite &cs, DSGraph &dsg, Set &set)
+  // {
+  //   markReachableNodes (cs.getVAVal().getNode (), set);
+  //   if (cs.isIndirectCall ()) markReachableNodes (cs.getCalleeNode (), set);
+  //   for (unsigned i = 0, e = cs.getNumPtrArgs (); i != e; ++i)
+  //     markReachableNodes (cs.getPtrArg (i).getNode (), set);
+    
+  //   // globals
+  //   DSScalarMap &sm = dsg.getScalarMap ();
+  //   for (auto &gv : boost::make_iterator_range (sm.global_begin(), sm.global_end ()))
+  //     markReachableNodes (sm[gv].getNode (), set);
+  // }
   
-  template <typename Set>
-  void retReachableNodes (const DSCallSite &cs, Set &set) 
-  {markReachableNodes (cs.getRetVal ().getNode (), set);}
+  // template <typename Set>
+  // void retReachableNodes (const DSCallSite &cs, Set &set) 
+  // {markReachableNodes (cs.getRetVal ().getNode (), set);}
   
   template <typename Set>
   void set_difference (Set &s1, Set &s2)
@@ -78,58 +111,68 @@ namespace seahorn
     std::swap (s3, s1);
   }
   
-  /// Computes DSNode reachable from the call arguments
+  // /// Computes DSNode reachable from the call arguments
+  // /// reach - all reachable nodes
+  // /// outReach - subset of reach that is only reachable from the return node
+  // template <typename Set1, typename Set2>
+  // void argReachableNodes (DSCallSite CS, DSGraph &dsg, 
+  //                         Set1 &reach, Set2 &outReach)
+  // {
+  //   inputReachableNodes (CS, dsg, reach);
+  //   retReachableNodes (CS, outReach);
+  //   set_difference (outReach, reach);
+  //   set_union (reach, outReach);
+  // }
+
+
+  /// Computes Node reachable from the call arguments in the graph.
   /// reach - all reachable nodes
   /// outReach - subset of reach that is only reachable from the return node
   template <typename Set1, typename Set2>
-  void argReachableNodes (DSCallSite CS, DSGraph &dsg, 
+  void argReachableNodes (const Function &fn, Graph &G, 
                           Set1 &reach, Set2 &outReach)
   {
-    inputReachableNodes (CS, dsg, reach);
-    retReachableNodes (CS, outReach);
+    reachableNodes (fn, G, reach, outReach);
     set_difference (outReach, reach);
     set_union (reach, outReach);
   }
   
-  
-  
-  bool ShadowMemDsa::isRead (const DSNodeHandle &nh, const Function &f)
+  bool ShadowMemDsa::isRead (const Cell &c, const Function &f)
   {
-    return nh.getNode () ? isRead (nh.getNode (), f) : false;
+    return c.getNode () ? isRead (c.getNode (), f) : false;
   }
-  bool ShadowMemDsa::isModified (const DSNodeHandle &nh, const Function &f)
+  bool ShadowMemDsa::isModified (const Cell &c, const Function &f)
   {
-    return nh.getNode () ? isModified (nh.getNode (), f) : false;
+    return c.getNode () ? isModified (c.getNode (), f) : false;
   } 
-  bool ShadowMemDsa::isRead (const DSNode *n, const Function &f)
+  bool ShadowMemDsa::isRead (const Node *n, const Function &f)
   {
     LOG("shadow_mod",
-          if (LocalReadMod && n->isReadNode () != (m_readList[&f].count (n) > 0))
+          if (LocalReadMod && n->isRead () != (m_readList[&f].count (n) > 0))
           {
             errs () << f.getName ()
-                    << " readNode: " << n->isReadNode ()
+                    << " readNode: " << n->isRead ()
                     << " readList: " << m_readList[&f].count(n) << "\n";
-           if (n->isReadNode ()) n->dump ();
+            if (n->isRead ()) n->write(errs ());
           }
         );
     
-    return LocalReadMod ?  m_readList[&f].count(n) > 0 : n->isReadNode ();
+    return LocalReadMod ?  m_readList[&f].count(n) > 0 : n->isRead ();
   }
-
-  bool ShadowMemDsa::isModified (const DSNode *n, const Function &f)
+  bool ShadowMemDsa::isModified (const Node *n, const Function &f)
   {
     LOG ("shadow_mod",
-         if (LocalReadMod && n->isModifiedNode () != (m_modList[&f].count (n) > 0))
+         if (LocalReadMod && n->isModified () != (m_modList[&f].count (n) > 0))
          {
            errs () << f.getName ()
-                   << " modNode: " << n->isModifiedNode ()
+                   << " modNode: " << n->isModified ()
                    << " modList: " << m_modList[&f].count(n) << "\n";
-           if (n->isModifiedNode ()) n->dump ();
+           if (n->isModified ()) n->write(errs());
          });
-    return LocalReadMod ? m_modList[&f].count (n) > 0 : n->isModifiedNode ();
+    return LocalReadMod ? m_modList[&f].count (n) > 0 : n->isModified ();
   }
   
-  AllocaInst* ShadowMemDsa::allocaForNode (const DSNode *n, const unsigned offset)
+  AllocaInst* ShadowMemDsa::allocaForNode (const Node *n, const unsigned offset)
   {
     auto &offmap = m_shadows[n];
     
@@ -141,7 +184,7 @@ namespace seahorn
     return a;
   }
     
-  unsigned ShadowMemDsa::getId (const DSNode *n, unsigned offset)
+  unsigned ShadowMemDsa::getId (const Node *n, unsigned offset)
   {
     auto it = m_node_ids.find (n);
     if (it != m_node_ids.end ()) return it->second + offset;
@@ -149,7 +192,7 @@ namespace seahorn
     unsigned id = m_max_id;
     m_node_ids[n] = id;
 
-    if (n->getSize() == 0) {
+    if (n->size() == 0) {
       // XXX: nodes can have zero size
       assert (offset == 0);
       m_max_id++;
@@ -157,8 +200,8 @@ namespace seahorn
     }
     
     // -- allocate enough ids for every byte of the object
-    assert (n->getSize() > 0);
-    m_max_id += n->getSize ();
+    assert (n->size() > 0);
+    m_max_id += n->size ();
     return id + offset;
   }
     
@@ -236,9 +279,11 @@ namespace seahorn
   bool ShadowMemDsa::runOnModule (llvm::Module &M)
   {
     if (M.begin () == M.end ()) return false;
-      
-    //m_dsa = &getAnalysis<EQTDDataStructures> ();
-    m_dsa = &getAnalysis<SteensgaardDataStructures> ();
+  
+    if (DsaCsGlobalAnalysis)
+      m_dsa = &getAnalysis<ContextSensitiveGlobal>();
+    else
+      m_dsa = &getAnalysis<ContextInsensitiveGlobal>();
     
     if (LocalReadMod) computeReadMod ();
     
@@ -255,8 +300,8 @@ namespace seahorn
     for (auto it = scc_begin (&cg); !it.isAtEnd(); ++it)
     {
       const std::vector<CallGraphNode*> &scc = *it;
-      DSNodeSet read;
-      DSNodeSet modified;
+      NodeSet read;
+      NodeSet modified;
 
       // compute read/mod, sharing information between scc 
       for (CallGraphNode *cgn : scc)
@@ -277,24 +322,24 @@ namespace seahorn
     }
   }
   
-  void ShadowMemDsa::updateReadMod (Function &F, DSNodeSet &readSet, DSNodeSet &modSet)
+  void ShadowMemDsa::updateReadMod (Function &F, NodeSet &readSet, NodeSet &modSet)
   {
-    if (!m_dsa->hasDSGraph (F)) return;
+    if (!m_dsa->hasGraph (F)) return;
     
-    DSGraph *dsg = m_dsa->getDSGraph (F);
+    Graph &G = m_dsa->getGraph (F);
     for (BasicBlock &bb : F)
     {
       for (Instruction &inst : bb)
       {
         if (LoadInst *li = dyn_cast<LoadInst> (&inst))
         {
-          DSNodeHandle &nh = dsg->getNodeForValue (li->getPointerOperand ());
-          if (!nh.isNull()) readSet.insert (nh.getNode ());
+          const Cell &c = G.getCell (*(li->getPointerOperand ()));
+          if (!c.isNull()) readSet.insert (c.getNode ());
         }
         else if (StoreInst *si = dyn_cast<StoreInst> (&inst))
         {
-          DSNodeHandle &nh = dsg->getNodeForValue (si->getPointerOperand ());
-          if (!nh.isNull ()) modSet.insert (nh.getNode ());
+          const Cell &c = G.getCell (*(si->getPointerOperand ()));
+          if (!c.isNull ()) modSet.insert (c.getNode ());
         }
         else if (CallInst *ci = dyn_cast<CallInst> (&inst))
         {
@@ -303,10 +348,10 @@ namespace seahorn
           if (!cf) continue;
           if (cf->getName ().equals ("calloc"))
           {
-            DSNodeHandle &nh = dsg->getNodeForValue (&inst);
-            if (!nh.isNull ()) modSet.insert (nh.getNode ());
+            const Cell &c = G.getCell (inst);
+            if (!c.isNull ()) modSet.insert (c.getNode ());
           }
-          else if (m_dsa->hasDSGraph (*cf))
+          else if (m_dsa->hasGraph (*cf))
           {            
             readSet.insert (m_readList[cf].begin (), m_readList[cf].end ());
             modSet.insert (m_modList[cf].begin (), m_modList[cf].end ());
@@ -318,10 +363,10 @@ namespace seahorn
     }
   }
   
-  static Value *getUniqueScalar (LLVMContext &ctx, IRBuilder<> &B, const DSNodeHandle &nh)
+  static Value *getUniqueScalar (LLVMContext &ctx, IRBuilder<> &B, const Cell &c)
   {
-    DSNode* n = nh.getNode ();
-    if (n && nh.getOffset () == 0)
+    const Node* n = c.getNode ();
+    if (n && c.getOffset () == 0)
     {
       Value *v = const_cast<Value*>(n->getUniqueScalar ());
     
@@ -336,37 +381,27 @@ namespace seahorn
     return ConstantPointerNull::get (Type::getInt8PtrTy (ctx));
   }
 
-  static Value *getUniqueScalar (LLVMContext &ctx, IRBuilder<> &B, const DSNode *n)
-  {
-    DSNodeHandle nh (const_cast<DSNode*>(n), 0);
-    return getUniqueScalar (ctx, B, nh);
-  }
-  
-  unsigned ShadowMemDsa::getOffset (const DSNodeHandle &nh)
-  {return SplitFields ? nh.getOffset() : 0;}
+  unsigned ShadowMemDsa::getOffset (const Cell &c)
+  {return SplitFields ? c.getOffset() : 0;}
   
   bool ShadowMemDsa::runOnFunction (Function &F)
   {
     if (F.isDeclaration ()) return false;
       
-    DSGraph* dsg = m_dsa->getDSGraph (F);
-    if (!dsg) return false;
-    DSGraph* gDsg = dsg->getGlobalsGraph ();
-    
-    DSScalarMap &SM = dsg->getScalarMap ();
+    if (!m_dsa->hasGraph(F)) return false;
+
+    Graph &G = m_dsa->getGraph (F);
+
     LOG ("shadow",
          errs () << "Looking into globals\n";
-         for (const Value* v : boost::make_iterator_range (SM.global_begin (),
-                                                           SM.global_end ()))
+         for (auto &kv: boost::make_iterator_range (G.globals_begin (),
+                                                    G.globals_end ()))
          {
-           DSNodeHandle lN = SM[v];
-           errs () << "Node for: " << *v << "\n";
-           if (lN.getNode ()) lN.getNode ()->dump ();
+           errs () << "Node for: " << *kv.first << "\n";
+           if (kv.second->getNode ()) errs () << *(kv.second);
            else errs () << "NULL\n";
          }
          errs () << "End of globals\n";);
-    
-    
     
     m_shadows.clear ();
     // -- preserve ids across functions m_node_ids.clear ();
@@ -379,29 +414,27 @@ namespace seahorn
       {
         if (const LoadInst *load = dyn_cast<LoadInst> (&inst))
         {
-          if (!dsg->hasNodeForValue (load->getOperand (0))) continue;
-          DSNodeHandle &nh = dsg->getNodeForValue (load->getOperand (0));
-          DSNode* n = nh.getNode ();
-          if (!n) continue;
+          if (!G.hasCell (*(load->getOperand (0)))) continue;
+          const Cell &c = G.getCell (*(load->getOperand (0)));
+          if (c.isNull ()) continue;
           
           B.SetInsertPoint (&inst);
-          B.CreateCall3 (m_memLoadFn, B.getInt32 (getId (nh)),
-                         B.CreateLoad (allocaForNode (nh)),
-                         getUniqueScalar (ctx, B, nh));
+          B.CreateCall3 (m_memLoadFn, B.getInt32 (getId (c)),
+                         B.CreateLoad (allocaForNode (c)),
+                         getUniqueScalar (ctx, B, c));
         }
         else if (const StoreInst *store = dyn_cast<StoreInst> (&inst))
         {
-          if (!dsg->hasNodeForValue (store->getOperand (1))) continue;
-          DSNodeHandle &nh = dsg->getNodeForValue (store->getOperand (1));
-          DSNode *n = nh.getNode ();
-          if (!n) continue;
+          if (!G.hasCell (*(store->getOperand (1)))) continue;
+          const Cell &c = G.getCell (*(store->getOperand (1)));
+          if (c.isNull ()) continue;
           
           B.SetInsertPoint (&inst);
-          AllocaInst *v = allocaForNode (nh);
+          AllocaInst *v = allocaForNode (c);
           B.CreateStore (B.CreateCall3 (m_memStoreFn, 
-                                        B.getInt32 (getId (nh)),
+                                        B.getInt32 (getId (c)),
                                         B.CreateLoad (v),
-                                        getUniqueScalar (ctx, B, nh)),
+                                        getUniqueScalar (ctx, B, c)),
                          v);           
         }
         else if (CallInst *call = dyn_cast<CallInst> (&inst))
@@ -412,68 +445,69 @@ namespace seahorn
           /// skip intrinsics, except for memory-related ones
           if (isa<IntrinsicInst> (call) && !isa<MemIntrinsic> (call)) continue;
 
-          /// skip sehaorn.* and verifier.* functions
+          /// skip seahorn.* and verifier.* functions
           if (Function *fn = call->getCalledFunction ())
             if ((fn->getName ().startswith ("seahorn.") ||
                  fn->getName ().startswith ("verifier.")) &&
                 /* seahorn.bounce should be treated as a regular function*/
                 !(fn->getName ().startswith ("seahorn.bounce"))) 
               continue;
-          
 
           LOG ("shadow_cs", errs () << "Call: " << *call << "\n";);
-          DSCallSite CS = dsg->getDSCallSiteForCallSite (CallSite (call));
-          if (!CS.isDirectCall ()) continue;
 
-          if (!CS.getCalleeFunc ()) continue;
+          ImmutableCallSite ICS(call);
+          DsaCallSite CS (ICS);
+
+          if (!CS.getCallee()) continue;
           
-          if (CS.getCalleeFunc ()->getName ().equals ("calloc"))
+          if (CS.getCallee ()->getName ().equals ("calloc"))
           {
-            DSNodeHandle &nh = dsg->getNodeForValue (call);
-            DSNode* n = nh.getNode ();
-            if (!n) continue;
+            if (!G.hasCell(*call)) continue;
+            const Cell &c = G.getCell (*call);
+            if (c.isNull ()) continue;
 
             // TODO: handle multiple nodes
-            assert (nh.getOffset () == 0 && "TODO");
+            assert (c.getOffset () == 0 && "TODO");
             B.SetInsertPoint (call);
-            AllocaInst *v = allocaForNode (nh);
+            AllocaInst *v = allocaForNode (c);
             B.CreateStore (B.CreateCall3 (m_memStoreFn,
-                                          B.getInt32 (getId (nh)),
+                                          B.getInt32 (getId (c)),
                                           B.CreateLoad (v),
-                                          getUniqueScalar (ctx, B, nh)),
+                                          getUniqueScalar (ctx, B, c)),
                            v);
           }
+
+          const Function &CF = *CS.getCallee ();
           
-          if (!m_dsa->hasDSGraph (*CS.getCalleeFunc ())) continue;
+          if (!m_dsa->hasGraph (CF)) continue;
           
-          
-          const Function &CF = *CS.getCalleeFunc ();
-          DSGraph *cdsg = m_dsa->getDSGraph (CF);
-          if (!cdsg) continue;
+          Graph &calleeG= m_dsa->getGraph (CF);
           
           // -- compute callee nodes reachable from arguments and returns
-          DSCallSite CCS = cdsg->getCallSiteForArguments (CF);
-          std::set<const DSNode*> reach;
-          std::set<const DSNode*> retReach;
-          argReachableNodes (CCS, *cdsg, reach, retReach);
-          
-          DSGraph::NodeMapTy nodeMap;
-          dsg->computeCalleeCallerMapping (CS, CF, *cdsg, nodeMap);
+          std::set<const Node*> reach;
+          std::set<const Node*> retReach;
+          argReachableNodes (CF, calleeG, reach, retReach);
+
+          // -- compute mapping between callee and caller graphs
+          SimulationMapper simMap;
+          dsa::Graph::computeCalleeCallerMapping (CS, calleeG, G, false, simMap); 
           
           /// generate mod, ref, new function, based on whether the
           /// remote node reads, writes, or creates the corresponding node.
           
           B.SetInsertPoint (&inst);
           unsigned idx = 0;
-          for (const DSNode* n : reach)
+          for (const Node* n : reach)
           {
-            LOG("global_shadow", n->print (errs (), n->getParentGraph ());
-                errs () << "global: " << n->isGlobalNode () << "\n";
-                errs () << "#globals: " << n->numGlobals () << "\n";
-                svset<const GlobalValue*> gv;
-                if (n->numGlobals () == 1) n->addFullGlobalsSet (gv);
-                errs () << "gv-size: " << gv.size () << "\n";
-                if (gv.size () == 1) errs () << "Global: " << *(*gv.begin ()) << "\n";
+            LOG("global_shadow", 
+                errs () << *n << "\n";
+                // n->print (errs (), n->getParentGraph ());
+                // errs () << "global: " << n->isGlobalNode () << "\n";
+                // errs () << "#globals: " << n->numGlobals () << "\n";
+                // svset<const GlobalValue*> gv;
+                // if (n->numGlobals () == 1) n->addFullGlobalsSet (gv);
+                // errs () << "gv-size: " << gv.size () << "\n";
+                // if (gv.size () == 1) errs () << "Global: " << *(*gv.begin ()) << "\n";
                 const Value *v = n->getUniqueScalar ();
                 if (v) 
                   errs () << "value: " << *n->getUniqueScalar () << "\n";
@@ -484,39 +518,26 @@ namespace seahorn
             
             // skip nodes that are not read/written by the callee
             if (!isRead (n, CF) && !isModified (n, CF)) continue;
-            // if (!n->isReadNode () && !n->isModifiedNode ()) continue;
-
-            /// XXX: it seems that for some nodes in the caller graph
-            /// we may be unable to find its corresponding node in the
-            /// callee graph.
-            ///
-            /// Since the current DSA implementation enforces that the
-            /// caller and callee graphs are actually the same we can
-            /// return n. Note that this is a hook and needs to be
-            /// properly fixed.
-            const DSNode* m = n;
-            auto nodeMapIt = nodeMap.find (n);
-            if (nodeMapIt != nodeMap.end ())
-              m = nodeMapIt->second.getNode ();
-             
-            // TODO: This must be done for every possible offset of m,
+            // TODO: This must be done for every possible offset of the caller node,
             // TODO: not just for offset 0
-            DSNodeHandle mh (const_cast<DSNode*>(m), 0);
-            AllocaInst *v = allocaForNode (mh);
-            unsigned id = getId (mh);
-            
+
+            assert (n);
+            Cell callerC = simMap.get(Cell(const_cast<Node*> (n), 0));
+            assert (!callerC.isNull () && "Not found node in the simulation map");
+
+            AllocaInst *v = allocaForNode (callerC);
+            unsigned id = getId (callerC);
+          
             // -- read only node ignore nodes that are only reachable
             // -- from the return of the function
             if (isRead (n, CF) && !isModified (n, CF) && retReach.count(n) <= 0)
-            // if (n->isReadNode () && !n->isModifiedNode () && retReach.count(n) <= 0)
             {
               B.CreateCall4 (m_argRefFn, B.getInt32 (id),
                              B.CreateLoad (v),
-                             B.getInt32 (idx), getUniqueScalar (ctx, B, mh));
+                             B.getInt32 (idx), getUniqueScalar (ctx, B, callerC));
             }
             // -- read/write or new node
             else if (isModified (n, CF))
-            // else if (n->isModifiedNode ())
             {
               // -- n is new node iff it is reachable only from the return node
               Constant* argFn = retReach.count (n) ? m_argNewFn : m_argModFn;
@@ -524,7 +545,7 @@ namespace seahorn
                                             B.getInt32 (id),
                                             B.CreateLoad (v),
                                             B.getInt32 (idx),
-                                            getUniqueScalar (ctx, B, mh)), v);
+                                            getUniqueScalar (ctx, B, callerC)), v);
             }
             idx++;
           }
@@ -532,18 +553,15 @@ namespace seahorn
         
       }
       
-    DSCallSite CS = dsg->getCallSiteForArguments (F);
-    
-    // compute DSNodes that escape because they are either reachable
+    // compute Nodes that escape because they are either reachable
     // from the input arguments or from returns
-    std::set<const DSNode*> reach;
-    std::set<const DSNode*> retReach;
-    argReachableNodes (CS, *dsg, reach, retReach);
+    std::set<const Node*> reach;
+    std::set<const Node*> retReach;
+    argReachableNodes (F, G, reach, retReach);
     
     // -- create shadows for all nodes that are modified by this
     // -- function and escape to a parent function
-    for (const DSNode *n : reach)
-      // if (n->isModifiedNode () || n->isReadNode ())
+    for (const Node *n : reach)
       if (isModified (n, F) || isRead (n, F))
       {
         // TODO: allocate for all slices of n, not just offset 0
@@ -551,21 +569,22 @@ namespace seahorn
       }
     
     // allocate initial value for all used shadows
-    DenseMap<const DSNode*, DenseMap<unsigned, Value*> > inits;
+    DenseMap<const Node*, DenseMap<unsigned, Value*> > inits;
     B.SetInsertPoint (&*F.getEntryBlock ().begin ());
     for (auto it : m_shadows)
     {
-      const DSNode *n = it.first;
+      const Node *n = it.first;
+
       Constant *fn = reach.count (n) <= 0 ? m_memShadowInitFn : m_memShadowArgInitFn;
       
       for (auto jt : it.second)
       {
-        DSNodeHandle nh (const_cast<DSNode*>(n), jt.first);
+        Cell c (const_cast<Node*> (n), jt.first);
         AllocaInst *a = jt.second;
         B.Insert (a, "shadow.mem");
         CallInst *ci;
-        ci = B.CreateCall2 (fn, B.getInt32 (getId (nh)), getUniqueScalar (ctx, B, nh));
-        inits[nh.getNode()][getOffset(nh)] = ci;
+        ci = B.CreateCall2 (fn, B.getInt32 (getId (c)), getUniqueScalar (ctx, B, c));
+        inits[c.getNode()][getOffset(c)] = ci;
         B.CreateStore (ci, a);
       }
     }
@@ -594,36 +613,34 @@ namespace seahorn
     
     B.SetInsertPoint (ret);
     unsigned idx = 0;
-    for (const DSNode* n : reach)
+    for (const Node* n : reach)
     {
       // TODO: extend to work with all slices
-      DSNodeHandle nh (const_cast<DSNode*>(n), 0);
-      
+      Cell c (const_cast<Node*> (n), 0);
+
       // n is read and is not only return-node reachable (for
       // return-only reachable nodes, there is no initial value
       // because they are created within this function)
       if ((isRead (n, F) || isModified (n, F)) && retReach.count (n) <= 0)
-      // if ((n->isReadNode () || n->isModifiedNode ()) && retReach.count (n) <= 0)
       {
         assert (!inits[n].empty());
         /// initial value
         B.CreateCall4 (m_markIn,
-                       B.getInt32 (getId (nh)),
+                       B.getInt32 (getId (c)),
                        inits[n][0], 
                        B.getInt32 (idx),
-                       getUniqueScalar (ctx, B, nh));
+                       getUniqueScalar (ctx, B, c));
       }
       
-      // if (n->isModifiedNode ())
       if (isModified (n, F))
       {
         assert (!inits[n].empty());
         /// final value
         B.CreateCall4 (m_markOut, 
-                       B.getInt32 (getId (nh)),
-                       B.CreateLoad (allocaForNode (nh)),
+                       B.getInt32 (getId (c)),
+                       B.CreateLoad (allocaForNode (c)),
                        B.getInt32 (idx),
-                       getUniqueScalar (ctx, B, nh));
+                       getUniqueScalar (ctx, B, c));
       }
       ++idx;
     }
@@ -634,8 +651,9 @@ namespace seahorn
   void ShadowMemDsa::getAnalysisUsage (llvm::AnalysisUsage &AU) const
   {
     AU.setPreservesAll ();
-    // AU.addRequiredTransitive<llvm::EQTDDataStructures>();
-    AU.addRequiredTransitive<llvm::SteensgaardDataStructures> ();
+    // XXX: both analysis will be run even if only one will be used
+    AU.addRequiredTransitive<ContextInsensitiveGlobal> ();    
+    AU.addRequiredTransitive<ContextSensitiveGlobal> ();
     AU.addRequired<llvm::CallGraphWrapperPass>();
     AU.addRequired<llvm::DataLayoutPass>();
     AU.addRequired<llvm::UnifyFunctionExitNodes> ();
@@ -696,8 +714,6 @@ namespace seahorn
     
   };    
 }
-
-#endif
 
 namespace seahorn
 {

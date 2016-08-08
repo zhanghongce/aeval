@@ -17,19 +17,12 @@
 #include "seahorn/Analysis/DSA/CallSite.hh"
 
 #include "boost/range/algorithm/set_algorithm.hpp"
+#include "boost/range/iterator_range.hpp"
 
 #include "avy/AvyDebug.h"
 
 using namespace seahorn;
 using namespace llvm;
-
-static const llvm::ReturnInst* getReturnInst (const llvm::Function &F)
-{
-  for (const llvm::BasicBlock& bb : F)
-    if (const ReturnInst* RI = dyn_cast<ReturnInst> (bb.getTerminator ()))
-      return RI;
-  return NULL;
-}
 
 dsa::Node::Node (Graph &g, const Node &n, bool copyLinks) :
   m_graph (&g), m_unique_scalar (n.m_unique_scalar), m_size (n.m_size)
@@ -58,9 +51,13 @@ dsa::Node::Node (Graph &g, const Node &n, bool copyLinks) :
 /// array size; otherwise offset is not adjusted
 dsa::Node::Offset::operator unsigned() const 
 {
-  assert (!m_node.isForwarding ());
-  if (m_node.isCollapsed ()) return 0;
-  if (m_node.isArray ()) return m_offset % m_node.size ();
+  // XXX: m_node can be forward to another node since the constructor
+  // of Offset was called so we grab here the non-forwarding node
+  Node *n = const_cast<Node*> (m_node.getNode ());
+
+  assert (!n->isForwarding ());
+  if (n->isCollapsed ()) return 0;
+  if (n->isArray ()) return m_offset % n->size ();
   return m_offset;
 }
 
@@ -172,6 +169,11 @@ void dsa::Node::collapse (int tag)
 {
   if (isCollapsed ()) return;
         
+  LOG ("unique_scalar",
+       if (m_unique_scalar)
+         errs () << "KILL due to collapse: "
+                 << *m_unique_scalar <<"\n";);
+  m_unique_scalar = nullptr;
   assert (!isForwarding ());
   // if the node is already of smallest size, just mark it
   // collapsed to indicate that it cannot grow or change
@@ -204,6 +206,20 @@ void dsa::Node::pointTo (Node &node, const Offset &offset)
   assert (&node != this);
   assert (!isForwarding ());
       
+  // -- reset unique scalar at the destination
+  if (offset != 0) node.setUniqueScalar (nullptr);
+  if (m_unique_scalar != node.getUniqueScalar ())
+  {
+    LOG ("unique_scalar",
+         if (m_unique_scalar && node.getUniqueScalar ())
+           errs () << "KILL due to point-to "
+                   << *m_unique_scalar
+                   << " and "
+                   << *node.getUniqueScalar () << "\n";);
+
+    node.setUniqueScalar (nullptr);
+  }
+  
   unsigned sz = size ();
       
   // -- create forwarding link
@@ -224,7 +240,7 @@ void dsa::Node::pointTo (Node &node, const Offset &offset)
     node.joinTypes (noffset, *this);
       
   }
-      
+
   // -- merge node annotations
   node.getNode ()->m_nodeType.join (m_nodeType);
 
@@ -419,8 +435,17 @@ void dsa::Node::write(raw_ostream&o) const {
     o << "Node " << this << ": ";
     o << "flags=[" << m_nodeType.toStr() << "] ";
     writeTypes(o);
-
-    // TODO: print links
+    o << " links=[";
+    bool first=true;
+    for (auto &kv : m_links)
+    {
+      if (!first) 
+        o << ",";
+      else 
+        first = false;
+      o << kv.first << ":" << kv.second->getNode();
+    }
+    o << "]";
   }
 }
 
@@ -598,14 +623,32 @@ void dsa::Graph::compress ()
                  m_nodes.end ());
 }
 
-dsa::Cell &dsa::Graph::mkCell (const llvm::Value &v, const Cell &c)
+dsa::Cell &dsa::Graph::mkCell (const llvm::Value &u, const Cell &c)
 {
+  auto &v = *u.stripPointerCasts ();
   // Pretend that global values are always present
   if (isa<GlobalValue> (&v) && c.isNull ())
     return mkCell (v, Cell (mkNode (), 0));
   
   auto &res = isa<Argument> (v) ? m_formals[cast<const Argument>(&v)] : m_values [&v];
-  if (!res) res.reset (new Cell (c));
+  if (!res)
+  {
+    res.reset (new Cell (c));
+    if (res->getOffset () == 0 && res->getNode ())
+    {
+      if (!(res->getNode ()->hasUniqueScalar ()))
+        res->getNode ()->setUniqueScalar (&v);
+      else
+      {
+        LOG ("unique_scalar",
+             errs () << "KILL due to mkCell: ";
+             if (res->getNode ()->getUniqueScalar ())
+               errs () << "OLD: " << *res->getNode ()->getUniqueScalar () ;
+             errs () << " NEW: " << v <<"\n";);
+        res->getNode ()->setUniqueScalar (nullptr);
+      }
+    }
+  }
   return *res;
 }
 
@@ -616,6 +659,13 @@ dsa::Cell &dsa::Graph::mkRetCell (const llvm::Function &fn, const Cell &c)
   return *res;
 }
 
+dsa::Cell &dsa::Graph::getRetCell (const llvm::Function &fn) 
+{
+  auto it = m_returns.find (&fn);
+  assert (it != m_returns.end ());
+  return *(it->second);
+}
+
 const dsa::Cell &dsa::Graph::getRetCell (const llvm::Function &fn) const
 {
   auto it = m_returns.find (&fn);
@@ -623,8 +673,9 @@ const dsa::Cell &dsa::Graph::getRetCell (const llvm::Function &fn) const
   return *(it->second);
 }
 
-const dsa::Cell &dsa::Graph::getCell (const llvm::Value &v) 
+const dsa::Cell &dsa::Graph::getCell (const llvm::Value &u) 
 {
+  const llvm::Value &v = *(u.stripPointerCasts ());
   // -- try m_formals first
   if (const llvm::Argument *arg = dyn_cast<const Argument> (&v))
   {
@@ -642,8 +693,9 @@ const dsa::Cell &dsa::Graph::getCell (const llvm::Value &v)
   }
 }
 
-bool dsa::Graph::hasCell (const llvm::Value &v) const
+bool dsa::Graph::hasCell (const llvm::Value &u) const
 {
+  auto &v = *u.stripPointerCasts ();
   return
     // -- globals are always implicitly present
     isa<GlobalValue> (&v) || 
@@ -664,41 +716,83 @@ void dsa::Node::dump() const {
   write(errs());
 }
 
-void dsa::Graph::computeCalleeCallerRenaming (const DsaCallSite &cs, 
-                                              Graph& calleeGraph,
-                                              FunctionalMapper& remap) 
+bool dsa::Graph::computeCalleeCallerMapping (const DsaCallSite &cs, 
+                                             Graph& calleeG, Graph &callerG, 
+                                             const bool onlyModified,
+                                             SimulationMapper& simMap) 
 {
-  const Function* callee = cs.getCallee();
-  if (!callee) { 
-    // XXX: no handle indirect calls
-    return;
+  for (auto &kv : boost::make_iterator_range (calleeG.globals_begin (),
+                                              calleeG.globals_end ()))
+  {
+    Cell &c = *kv.second;
+    if (!onlyModified || c.isModified ())
+    {
+      Cell &nc = callerG.mkCell (*kv.first, Cell ());
+      if (!simMap.insert (c, nc)) 
+      {
+        LOG ("dsa-sim-map",
+             errs () << "Cannot compute callee-caller mapping for " 
+                     << *cs.getInstruction() << "\n"
+                     << "Global: " << *kv.first << "\n"
+                     << "Callee cell=" << c << "\n"
+                     << "Caller cell=" << nc << "\n";
+             );
+
+        return false; 
+      }
+    }
   }
+  
+  const Function &callee = *cs.getCallee ();
+  if (calleeG.hasRetCell (callee) && callerG.hasCell (*cs.getInstruction ()))
+  {
+    const Cell &c = calleeG.getRetCell (callee);
+    if (!onlyModified || c.isModified()) 
+    {
+      Cell &nc = callerG.mkCell (*cs.getInstruction (), Cell());
+      if (!simMap.insert (c, nc)) 
+      {
+        LOG ("dsa-sim-map",
+             errs () << "Cannot compute callee-caller mapping for " 
+                     << *cs.getInstruction() << "\n"
+                     << "Return value of " << callee.getName () << "\n"
+                     << "Callee cell=" << c << "\n"
+                     << "Caller cell=" << nc << "\n";
+             );
 
-  if (callee->isVarArg()) {
-    // TODO: functions with variable number of arguments
-    LOG ("dsa", errs () << "WARNING: ignored callsite with varargs");
-    return;
+        return false; 
+      }
+    }
   }
-
-  // --- build a map from callee to caller
-
-  const Instruction *retVal = getReturnInst(*callee);
-  if (retVal && retVal->getType()->isPointerTy())
-    remap.insert(calleeGraph.getCell(*retVal), getCell(*(cs.getRetVal())));
   
   DsaCallSite::const_actual_iterator AI = cs.actual_begin(), AE = cs.actual_end();
   for (DsaCallSite::const_formal_iterator FI = cs.formal_begin(), FE = cs.formal_end();
        FI != FE && AI != AE; ++FI, ++AI) 
   {
+    const Value *fml = &*FI;
     const Value *arg = (*AI).get();
-    const Value *farg = &*FI;
-    if (calleeGraph.hasCell(*farg) && hasCell(*arg)) {
-      Cell &callee_cell = calleeGraph.mkCell(*farg, Cell());      
-      Cell &caller_cell = mkCell(*arg, Cell());
-      remap.insert(callee_cell, caller_cell);
-    }
-  }
+    if (calleeG.hasCell (*fml) &&  callerG.hasCell (*arg)) {
+      Cell &c = calleeG.mkCell (*fml, Cell ());
+      if (!onlyModified || c.isModified ()) 
+      {
+        Cell &nc = callerG.mkCell (*arg, Cell ());
+        if (!simMap.insert(c, nc)) 
+        {
+          LOG ("dsa-sim-map",
+               errs () << "Cannot compute callee-caller mapping for " 
+                       << *cs.getInstruction() << "\n"
+                       << "Formal param " << *fml << "\n"
+                       << "Actual param " << *arg << "\n"
+                       << "Callee cell=" << c << "\n"
+                       << "Caller cell=" << nc << "\n";
+               );
 
+          return false; 
+        }
+      }
+    }
+  }      
+  return true;
 }
 
 void dsa::Graph::import (const Graph &g, bool withFormals)

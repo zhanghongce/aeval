@@ -28,6 +28,7 @@ namespace seahorn
   {
     class Node;
     class Cell;
+    class SimulationMapper;
     typedef std::unique_ptr<Cell> CellRef;
     
     class FunctionalMapper;
@@ -119,11 +120,18 @@ namespace seahorn
       bool hasRetCell (const llvm::Function &fn) const
       { return m_returns.count (&fn) > 0; }
 
+      Cell &getRetCell (const llvm::Function &fn); 
+
       const Cell &getRetCell (const llvm::Function &fn) const; 
 
-      void computeCalleeCallerRenaming (const DsaCallSite &cs, 
-                                        Graph& calleeGraph,
-                                        FunctionalMapper& remap);
+      /// compute a map from callee nodes to caller nodes
+      // 
+      /// XXX: we might want to make the last argument a template
+      /// parameter but then the definition should be in a header file.
+      static bool computeCalleeCallerMapping (const DsaCallSite &cs, 
+                                              Graph& calleeG, Graph& callerG,
+                                              const bool onlyModified,
+                                              SimulationMapper& simMap);
       
       /// import the given graph into the current one
       /// copies all nodes from g and unifies all common scalars
@@ -209,6 +217,7 @@ namespace seahorn
       friend class Cell;
 
       friend class FunctionalMapper;
+      friend class SimulationMapper;
       struct NodeType
       {
         unsigned shadow:1;
@@ -249,12 +258,16 @@ namespace seahorn
           ptrtoint |= n.ptrtoint;
           vastart |= n.vastart;
           dead |= n.dead;
+
+          // XXX: cannot be collapsed and array at the same time
+          if (collapsed && array) array = 0;
         }
         void reset () { memset (this, 0, sizeof (*this)); }
 
         std::string toStr() const 
         {
           std::string flags("");
+          if (collapsed) flags += "C";
           if (alloca) flags += "S";
           if (heap) flags += "H";
           if (global) flags += "G";
@@ -275,6 +288,8 @@ namespace seahorn
         
       };
 
+     protected:
+
       class Offset;
       friend class Offset;
       /// helper class to ensure that offsets are properly adjusted
@@ -287,13 +302,15 @@ namespace seahorn
         operator unsigned() const; 
         const Node &node () const { return m_node; }
       };
+
+     private:
       
       /// parent DSA graph
       Graph *m_graph;
       /// node marks
       struct NodeType m_nodeType;
-      /// TODO: UNUSED
       mutable const llvm::Value *m_unique_scalar;
+      bool m_has_unique_scalar;
       /// When the node is forwarding, the memory cell at which the
       /// node begins in some other memory object
       Cell m_forward;
@@ -313,7 +330,8 @@ namespace seahorn
       typedef boost::container::flat_set<const llvm::Value*> AllocaSet;
       AllocaSet m_alloca_sites;
 
-      Node (Graph &g) : m_graph (&g), m_unique_scalar (nullptr), m_size (0) {}
+      Node (Graph &g) : m_graph (&g), m_unique_scalar (nullptr), 
+                        m_has_unique_scalar (false), m_size (0) {}
 
       Node (Graph &g, const Node &n, bool copyLinks = false);
       
@@ -402,7 +420,11 @@ namespace seahorn
       bool isCollapsed () const { return m_nodeType.collapsed; }
       
       bool isUnique () const { return m_unique_scalar; }
-      
+      const llvm::Value *getUniqueScalar () const { return m_unique_scalar; }
+      void setUniqueScalar (const llvm::Value *v) 
+      {m_unique_scalar = v; m_has_unique_scalar=true;}
+      bool hasUniqueScalar () const { return m_has_unique_scalar;}
+
       inline bool isForwarding () const;
       
       
@@ -499,6 +521,14 @@ namespace seahorn
     { return isForwarding () ? m_forward.getNode () : this;}
   }  
 
+}
+
+namespace llvm
+{
+    inline raw_ostream& operator<<(raw_ostream& o, const seahorn::dsa::Node &n) 
+    { n.write(o); return o; }
+    inline raw_ostream& operator<<(raw_ostream& o, const seahorn::dsa::Cell &c)
+    { c.write(o); return o; }
 }
 
 namespace std

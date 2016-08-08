@@ -9,12 +9,12 @@
 
 #include <queue>
 
-#ifdef HAVE_DSA
-#include "dsa/DataStructure.h"
-#include "dsa/DSGraph.h"
-#include "dsa/DSNode.h"
+#include "seahorn/Analysis/DSA/Graph.hh"
+#include "seahorn/Analysis/DSA/Global.hh"
 
 #include "boost/container/flat_set.hpp"
+
+using namespace seahorn::dsa;
 
 namespace seahorn
 {
@@ -41,37 +41,36 @@ namespace seahorn
     Constant *m_markUniqIn;
     Constant *m_markUniqOut;
     
-    DataStructures *m_dsa;
+    DsaGlobalPass *m_dsa;
     
-    DenseMap<const DSNode*, DenseMap<unsigned, AllocaInst*> > m_shadows;
-    DenseMap<const DSNode*, unsigned> m_node_ids;
+    DenseMap<const Node*, DenseMap<unsigned, AllocaInst*> > m_shadows;
+    DenseMap<const Node*, unsigned> m_node_ids;
     unsigned m_max_id;
     Type *m_Int32Ty;
     
-    // typedef DenseSet<const DSNode*> DSNodeSet;
-    typedef boost::container::flat_set<const DSNode*> DSNodeSet;
-    DenseMap<const Function *, DSNodeSet> m_readList;
-    DenseMap<const Function *, DSNodeSet > m_modList;
+    typedef boost::container::flat_set<const Node*> NodeSet;
+    DenseMap<const Function *, NodeSet> m_readList;
+    DenseMap<const Function *, NodeSet > m_modList;
     
     
     void declareFunctions (llvm::Module &M);
-    AllocaInst* allocaForNode (const DSNode *n, unsigned offset);
-    unsigned getId (const DSNode *n, unsigned offset);
-    unsigned getOffset (const DSNodeHandle &nh);
+    AllocaInst* allocaForNode (const Node *n, unsigned offset);
+    unsigned getId (const Node *n, unsigned offset);
+    unsigned getOffset (const Cell &c);
     
-    unsigned getId (const DSNodeHandle &nh)
-    { return getId (nh.getNode(), getOffset (nh)); }
-    AllocaInst* allocaForNode (const DSNodeHandle &nh)
-    { return allocaForNode (nh.getNode (), getOffset (nh)); }
+    unsigned getId (const Cell &c)
+    { return getId (c.getNode(), getOffset (c)); }
+    AllocaInst* allocaForNode (const Cell &c)
+    { return allocaForNode (c.getNode (), getOffset (c)); }
     
     /// compute read/modified information per function
     void computeReadMod ();
-    void updateReadMod (Function &F, DSNodeSet &readSet, DSNodeSet &modSet);
+    void updateReadMod (Function &F, NodeSet &readSet, NodeSet &modSet);
     
-    bool isRead (const DSNodeHandle &nh, const Function &f);
-    bool isRead (const DSNode* n, const Function &f);
-    bool isModified (const DSNodeHandle &nh, const Function &f);
-    bool isModified (const DSNode *n, const Function &f);
+    bool isRead (const Cell &c, const Function &f);
+    bool isRead (const Node* n, const Function &f);
+    bool isModified (const Cell &c, const Function &f);
+    bool isModified (const Node *n, const Function &f);
     
   public:
     static char ID;
@@ -84,47 +83,9 @@ namespace seahorn
     
     virtual void getAnalysisUsage (llvm::AnalysisUsage &AU) const;
     virtual const char* getPassName () const {return "ShadowMemDsa";}
-  };
-  
+  }; 
 }
-#else
-#include "llvm/Support/raw_os_ostream.h"
 
-namespace seahorn
-{
-  using namespace llvm;
-
-  class ShadowMemDsa : public llvm::ModulePass
-  {
-  public:
-    static char ID;
-    ShadowMemDsa () : llvm::ModulePass (ID) {}
-    virtual bool runOnModule (llvm::Module &M)
-    {
-      errs () << "WARNING: Ignoring memory. Compiled without DSA library.\n";
-      return false;
-    }
-    virtual void getAnalysisUsage (llvm::AnalysisUsage &AU) const
-    {AU.setPreservesAll ();}
-    virtual const char* getPassName () const {return "Stub-ShadowMemDsa";}
-  };
-  
-  class StripShadowMem: public llvm::ModulePass
-  {
-  public:
-    static char ID;
-    StripShadowMem () : llvm::ModulePass (ID) {}
-    virtual bool runOnModule (llvm::Module &M)
-    {
-      errs () << "WARNING: Ignoring memory. Compiled without DSA library.\n";
-      return false;
-    }
-    virtual void getAnalysisUsage (llvm::AnalysisUsage &AU) const
-    {AU.setPreservesAll ();}
-    virtual const char* getPassName () const {return "Stub-StripShadowMem";}
-  };
-}
-#endif
 namespace seahorn
 {
   namespace shadow_dsa
