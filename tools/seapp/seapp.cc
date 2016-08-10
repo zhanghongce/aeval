@@ -409,7 +409,7 @@ int main(int argc, char **argv) {
           break;
         case 2: 
           if (EnableNewDsaInfo) // XXX: temporary to measure effectiveness of new dsa 
-            pass_manager.add (new seahorn::dsa::Info ());
+            pass_manager.add (new seahorn::dsa::InfoPass ());
           pass_manager.add (new seahorn::ABC2 ());
           break;
         default:
