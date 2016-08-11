@@ -125,6 +125,12 @@ class Clang(sea.LimitedCmd):
     def stdout (self):
         return self.clangCmd.stdout
 
+def _is_dsa_opt (x):
+    if x.startswith ('-'):
+        y = x.strip ('-')
+        return y.startswith ('horn-dsa')
+    return False
+
 class Seapp(sea.LimitedCmd):
     def __init__(self, quiet=False):
         super(Seapp, self).__init__('pp', 'Pre-processing', allow_extra=True)
@@ -200,10 +206,10 @@ class Seapp(sea.LimitedCmd):
                          help='Do not instrument a pointer if it is not of these user-defined types',
                          dest='abc_except_types', type=str,metavar='str,...')
         ap.add_argument ('--dsa-info', dest='dsa_info',
-                         help='Print information about DSA nodes and allocation sites',
+                         help='Pre-compute some Dsa queries about nodes and allocation sites',
                          default=False, action='store_true')
         ap.add_argument ('--dsa-info-to-file', dest='dsa_info_to_file',
-                         help='Write all allocation sites to files',
+                         help='Dump some Dsa info to a file',
                          metavar='DIR', default=None)
         ap.add_argument ('--overflow-check', dest='ioc', help='Insert signed integer overflow checks (OBSOLETE)',
                          default=False, action='store_true')
@@ -235,13 +241,6 @@ class Seapp(sea.LimitedCmd):
         ap.add_argument ('--slice-functions', 
                          help='Slice program onto these functions',
                          dest='slice_funcs', type=str, metavar='str,...')
-        ### XXX: temporary
-        ap.add_argument ('--new-dsa-info', dest='new_dsa_info',
-                         help='Shows some stats about new dsa pass',
-                         default=False, action='store_true')
-        ap.add_argument ('--new-dsa-info-details', dest='new_dsa_info_details',
-                         help='Shows more details',
-                         default=False, action='store_true')
         add_in_out_args (ap)
         _add_S_arg (ap)
         return ap
@@ -252,6 +251,8 @@ class Seapp(sea.LimitedCmd):
         self.seappCmd = sea.ExtCmd (cmd_name)
 
         argv = list()
+        # TODO:extract from extra the option '--horn-dsa-cs-global=false'
+
         if args.out_file is not None: argv.extend (['-o', args.out_file])
         if args.inline: argv.append ('--horn-inline-all')
         if args.inline_only:
@@ -286,9 +287,21 @@ class Seapp(sea.LimitedCmd):
 
         if args.abc:
             argv.append ('--abc={id}'.format(id=args.abc))
-            if args.dsa_info: argv.append ('--dsa-info')
+
+            # pick out extra seahorn options
+            dsa_opts = filter (_is_dsa_opt, extra)
+
+            if args.dsa_info: 
+                # avoid duplicates in argv
+                if '--horn-dsa-info' not in dsa_opts: 
+                    argv.append ('--horn-dsa-info')
+
             if args.dsa_info_to_file is not None: 
-                argv.append ('--dsa-info-to-file={n}'.format(n=args.dsa_info_to_file))
+                argv.append ('--horn-dsa-info-to-file={n}'.format(n=args.dsa_info_to_file))
+
+            # add dsa options     
+            argv.extend (dsa_opts)
+
             argv.append ('--abc-dsa-node={n}'.format (n=args.abc_dsa))
             argv.append ('--abc-alloc-site={n}'.format (n=args.abc_site))
             if args.abc_only_types: 
@@ -326,11 +339,6 @@ class Seapp(sea.LimitedCmd):
             argv.append('--kill-vaarg=true')
         else:
             argv.append('--kill-vaarg=false')
-
-        if args.new_dsa_info:
-            argv.append('--new-dsa-info')
-        if args.new_dsa_info_details:
-            argv.append('--new-dsa-info-details')
 
         if args.llvm_asm: argv.append ('-S')
         argv.extend (args.in_files)

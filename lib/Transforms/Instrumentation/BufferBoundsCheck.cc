@@ -452,15 +452,21 @@ namespace seahorn {
     // }
 
     // Whether a pointer should be tracked based on Dsa (if available)
-    bool ShouldBeTrackedPtr (Value* ptr, Function& F, dsa::InfoAnalysis* dsa) 
+    bool ShouldBeTrackedPtr (Value* ptr, Function& F, dsa::InfoAnalysis* dsa_info) 
     {
+
+      if (!dsa_info) 
+      {
+        errs () << "Warning Dsa: dsa information not found\n";
+        return true; 
+      }
 
       ptr = ptr->stripPointerCasts ();
 
       if (!ptr->getType()->isPointerTy ())
         return false;
 
-      dsa::Graph* g = dsa->getDsaGraph (F);
+      dsa::Graph* g = dsa_info->getDsaGraph (F);
       if (!g) 
       {
         errs () << "Warning Dsa: graph not found\n";
@@ -475,16 +481,16 @@ namespace seahorn {
       
       const dsa::Cell &c = g->getCell(*ptr);
 
-      if (!dsa->isAccessed (*c.getNode()))
+      if (!dsa_info->isAccessed (*c.getNode()))
         return false;
       else 
       {
         if (TrackedDSNode > 0) 
-          return (dsa->getDsaNodeId (*c.getNode ()) == TrackedDSNode);      
+          return (dsa_info->getDsaNodeId (*c.getNode ()) == TrackedDSNode);      
         
         if (TrackedAllocSite > 0) 
         {
-          const Value* v = dsa->getAllocValue (TrackedAllocSite);
+          const Value* v = dsa_info->getAllocValue (TrackedAllocSite);
           if (!v) 
           {
             errs () << "Warning Dsa: not value found for allocation site\n";
@@ -1136,8 +1142,11 @@ namespace seahorn
   {
     if (M.begin () == M.end ()) return false;
       
-    // Gather some statistics about Dsa nodes
-    dsa::InfoAnalysis * m_dsa = &getAnalysis<dsa::InfoPass>().getInfoAnalysis();    
+    // Gather some information about Dsa nodes
+    auto &dsa = getAnalysis<dsa::DsaAnalysis>();
+    dsa::InfoAnalysis * dsa_info = nullptr;
+    if (dsa.hasDsaInfo ())
+      dsa_info = &dsa.getDsaInfo ();    
 
     LLVMContext &ctx = M.getContext ();
     m_dl = &getAnalysis<DataLayoutPass>().getDataLayout ();
@@ -1193,7 +1202,7 @@ namespace seahorn
           Value* ptr = LI->getPointerOperand ();
           if (ptr == m_ret_offset || ptr == m_ret_size) continue;
             
-          if (abc::ShouldBeTrackedPtr (ptr, F, m_dsa))
+          if (abc::ShouldBeTrackedPtr (ptr, F, dsa_info))
             WorkList.push_back (I);
           else
             untracked_dsa_checks++; 
@@ -1202,20 +1211,20 @@ namespace seahorn
           Value* ptr = SI->getPointerOperand ();
           if (ptr == m_ret_offset || ptr == m_ret_size) continue;
 
-          if (abc::ShouldBeTrackedPtr (ptr, F, m_dsa))
+          if (abc::ShouldBeTrackedPtr (ptr, F, dsa_info))
             WorkList.push_back (I);
           else
             untracked_dsa_checks++; 
           
         } else if (MemTransferInst *MTI = dyn_cast<MemTransferInst>(I)) {
-          if (abc::ShouldBeTrackedPtr (MTI->getDest (), F, m_dsa) || 
-              abc::ShouldBeTrackedPtr (MTI->getSource (), F, m_dsa))
+          if (abc::ShouldBeTrackedPtr (MTI->getDest (), F, dsa_info) || 
+              abc::ShouldBeTrackedPtr (MTI->getSource (), F, dsa_info))
             WorkList.push_back (I);
           else
             untracked_dsa_checks+=2;
         } else if (MemSetInst *MSI = dyn_cast<MemSetInst>(I)) {
           Value* ptr = MSI->getDest ();
-          if (abc::ShouldBeTrackedPtr (ptr, F, m_dsa))
+          if (abc::ShouldBeTrackedPtr (ptr, F, dsa_info))
             WorkList.push_back (I);            
           else
             untracked_dsa_checks++; 
@@ -1349,7 +1358,7 @@ namespace seahorn
   void ABC1::getAnalysisUsage (llvm::AnalysisUsage &AU) const
   {
     AU.setPreservesAll ();
-    AU.addRequired<dsa::InfoPass>();
+    AU.addRequired<dsa::DsaAnalysis>();
     AU.addRequired<llvm::DataLayoutPass>();
     AU.addRequired<llvm::TargetLibraryInfo>();
     AU.addRequired<llvm::UnifyFunctionExitNodes> ();
@@ -1520,7 +1529,7 @@ namespace seahorn {
         if (!Ty->isSized()) continue;
         if (!GV.hasInitializer()) continue;
         if (globalGeneratedBySeaHorn (&GV)) continue;
-        if (!abc::ShouldBeTrackedPtr (&GV, *main, m_dsa)) continue;
+        if (!abc::ShouldBeTrackedPtr (&GV, *main, m_dsa_info)) continue;
         if (GV.hasSection()) {
           StringRef Section(GV.getSection());
           // Globals from llvm.metadata aren't emitted, do not instrument them.
@@ -1554,7 +1563,7 @@ namespace seahorn {
       */
       
       if (TrackedAllocSite > 0) {
-        if (m_dsa->getAllocSiteId (Ptr) == TrackedAllocSite) {
+        if (m_dsa_info->getAllocSiteId (Ptr) == TrackedAllocSite) {
           goto ALLOCA;
         } else {
           // assume (tracked_base + tracked_size < ptr); 
@@ -1961,11 +1970,11 @@ namespace seahorn {
                             const DataLayout* dl, 
                             const TargetLibraryInfo* tli,
                             IRBuilder<> B, CallGraph* cg,
-                            dsa::InfoAnalysis* dsa,
+                            dsa::InfoAnalysis* dsa_info,
                             Function* errorFn, Function* nondetFn,
                             Function* nondetPtrFn, Function* assumeFn): 
         m_dl (dl), m_tli (tli), 
-        m_B (B), m_cg (cg), m_dsa (dsa),
+        m_B (B), m_cg (cg), m_dsa_info (dsa_info),
         m_eval (dl, tli, B.getContext (), true),             
         m_IntPtrTy (dl->getIntPtrType (M.getContext (), 0)),
         m_tracked_base (nullptr), m_tracked_ptr (nullptr),
@@ -2150,7 +2159,7 @@ namespace seahorn {
         // the call.
         Function* F = I->getParent()->getParent();
         
-        if (!abc::ShouldBeTrackedPtr (I->getArgOperand (0), *F, m_dsa))
+        if (!abc::ShouldBeTrackedPtr (I->getArgOperand (0), *F, m_dsa_info))
           return;
         
         uint64_t n = I->getDereferenceableBytes (0);
@@ -2209,7 +2218,7 @@ namespace seahorn {
           vtracked_base = vtracked_ptr = vtracked_size = vtracked_offset = nullptr;
           for (Argument& A : F->args()) {
 
-            if (!abc::ShouldBeTrackedPtr (&A, *F, m_dsa)) continue;
+            if (!abc::ShouldBeTrackedPtr (&A, *F, m_dsa_info)) continue;
             uint64_t n = A.getDereferenceableBytes ();
             if (n == 0) continue;
     
@@ -2273,8 +2282,11 @@ namespace seahorn {
         return false;
       }
       
-      // Gather some statistics about Dsa nodes
-      dsa::InfoAnalysis* m_dsa = &getAnalysis<dsa::InfoPass>().getInfoAnalysis(); 
+      // Gather some information about Dsa nodes
+      auto &dsa = getAnalysis<dsa::DsaAnalysis>();
+      dsa::InfoAnalysis * dsa_info = nullptr;
+      if (dsa.hasDsaInfo ())
+        dsa_info = &dsa.getDsaInfo ();    
 
       LLVMContext &ctx = M.getContext ();
 
@@ -2352,7 +2364,7 @@ namespace seahorn {
             if (GetElementPtrInst* GEP  = dyn_cast<GetElementPtrInst> (I)) {
               Value *ptr = GEP->getPointerOperand ();            
               if (abc::isInterestingType (ptr->getType()) && 
-                  abc::ShouldBeTrackedPtr (ptr, F, m_dsa) && 
+                  abc::ShouldBeTrackedPtr (ptr, F, dsa_info) && 
                   abc::canEscape (GEP)) {
                 ToInstrument.push_back (I);
               }
@@ -2360,32 +2372,32 @@ namespace seahorn {
               // We've seen this temp in the current BB.
               if (!TempsToInstrument.insert(Addr).second) continue;  
 
-              if (abc::ShouldBeTrackedPtr (Addr, F, m_dsa)) {
+              if (abc::ShouldBeTrackedPtr (Addr, F, dsa_info)) {
                 ToInstrument.push_back (I);
               }
               else
                 untracked_dsa_checks++; 
             } else if (MemTransferInst *MTI = dyn_cast<MemTransferInst>(I)) {
               if (!InstrumentMemIntrinsics) continue;
-              if (abc::ShouldBeTrackedPtr (MTI->getDest (), F, m_dsa) || 
-                  abc::ShouldBeTrackedPtr (MTI->getSource (),F, m_dsa))
+              if (abc::ShouldBeTrackedPtr (MTI->getDest (), F, dsa_info) || 
+                  abc::ShouldBeTrackedPtr (MTI->getSource (),F, dsa_info))
                 ToInstrument.push_back (I);
               else 
                 untracked_dsa_checks+=2; 
             } else if (MemSetInst *MSI = dyn_cast<MemSetInst>(I)) {
               if (!InstrumentMemIntrinsics) continue;
               Value* ptr = MSI->getDest ();
-              if (abc::ShouldBeTrackedPtr (ptr, F, m_dsa)) 
+              if (abc::ShouldBeTrackedPtr (ptr, F, dsa_info)) 
                 ToInstrument.push_back (I);
               else 
                 untracked_dsa_checks++; 
             } else if (AllocaInst* AI = dyn_cast<AllocaInst>(I)) {
               if (abc::isInterestingAlloca (dl, *AI) && 
-                  abc::ShouldBeTrackedPtr (I, F, m_dsa))
+                  abc::ShouldBeTrackedPtr (I, F, dsa_info))
                 ToInstrument.push_back (I);
             } else {
               CallSite CS (I);
-              if (CS && abc::ShouldBeTrackedPtr (I, F, m_dsa)) {
+              if (CS && abc::ShouldBeTrackedPtr (I, F, dsa_info)) {
                 ToInstrument.push_back (I);
                 // XXX: do we really need to do this?
                 //if (CS.getCalledFunction ()) 
@@ -2396,7 +2408,7 @@ namespace seahorn {
         }
       }
       
-      ABCInst abc (M, dl, tli, B, cg, m_dsa, 
+      ABCInst abc (M, dl, tli, B, cg, dsa_info, 
                    errorFn, nondetFn, nondetPtrFn, assumeFn);
 
       for (Function &F : M) {
@@ -2456,7 +2468,7 @@ namespace seahorn {
     void ABC2::getAnalysisUsage (llvm::AnalysisUsage &AU) const
     {
      AU.setPreservesAll ();
-     AU.addRequired<dsa::InfoPass>();
+     AU.addRequired<dsa::DsaAnalysis>();
      AU.addRequired<llvm::DataLayoutPass>();
      AU.addRequired<llvm::TargetLibraryInfo>();
      AU.addRequired<llvm::UnifyFunctionExitNodes> ();
@@ -2489,8 +2501,11 @@ namespace seahorn {
       const TargetLibraryInfo * tli = &getAnalysis<TargetLibraryInfo>();
       const DataLayout* dl = &getAnalysis<DataLayoutPass>().getDataLayout ();
       
-      // Gather some statistics about Dsa nodes
-      dsa::InfoAnalysis* dsa = &getAnalysis<dsa::InfoPass>().getInfoAnalysis(); 
+      // Gather some information about Dsa nodes
+      auto &dsa = getAnalysis<dsa::DsaAnalysis>();
+      dsa::InfoAnalysis * dsa_info = nullptr;
+      if (dsa.hasDsaInfo ())
+        dsa_info = &dsa.getDsaInfo ();    
 
       LLVMContext &ctx = M.getContext ();
       Type *voidTy = Type::getVoidTy (ctx);
@@ -2601,7 +2616,7 @@ namespace seahorn {
         Type *Ty = cast<PointerType>(GV.getType())->getElementType();
         if (!Ty->isSized()) continue;
         if (!GV.hasInitializer()) continue;
-        if (!abc::ShouldBeTrackedPtr (&GV, *main, dsa)) continue;
+        if (!abc::ShouldBeTrackedPtr (&GV, *main, dsa_info)) continue;
         if (GV.hasSection()) {
           StringRef Section(GV.getSection());
           // Globals from llvm.metadata aren't emitted, do not instrument them.
@@ -2646,7 +2661,7 @@ namespace seahorn {
             Instruction *I = &i;
             if (GetElementPtrInst* GEP  = dyn_cast<GetElementPtrInst> (I)) {
               Value *base = GEP->getPointerOperand ();            
-              if (abc::ShouldBeTrackedPtr (base, F, dsa) && 
+              if (abc::ShouldBeTrackedPtr (base, F, dsa_info) && 
                   abc::isInterestingType (base->getType()) && 
                   abc::canEscape (GEP) && 
                   !abc::IsTrivialCheck (dl, tli, dyn_cast<Value> (I))) {
@@ -2663,7 +2678,7 @@ namespace seahorn {
               if (!TempsToInstrument.insert(ptr).second) continue;  
 
               if (ptr->getName ().startswith ("sea_")) continue;
-              if (abc::ShouldBeTrackedPtr (ptr, F, dsa)) { 
+              if (abc::ShouldBeTrackedPtr (ptr, F, dsa_info)) { 
                 mem_accesses++;
                 if (abc::IsTrivialCheck (dl, tli, ptr)) {
                   trivial_checks++;
@@ -2701,8 +2716,8 @@ namespace seahorn {
             } else if (MemTransferInst *MTI = dyn_cast<MemTransferInst>(I)) {
               if (!InstrumentMemIntrinsics) continue;
               
-              if (abc::ShouldBeTrackedPtr (MTI->getDest (), F, dsa) || 
-                abc::ShouldBeTrackedPtr (MTI->getSource (),F, dsa)) {
+              if (abc::ShouldBeTrackedPtr (MTI->getDest (), F, dsa_info) || 
+                abc::ShouldBeTrackedPtr (MTI->getSource (),F, dsa_info)) {
                 mem_accesses+=2;
                 B.SetInsertPoint (MTI); 
                 
@@ -2733,7 +2748,7 @@ namespace seahorn {
               if (!InstrumentMemIntrinsics) continue;
               
               Value* ptr = MSI->getDest ();
-              if (abc::ShouldBeTrackedPtr (ptr, F, dsa))  {
+              if (abc::ShouldBeTrackedPtr (ptr, F, dsa_info))  {
                 mem_accesses++;
                 Value* dest = MSI->getDest ();
                 B.SetInsertPoint (MSI); 
@@ -2751,7 +2766,7 @@ namespace seahorn {
             } else if (AllocaInst *AI = dyn_cast<AllocaInst>(I)) {
               if (!abc::isInterestingAlloca (dl, *AI)) continue;
 
-              if (abc::ShouldBeTrackedPtr (AI, F, dsa))  {
+              if (abc::ShouldBeTrackedPtr (AI, F, dsa_info))  {
                 B.SetInsertPoint (abc::getNextInst (I));
                 SizeOffsetEvalType Data = size_offset_eval.compute (I);
                 if (Value* size = Data.first) {
@@ -2771,7 +2786,7 @@ namespace seahorn {
               }
             } else if (isMallocLikeFn(I, tli, true) || isOperatorNewLikeFn(I, tli, true)){
               
-              if (abc::ShouldBeTrackedPtr (I, F, dsa)) {
+              if (abc::ShouldBeTrackedPtr (I, F, dsa_info)) {
                 SizeOffsetEvalType Data = size_offset_eval.compute (I);
                 if (Value* size = Data.first) {
                   B.SetInsertPoint (abc::getNextInst (I));
@@ -2815,7 +2830,7 @@ namespace seahorn {
     void ABC3::getAnalysisUsage (llvm::AnalysisUsage &AU) const
     {
      AU.setPreservesAll ();
-     AU.addRequired<dsa::InfoPass>();
+     AU.addRequired<dsa::DsaAnalysis>();
      AU.addRequired<llvm::DataLayoutPass>();
      AU.addRequired<llvm::TargetLibraryInfo>();
      AU.addRequired<llvm::UnifyFunctionExitNodes> ();
