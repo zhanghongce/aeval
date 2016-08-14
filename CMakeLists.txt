@@ -333,10 +333,6 @@ else()
   set (DSA_LIBS "")
 endif()
 
-message (WARNING 
-  "This branch contains the new Dsa analysis so it will disable ${CMAKE_SOURCE_DIR}/dsa-seahorn")
-set (HAVE_DSA FALSE)
-
 if (IS_DIRECTORY ${CMAKE_SOURCE_DIR}/llvm-seahorn AND
     EXISTS ${CMAKE_SOURCE_DIR}/llvm-seahorn/lib/CMakeLists.txt)
   include_directories (BEFORE llvm-seahorn/include)

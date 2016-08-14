@@ -379,6 +379,9 @@ int main(int argc, char **argv) {
       pass_manager.add (llvm::createGlobalDCEPass ()); 
     }
 
+    if (!MixedSem)
+      pass_manager.add (new seahorn::LowerGvInitializers ());
+    
     pass_manager.add(llvm::createUnifyFunctionExitNodesPass ());
 
     if (SimplifyPointerLoops) {
