@@ -126,14 +126,16 @@ class Clang(sea.LimitedCmd):
         return self.clangCmd.stdout
 
 def _is_sea_dsa_opt (x):
+    ## Consider only options with prefix horn-sea-dsa and some
+    ## non-empty suffix
+    if x == '--horn-sea-dsa': return False
     if x.startswith ('-'):
         y = x.strip ('-')
         return y.startswith ('horn-sea-dsa')
     return False
 
-def _use_sea_dsa (x): return x == '--horn-sea-dsa'
-def use_sea_dsa (args):
-    l = filter (_use_sea_dsa, args)
+def enable_sea_dsa (args):
+    l = filter (lambda x: x == '--horn-sea-dsa', args)
     return l 
 
 class Seapp(sea.LimitedCmd):
@@ -296,16 +298,18 @@ class Seapp(sea.LimitedCmd):
             # pick out extra seahorn options
             dsa_opts = filter (_is_sea_dsa_opt, extra)
 
+            if enable_sea_dsa (extra): argv.append ('--abc-sea-dsa')
+
             if args.dsa_info: 
                 # avoid duplicates in argv
-                if '--horn-dsa-info' not in dsa_opts: 
-                    if use_sea_dsa (extra):
+                if '--horn-sea-dsa-info' not in dsa_opts: 
+                    if enable_sea_dsa (extra):
                         argv.append ('--horn-sea-dsa-info')
                     else:
                         argv.append ('--dsa-info')
 
             if args.dsa_info_to_file is not None: 
-                if use_sea_dsa (extra):
+                if enable_sea_dsa (extra):
                     argv.append ('--horn-sea-dsa-info-to-file={n}'.format(n=args.dsa_info_to_file))
                 else:
                     argv.append ('--dsa-info-to-file={n}'.format(n=args.dsa_info_to_file))
@@ -313,6 +317,7 @@ class Seapp(sea.LimitedCmd):
             # add dsa options     
             argv.extend (dsa_opts)
 
+                
             argv.append ('--abc-dsa-node={n}'.format (n=args.abc_dsa))
             argv.append ('--abc-alloc-site={n}'.format (n=args.abc_site))
             if args.abc_only_types: 

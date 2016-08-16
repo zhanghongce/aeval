@@ -33,9 +33,8 @@
 
 static llvm::cl::opt<bool>
 DSAInfoToOutput("dsa-info",
-    llvm::cl::desc ("Print all DSA analysis and allocation information to standard output"),
-    llvm::cl::init (false),
-    llvm::cl::Hidden);
+    llvm::cl::desc ("Llvm DSA: pre-compute information for answering client queries"),
+    llvm::cl::init (false));
 
 static llvm::cl::opt<std::string>
 DSAInfoToFile("dsa-info-to-file",
@@ -56,7 +55,7 @@ namespace seahorn
 {
   using namespace llvm;
 
-  inline bool IsStaticallyKnown (const DataLayout* dl, 
+  static bool IsStaticallyKnown (const DataLayout* dl, 
                                  const TargetLibraryInfo* tli,
                                  const Value* V) {
     uint64_t Size;
@@ -164,8 +163,6 @@ namespace seahorn
 
   // Print information about DSA analysis
   void DSAInfo::writeDSAnalysisInfo (llvm::raw_ostream& o) {
-
-      o << " ========== DSAInfo  ==========\n";
     
       std::vector<WrapperDSNode> nodes_vector;
       nodes_vector.reserve (m_nodes.size ());
@@ -173,6 +170,7 @@ namespace seahorn
         if (kv.second.m_accesses > 0)
           nodes_vector.push_back (kv.second); 
       }
+      o << " --- Memory access information\n";
 
       //o << m_nodes.size () << " Total number of DS nodes.\n";      
       // -- Some DSNodes are never read or written because after they
@@ -207,93 +205,95 @@ namespace seahorn
         }
       }
 
-      if (!DSAInfoToOutput) return;
-
-      o << "Detailed information about all DS nodes\n";
-      std::sort (nodes_vector.begin (), nodes_vector.end (),
-                 [](WrapperDSNode n1, WrapperDSNode n2){
-                   return (n1.m_id < n2.m_id);
-                 });
-      
-      for (auto &n: nodes_vector) {
-        if (!hasReferrers (n.m_n)) continue;
-        const ValueSet& referrers = getReferrers (n.m_n);
-        o << "  [Node Id " << n.m_id  << "] ";
+      if (DSAInfoToOutput) 
+      {
+        o << "Detailed information about all DS nodes\n";
+        std::sort (nodes_vector.begin (), nodes_vector.end (),
+                   [](WrapperDSNode n1, WrapperDSNode n2){
+                     return (n1.m_id < n2.m_id);
+                   });
         
-        if (n.m_rep_name != "") {
-          if (n.m_n->getUniqueScalar ()) {
+        for (auto &n: nodes_vector) {
+          if (!hasReferrers (n.m_n)) continue;
+          const ValueSet& referrers = getReferrers (n.m_n);
+          o << "  [Node Id " << n.m_id  << "] ";
+          
+          if (n.m_rep_name != "") {
+            if (n.m_n->getUniqueScalar ()) {
               o << " singleton={" << n.m_rep_name << "}";
-          } else {
-              o << " non-singleton={" << n.m_rep_name << ",...}";
-          }
-        }
-        o << "  with " << n.m_accesses << " memory accesses \n";
-
-        // --- print type information
-        DSNode * nn = const_cast<DSNode*> (n.m_n);
-        LOG("dsa-info", errs () << "     ";  nn->dump ());
-        if (nn->isNodeCompletelyFolded())  {
-          o << "  Types={collapsed";
-        } else if (nn->hasNoType ())
-          o << "  Types={void";
-        else {
-          o << "  Types={";
-          DSNode::type_iterator ii = nn->type_begin(), ie = nn->type_end();
-          DSNode::type_iterator jj = ii;
-          if (++jj == ie) {
-            auto ty_set_ptr = ii->second;
-            if (ty_set_ptr->size () == 1) {
-              o << **(ty_set_ptr->begin ());
             } else {
-              svset<Type*>::const_iterator ki = (*ty_set_ptr).begin (), ke = (*ty_set_ptr).end ();
-              o << "[";
-              for (; ki != ke; ) { 
-                o << **ki;
-                ++ki;
-                if (ki != ke) o << " | ";
-              }
-              o << "]";
+              o << " non-singleton={" << n.m_rep_name << ",...}";
             }
           }
+          o << "  with " << n.m_accesses << " memory accesses \n";
+          
+          // --- print type information
+          DSNode * nn = const_cast<DSNode*> (n.m_n);
+          LOG("dsa-info", errs () << "     ";  nn->dump ());
+          if (nn->isNodeCompletelyFolded())  {
+            o << "  Types={collapsed";
+          } else if (nn->hasNoType ())
+            o << "  Types={void";
           else {
-            o << "struct {";
-            while (ii != ie) {
-              o << ii->first << ":";
-              if (!ii->second) { 
-                o << "void";
+            o << "  Types={";
+            DSNode::type_iterator ii = nn->type_begin(), ie = nn->type_end();
+            DSNode::type_iterator jj = ii;
+            if (++jj == ie) {
+              auto ty_set_ptr = ii->second;
+              if (ty_set_ptr->size () == 1) {
+                o << **(ty_set_ptr->begin ());
               } else {
-                auto ty_set_ptr = ii->second;
-                if (ty_set_ptr->size () == 1) {
-                  o << **(ty_set_ptr->begin ());
-                } else {
-                  svset<Type*>::const_iterator ki = ty_set_ptr->begin (), ke = ty_set_ptr->end ();
-                  o << "[";
-                  for (; ki != ke; ) { 
-                    o << **ki;
-                    ++ki;
-                    if (ki != ke) o << " | ";
-                  }
-                  o << "]";
+                svset<Type*>::const_iterator ki = (*ty_set_ptr).begin (), ke = (*ty_set_ptr).end ();
+                o << "[";
+                for (; ki != ke; ) { 
+                  o << **ki;
+                  ++ki;
+                  if (ki != ke) o << " | ";
                 }
+                o << "]";
               }
-              ++ii;
-              if (ii != ie)
-                o << ",";   
             }
-            o << "}*";
+            else {
+              o << "struct {";
+              while (ii != ie) {
+                o << ii->first << ":";
+                if (!ii->second) { 
+                  o << "void";
+                } else {
+                  auto ty_set_ptr = ii->second;
+                  if (ty_set_ptr->size () == 1) {
+                    o << **(ty_set_ptr->begin ());
+                  } else {
+                    svset<Type*>::const_iterator ki = ty_set_ptr->begin (), ke = ty_set_ptr->end ();
+                    o << "[";
+                    for (; ki != ke; ) { 
+                      o << **ki;
+                      ++ki;
+                      if (ki != ke) o << " | ";
+                    }
+                    o << "]";
+                  }
+                }
+                ++ii;
+                if (ii != ie)
+                  o << ",";   
+              }
+              o << "}*";
+            }
           }
-        }
-        // --- print llvm values referring to the DSNodes
-        o << "}\n";
-        LOG("dsa-info", 
-            o << "  " << std::distance(referrers.begin(), referrers.end()) 
+          // --- print llvm values referring to the DSNodes
+          o << "}\n";
+
+          LOG("dsa-info", 
+              o << "  " << std::distance(referrers.begin(), referrers.end()) 
               << " Referrers={\n";
-            for (auto const& r : referrers) {
-              if (r->hasName ()) o << "    " << r->getName ();
-              else o << "  " << *r;  
-              o << "\n";
-            }
-            o << "  }\n");
+              for (auto const& r : referrers) {
+                if (r->hasName ()) o << "    " << r->getName ();
+                else o << "  " << *r;  
+                o << "\n";
+              }
+              o << "  }\n");
+        }
       }
   }        
 
@@ -309,7 +309,7 @@ namespace seahorn
   // Print information about all alllocation sites
   void DSAInfo::writeAllocSitesInfo (llvm::raw_ostream& o, bool isFile) {
     if (!isFile)
-      o << " ========== Allocation sites  ==========\n";
+      o << " --- Allocation site information\n";
 
     // -- total number of allocations in the program
     // o << m_alloc_sites.right.size ()  
@@ -404,7 +404,7 @@ namespace seahorn
       m_dsa = &getAnalysis<SteensgaardDataStructures> ();
       m_gDsg = m_dsa->getGlobalsGraph ();
 
-      //errs () << M << "\n";
+      llvm::errs () << " ========== Begin Llvm Dsa info ==========\n";
 
       // Collect all referrers per DSNode
       DSScalarMap &SM = m_gDsg->getScalarMap ();
@@ -573,6 +573,8 @@ namespace seahorn
         writeAllocSitesInfo(File, true);
         File.close();
       }
+
+      llvm::errs () << " ========== End Llvm Dsa info ==========\n";
 
       return false;
   }
