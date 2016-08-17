@@ -115,6 +115,12 @@ def add_abc_args(ap):
     ap.add_argument ('--externalize-functions',
                      help='Externalize these functions',
                      dest='extern_funcs', type=str, metavar='str,...')
+    ap.add_argument ('--dsa', 
+                     help="Dsa analysis:\n"
+                          "- llvm  : context-insensitive Llvm Dsa\n"
+                          "- sea-ci: context-insensitive SeaHorn Dsa\n"
+                          "- sea-cs: context-sensitive SeaHorn Dsa\n",
+                     choices=['llvm','sea-ci','sea-cs'], dest='dsa', default='llvm')
     ap.add_argument ('--abc-disable-underflow', dest='abc_no_under',
                      help='Do not instrument underflow checks',
                      default=False, action='store_true')
@@ -208,9 +214,12 @@ def get_results (output, returnvalue, timeout):
 # options for `sea pp` with array bounds checks
 def abc_opts(args):
     opts = ['--kill-vaarg=true',
+            ## these two should not be needed with sea dsa
             '--inline-constructors', 
             '--inline-allocators',            
-            '--promote-arrays', 
+            ## this should not be needed with sea dsa.
+            ## Commented anyway because it is buggy.
+            #'--promote-arrays', 
             '--unfold-loops-for-dsa',
             '--simplify-pointer-loops', 
             '--lower-invoke', 
@@ -226,6 +235,7 @@ def abc_opts(args):
     if args.abc_track_base_only: opts.extend(['--abc-track-base-only'])
     if args.extern_funcs is not None: 
         opts.extend(['--externalize-functions={0}'.format(args.extern_funcs)])
+
     return opts
 
 # options for `sea ms`
@@ -260,6 +270,15 @@ def horn_opts(args):
             ]
     if args.add_cuts is not 'h0':
         opts = opts + ['--horn-extra-cps={0}'.format(args.add_cuts)]
+
+    if args.dsa != 'llvm': 
+        opts = opts + ['--horn-sea-dsa']
+        opts = opts + ['--horn-sea-dsa-info']
+        if args.dsa == 'sea-ci':
+            opts = opts + ['--horn-sea-dsa-cs-global=false']
+        else:
+            opts = opts + ['--horn-sea-dsa-cs-global=true']
+
     return opts
 
 def csv_results_keys ():
@@ -376,7 +395,18 @@ def print_results (outfile, num_allocas, orig_num_checks, isParallel):
 def get_alloc_sites (in_file, work_dir, args):
     opts = abc_opts (args)   
     alloca_file = work_dir + '/alloc.csv'
-    opts.extend(['--dsa-info-to-file=' + alloca_file])
+
+    if args.dsa == 'llvm':
+        opts.extend(['--dsa-info-to-file=' + alloca_file])
+    else:
+        opts.extend(['--horn-sea-dsa'])
+        opts.extend(['--horn-sea-dsa-info'])
+        if args.dsa == 'sea-ci':
+            opts.extend(['--horn-sea-dsa-cs-global=false'])
+        else:
+            opts.extend(['--horn-sea-dsa-cs-global=true'])
+        opts.extend(['--horn-sea-dsa-info-to-file=' + alloca_file])
+
     opts = [get_sea(), 'pp'] + opts
     ext = '.pp.bc'
     out_file = remap_file_name (in_file, ext, work_dir)
