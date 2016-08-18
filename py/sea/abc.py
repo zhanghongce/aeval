@@ -4,6 +4,7 @@ import sys
 import os
 import os.path
 import subprocess as sub
+from itertools import ifilterfalse 
 import csv
 import re
 
@@ -307,7 +308,7 @@ def csv_results_line (filename, fmt, res_dic):
             writer = csv.writer (sf)
             writer.writerow (line)
 
-def prove_abc_cmmd (in_file, alloca_id, args):
+def prove_abc_cmmd (in_file, alloca_id, args, extra = []):
     pf_cmd = list ()
     pf_cmd.extend(abc_opts(args))
     if alloca_id is not None:
@@ -324,13 +325,13 @@ def prove_abc_cmmd (in_file, alloca_id, args):
         asm_filename, asm_file_ext = os.path.splitext(args.asm_out_file)
         asm_filename = asm_filename + '.alloc.' + str(alloca_id) + asm_file_ext
         pf_cmd.extend(['--oll={0}'.format(asm_filename)])
-    pf_cmd = [get_sea(), 'pf'] + pf_cmd + [in_file]
+    pf_cmd = [get_sea(), 'pf'] + pf_cmd + extra + [in_file]
     return pf_cmd
 
 # if alloca_id is None then it will try to prove all checks, 
 # otherwise only those checks originated from alloca_id
-def prove_abc (in_file, alloca_id, args):
-    pf_cmd = prove_abc_cmmd(in_file, alloca_id, args)
+def prove_abc (in_file, alloca_id, args, extra = []):
+    pf_cmd = prove_abc_cmmd(in_file, alloca_id, args, extra)
     if verbose: print " ".join(pf_cmd)
     p = sub.Popen(pf_cmd, shell=False, stdout=sub.PIPE, stderr=sub.STDOUT)
     results, _ = p.communicate()
@@ -516,6 +517,15 @@ def sea_abc(args, extra): # extra is unused
                 if args.save_temps: 
                     sea_abc_cmd.extend(['--save-temps'])
                     sea_abc_cmd.extend(['--temp-dir={0}'.format(args.temp_dir)])
+
+                if args.dsa != 'llvm':
+                    sea_abc_cmd.extend(['--horn-sea-dsa'])
+                    sea_abc_cmd.extend(['--horn-sea-dsa-info'])
+                    if args.dsa == 'sea-ci':
+                        sea_abc_cmd.extend(['--horn-sea-dsa-cs-global=false'])
+                    else:
+                        sea_abc_cmd.extend(['--horn-sea-dsa-cs-global=true'])
+
                 xargs.append(' '.join(sea_abc_cmd))
 
             if verbose: print "Running in parallel "  + str(xargs) + " ... "
@@ -535,6 +545,14 @@ def sea_abc(args, extra): # extra is unused
 ##                  Do not call this file as a script.                    ##
 ##          This is intended to be called only by GNU parallel            ## 
 ############################################################################
+
+def _is_seahorn_opt (x):
+    if x.startswith ('-'):
+        y = x.strip ('-')
+        return y.startswith ('horn') or \
+            y.startswith ('crab') or y.startswith ('log')
+    return False
+
 def main (argv):
     import argparse
     from argparse import RawTextHelpFormatter
@@ -563,7 +581,13 @@ def main (argv):
     ap.add_argument ('--mem', type=int, dest='mem', metavar='MB',
                        help='MEM limit (MB)', default=-1)
     add_abc_args(ap)
-    args = ap.parse_args (argv[1:])
+
+    all_opts = argv[1:]
+    sea_opts = list(filter (_is_seahorn_opt, all_opts))
+    rest_opts = list(ifilterfalse (_is_seahorn_opt, all_opts))
+
+    #args = ap.parse_args (argv[1:])
+    args = ap.parse_args (rest_opts)
 
     assert (len(args.in_files) == 1)
 
@@ -572,8 +596,7 @@ def main (argv):
         verbose = True
 
     #print "Started analysis for allocation site " +  str(args.alloca_id) + " ..."
-
-    num_checks,ans,time,num_blks,invars_size,_,_ = prove_abc(args.in_files[0], args.alloca_id, args)
+    num_checks,ans,time,num_blks,invars_size,_,_ = prove_abc(args.in_files[0], args.alloca_id, args, sea_opts)
     fmt = csv_results_keys()
     results = dict ()
     results['AllocId'] = args.alloca_id; results['NumChecks'] = num_checks
