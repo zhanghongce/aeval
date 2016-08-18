@@ -247,7 +247,7 @@ int main(int argc, char **argv) {
   // -- it invalidates DSA passes so it should be run before
   // -- ShadowMemDsa
   pass_manager.add (llvm::createGlobalDCEPass ()); // kill unused internal global
-  
+
   // -- initialize any global variables that are left
   pass_manager.add (new seahorn::LowerGvInitializers ());
   if (SeaHornDsa)

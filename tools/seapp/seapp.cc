@@ -41,6 +41,8 @@
 #include "seahorn/Transforms/Instrumentation/NullCheck.hh"
 #include "seahorn/Transforms/Instrumentation/MixedSemantics.hh"
 
+#include "seahorn/Analysis/DSA/Info.hh"
+
 #include "llvm_seahorn/Transforms/Scalar.h"
 
 #include "ufo/Smt/EZ3.hh"
@@ -378,6 +380,9 @@ int main(int argc, char **argv) {
     if (!MixedSem)
       pass_manager.add (new seahorn::LowerGvInitializers ());
 
+    if (!MixedSem)
+      pass_manager.add (new seahorn::LowerGvInitializers ());
+    
     pass_manager.add(llvm::createUnifyFunctionExitNodesPass ());
 
     if (SimplifyPointerLoops) {

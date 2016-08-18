@@ -20,14 +20,26 @@
 
 #include "seahorn/config.h"
 #include "seahorn/Analysis/CanAccessMemory.hh"
-#include "seahorn/Support/DSAInfo.hh"
-
 
 #include "boost/unordered_set.hpp"
 
 namespace seahorn
 {
   using namespace llvm;
+
+
+   // Wrapper for Dsa analysis
+   class DsaWrapper 
+   {
+    protected:
+     llvm::Pass *m_abc; 
+     DsaWrapper (llvm::Pass *abc): m_abc (abc) {}
+
+    public:
+     virtual bool shouldBeTrackedPtr (const llvm::Value &ptr, const llvm::Function& fn) = 0;
+     virtual unsigned int getAllocSiteId (const llvm::Value &ptr) = 0;
+     virtual const char* getDsaName () const = 0;
+   };
 
   /* 
      First encoding.
@@ -148,7 +160,6 @@ namespace seahorn
     virtual const char* getPassName () const {return "ArrayBoundsCheck1";}
   };
 
-
   /* 
      Second encoding.
 
@@ -197,8 +208,8 @@ namespace seahorn
       const DataLayout*  m_dl;
       const TargetLibraryInfo* m_tli;
       IRBuilder<> m_B;
-      CallGraph* m_cg;
-      DSAInfo* m_dsa_info;
+      CallGraph  *m_cg;
+      DsaWrapper *m_dsa;
       ObjectSizeOffsetEvaluator m_eval;
 
       Type *m_IntPtrTy;    
@@ -278,7 +289,7 @@ namespace seahorn
       
       ABCInst (Module& M, 
                const DataLayout* dl, const TargetLibraryInfo* tli,
-               IRBuilder<> B, CallGraph* cg, DSAInfo* dsa_info,
+               IRBuilder<> B, CallGraph* cg, DsaWrapper * dsa,
                Function* errorFn, Function* nondetFn,
                Function* nondetPtrFn, Function* assumeFn);
       
