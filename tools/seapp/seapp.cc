@@ -368,7 +368,6 @@ int main(int argc, char **argv) {
   
     pass_manager.add(llvm::createDeadInstEliminationPass());
     pass_manager.add (llvm::createGlobalDCEPass ()); // kill unused internal global
-    
     if (PromoteArrays) 
     { 
       pass_manager.add (new seahorn::LowerCstExprPass ());
@@ -376,6 +375,8 @@ int main(int argc, char **argv) {
       // cleanup after createPromoteArraysPass
       pass_manager.add (llvm::createGlobalDCEPass ()); 
     }
+    if (!MixedSem)
+      pass_manager.add (new seahorn::LowerGvInitializers ());
 
     pass_manager.add(llvm::createUnifyFunctionExitNodesPass ());
 

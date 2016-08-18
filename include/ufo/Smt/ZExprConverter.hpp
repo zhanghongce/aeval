@@ -444,6 +444,7 @@ namespace ufo
       }
       else if (isOpX<BEXTRACT> (e))
       {
+        assert (bv::high (e) > bv::low (e));
         z3::ast a (ctx, marshal (bv::earg (e), ctx, cache, seen));
         res = Z3_mk_extract (ctx, bv::high (e), bv::low (e), a);
       }
@@ -494,8 +495,8 @@ namespace ufo
       else
         return M::marshal (e, ctx, cache, seen);
 
-      if (res == NULL) ctx.check_error ();
-      if (res == NULL) errs () << "Failed to marshal: " << *e << "\n";
+      if (res == nullptr) ctx.check_error ();
+      if (res == nullptr) errs () << "Failed to marshal: " << *e << "\n";
       
       assert (res != NULL);
       z3::ast final (ctx, res);

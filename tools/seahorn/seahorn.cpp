@@ -128,6 +128,11 @@ Bmc ("horn-bmc",
      llvm::cl::init (false));
 
 static llvm::cl::opt<bool>
+SeaHornDsa ("horn-sea-dsa",
+            llvm::cl::desc ("Use Seahorn Dsa analysis"),
+            llvm::cl::init (false));
+
+static llvm::cl::opt<bool>
 HoudiniInv ("horn-houdini",
          llvm::cl::desc ("Use Houdini algorithm to generate inductive invariants"),
          llvm::cl::init (false));
@@ -245,7 +250,11 @@ int main(int argc, char **argv) {
   
   // -- initialize any global variables that are left
   pass_manager.add (new seahorn::LowerGvInitializers ());
-  pass_manager.add (seahorn::createShadowMemDsaPass ());
+  if (SeaHornDsa)
+    pass_manager.add (seahorn::createShadowMemSeaDsaPass ());
+  else
+    pass_manager.add (seahorn::createShadowMemDsaPass ());
+
   // lowers shadow.mem variables created by ShadowMemDsa pass
   pass_manager.add (seahorn::createPromoteMemoryToRegisterPass ());
 
