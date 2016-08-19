@@ -1,4 +1,4 @@
-// RUN: %sea pf -O0 --abc=%abc_encoding "%s" 2>&1 | OutputCheck %s
+// RUN: %sea pf -O0 --abc=%abc_encoding %dsa "%s" 2>&1 | OutputCheck %s
 // CHECK: ^unsat$
 
 // See how we treat global variables, struct and one-dimensional arrays

@@ -1,4 +1,4 @@
-// RUN: %sea pf -O0 --abc=%abc_encoding "%s" 2>&1 | OutputCheck %s
+// RUN: %sea pf -O0 --abc=%abc_encoding %dsa "%s" 2>&1 | OutputCheck %s
 // CHECK: ^sat$
 
 extern int nd ();
