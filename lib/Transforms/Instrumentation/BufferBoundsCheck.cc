@@ -64,7 +64,7 @@ TrackBaseOnly("abc-track-base-only",
 //////////////////////////////////////////////////////////////////////
 
 static llvm::cl::opt<unsigned int>
-TrackedDSNode("abc-dsa-node",
+TrackedDsaNode("abc-dsa-node",
               llvm::cl::desc ("Only instrument pointers within this dsa node"),
               llvm::cl::init (0) /*default all*/);
 
@@ -122,7 +122,7 @@ namespace seahorn {
       {
         if (!m_dsa) 
         {
-          errs () << "Warning Sea Dsa: dsa information not found\n";
+          //errs () << "Warning Sea Dsa: dsa information not found\n";
           return true; 
         }
 
@@ -145,32 +145,31 @@ namespace seahorn {
         }
       
         const dsa::Cell &c = g->getCell(v);
+
+        /// XXX: if the dsa analysis is context-sensitive we can have
+        /// a node that is not accessed in this function but then
+        /// passed to another funciton where it is accessed.
+
+        if (TrackedDsaNode > 0) 
+        { return (m_dsa->getDsaNodeId (*c.getNode ()) == TrackedDsaNode);  }    
         
-        if (!m_dsa->isAccessed (*c.getNode()))
-          return false;
-        else 
+        if (TrackedAllocSite > 0) 
         {
-          if (TrackedDSNode > 0) 
-            return (m_dsa->getDsaNodeId (*c.getNode ()) == TrackedDSNode);      
-          
-          if (TrackedAllocSite > 0) 
+          const Value* alloc_v = m_dsa->getAllocValue (TrackedAllocSite);
+          if (!alloc_v) 
           {
-            const Value* alloc_v = m_dsa->getAllocValue (TrackedAllocSite);
-            if (!alloc_v) 
-            {
-              errs () << "Warning Sea Dsa: not value found for allocation site\n";
+            errs () << "Warning Sea Dsa: not value found for allocation site\n";
               return false;
-            }
-            
-            if (!(g->hasCell (*alloc_v)))
-            {
-              errs () << "Warning Sea Dsa: node not found " << *alloc_v << "\n";
-              return true; 
-            }
-            
-            return (g->getCell (*alloc_v).getNode () == c.getNode ());
-          } 
-        }
+          }
+          
+          if (!(g->hasCell (*alloc_v)))
+          {
+            errs () << "Warning Sea Dsa: node not found " << *alloc_v << "\n";
+            return true; 
+          }
+          
+          return (g->getCell (*alloc_v).getNode () == c.getNode ());
+        } 
         
         return true;
       }
@@ -223,10 +222,12 @@ namespace seahorn {
       }
         
         if (!m_dsa->isAccessed (n))
+        { // XXX: we return false because llvm dsa is context-insensitive anyway
           return false;
+        }
         else {
-          if (TrackedDSNode > 0) {
-            return (m_dsa->getDSNodeID (n) == TrackedDSNode);      
+          if (TrackedDsaNode > 0) {
+            return (m_dsa->getDSNodeID (n) == TrackedDsaNode);      
           } else if (TrackedAllocSite > 0) {
             const Value* v = m_dsa->getAllocValue (TrackedAllocSite);
             if (!v) {
@@ -1280,9 +1281,9 @@ namespace seahorn
     // TODO: addFunShadowParams invalidates Dsa information since it
     // adds shadow parameters by making new copies of the existing
     // functions and then removing those functions.
-    if (TrackedDSNode != 0) {
+    if (TrackedDsaNode != 0) {
       errs () << "Warning: Dsa is invalidated so we cannot use Dsa info ...\n";
-      TrackedDSNode = 0;
+      TrackedDsaNode = 0;
     }
     
     /* Instrument load/store/memcpy/memmove/memset instructions */
@@ -1444,7 +1445,7 @@ namespace seahorn
             << "-- " << m_checks_added    
             << " Total number of added buffer overflow/underflow checks\n";
 
-    if (TrackedDSNode != 0) {
+    if (TrackedDsaNode != 0) {
       errs () << "-- " << untracked_dsa_checks 
               << " Total number of skipped checks because untracked Dsa node\n";
     }
@@ -2556,7 +2557,7 @@ namespace seahorn {
               << "          " << abc.m_non_gep_unknown_size_checks_added
               << " Total number of added checks for non-gep pointers with unknown size\n";
       
-      if (TrackedDSNode != 0) {
+      if (TrackedDsaNode != 0) {
         errs () << "-- " << untracked_dsa_checks 
                 << " Total number of skipped checks because untracked Dsa node\n";
       }
@@ -2920,7 +2921,7 @@ namespace seahorn {
               << "-- " << checks_added
               << " Total number of added buffer overflow/underflow checks\n"; 
       
-      if (TrackedDSNode != 0) {
+      if (TrackedDsaNode != 0) {
         errs () << "-- " << untracked_dsa_checks 
                 << " Total number of skipped checks because untracked Dsa node\n";
       }
