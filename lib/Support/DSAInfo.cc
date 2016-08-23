@@ -36,6 +36,12 @@ DSAInfoToOutput("dsa-info",
     llvm::cl::desc ("Llvm DSA: pre-compute information for answering client queries"),
     llvm::cl::init (false));
 
+static llvm::cl::opt<bool>
+DSAInfoToOutputVerbose("dsa-info-verbose",
+    llvm::cl::desc ("Llvm DSA: print verbose information about DSA"),
+    llvm::cl::init (false),
+    llvm::cl::Hidden);
+
 static llvm::cl::opt<std::string>
 DSAInfoToFile("dsa-info-to-file",
     llvm::cl::desc ("Write all allocation sites to a file"),
@@ -175,18 +181,18 @@ namespace seahorn
       //o << m_nodes.size () << " Total number of DS nodes.\n";      
       // -- Some DSNodes are never read or written because after they
       //    are created they are only passed to external calls.
-      o << nodes_vector.size ()  
+      o << " " << nodes_vector.size ()  
         << " Total number of accessed (read/written) DS nodes.\n";     
 
       unsigned int total_accesses = 0;
       for (auto &n: nodes_vector) 
         total_accesses += n.m_accesses;
 
-      o << total_accesses << " Total number of memory accesses.\n";     
+      o << " " << total_accesses << " Total number of memory accesses.\n";     
 
       {  //  Print a summary of accesses
         unsigned int sum_size = 5;
-        o << "Summary of the " << sum_size  << " most accessed DS nodes:\n";
+        o << " Summary of the " << sum_size  << " most accessed DS nodes:\n";
         std::vector<WrapperDSNode> tmp_nodes_vector (nodes_vector);
         std::sort (tmp_nodes_vector.begin (), tmp_nodes_vector.end (),
                    [](WrapperDSNode n1, WrapperDSNode n2){
@@ -197,15 +203,15 @@ namespace seahorn
           if (sum_size <= 0) break;
           sum_size--;
           if (n.m_accesses == 0) break;
-          o << "  [Node Id " << n.m_id  << "] " 
+          o << "   [Node Id " << n.m_id  << "] " 
             << (int) (n.m_accesses * 100 / total_accesses) 
             << "% of total memory accesses\n" ;
           }
-          o << "  ...\n";
+          o << "   ...\n";
         }
       }
 
-      if (DSAInfoToOutput) 
+      if (DSAInfoToOutputVerbose) 
       {
         o << "Detailed information about all DS nodes\n";
         std::sort (nodes_vector.begin (), nodes_vector.end (),
@@ -308,7 +314,7 @@ namespace seahorn
 
   // Print information about all alllocation sites
   void DSAInfo::writeAllocSitesInfo (llvm::raw_ostream& o, bool isFile) {
-    if (!isFile)
+    if (!isFile && DSAInfoToOutput)
       o << " --- Allocation site information\n";
 
     // -- total number of allocations in the program
@@ -327,12 +333,11 @@ namespace seahorn
     //    ever read or written. Some DSNodes are never read or written
     //    because after they are created they are only passed to
     //    external calls.
-    if (!isFile) {
-      o << actual_alloc_sites
-        << " Total number of allocation sites that go to some accessed DS node.\n";     
+    if (!isFile && DSAInfoToOutput) {
+      o << " " << actual_alloc_sites << " allocation sites.\n";     
     }
     
-    //if (!DSAInfoToOutput && !isFile) return;
+    //if (!DSAInfoToOutputVerbose && !isFile) return;
 
     std::set <unsigned int> seen;
     for (auto p: m_alloc_sites.right) {
@@ -344,18 +349,19 @@ namespace seahorn
 
       // -- Sanity check: an alloca site belongs only to one DSNode
       if (nodes.size () > 1) {
-        if (!isFile) {
-          errs () << "DSAInfo found an allocation site " << p.first 
-                  << " associated with multiple DSNodes {";
+        if (!isFile && DSAInfoToOutput) {
+          o << "DSAInfo found an allocation site " << p.first 
+            << " associated with multiple DSNodes {";
           for (auto NodeId: nodes) o << NodeId << ","; 
-          errs () << "}\n";
+          o << "}\n";
         }
         continue;
       }
 
       if (isFile) {
         o << p.first << "," << *(nodes.begin ()) << "\n";
-      } else if (DSAInfoToOutput){
+      } 
+      else if (DSAInfoToOutputVerbose){
         o << "  [Alloc site Id " << p.first << " DSNode Id " << *(nodes.begin ()) << "]"
           << "  " << *p.second  << "\n";
       }
@@ -376,7 +382,7 @@ namespace seahorn
         if (isFile) {
           o << "," << NodeID << "\n";
         } else {
-          if (DSAInfoToOutput)
+          if (DSAInfoToOutputVerbose)
             errs () << "DSAInfo cannot find allocation site for DSNode ID=" << NodeID << "\n";
           num_nodes_without_alloc_site ++;
           num_accesses_without_alloc_site += kv.second.m_accesses;
@@ -392,10 +398,13 @@ namespace seahorn
         }
       }
     }
-    errs () << "DSAInfo found " << num_nodes_without_alloc_site 
-            << " nodes without allocation site.\n";
-    errs () << "DSAInfo found " << num_accesses_without_alloc_site 
-            << " memory accesses without allocation site.\n";
+    if (DSAInfoToOutput)
+    {
+      errs () << " " << num_nodes_without_alloc_site 
+              << " nodes without allocation site.\n";
+      errs () << " " << num_accesses_without_alloc_site 
+              << " memory accesses without allocation site.\n";
+    }
   }
 
   bool DSAInfo::runOnModule (llvm::Module &M) {  
@@ -404,7 +413,8 @@ namespace seahorn
       m_dsa = &getAnalysis<SteensgaardDataStructures> ();
       m_gDsg = m_dsa->getGlobalsGraph ();
 
-      llvm::errs () << " ========== Begin Llvm Dsa info ==========\n";
+      if (DSAInfoToOutput)
+        llvm::errs () << " ========== Begin Llvm Dsa info ==========\n";
 
       // Collect all referrers per DSNode
       DSScalarMap &SM = m_gDsg->getScalarMap ();
@@ -526,11 +536,13 @@ namespace seahorn
       for (auto &GV: M.globals ()) {
         Type *Ty = cast<PointerType>(GV.getType())->getElementType();
         if (!Ty->isSized()) {
-          errs () << "DSAInfo ignored unsized " << GV << " as allocation site\n";
+          if (DSAInfoToOutput)
+            errs () << "DSAInfo ignored unsized " << GV << " as allocation site\n";
           continue;
         }
         if (!GV.hasInitializer()) {
-          errs () << "DSAInfo ignored uninitialized " << GV << " as allocation site\n";
+          if (DSAInfoToOutput)
+            errs () << "DSAInfo ignored uninitialized " << GV << " as allocation site\n";
           continue;
         }
         if (GV.hasSection()) {
@@ -548,7 +560,8 @@ namespace seahorn
           if (AllocaInst* AI = dyn_cast<AllocaInst> (I)) {
             Type *Ty = AI->getAllocatedType();
             if (!Ty->isSized() || dl->getTypeAllocSize(Ty) <= 0) {
-              errs () << "DSAInfo ignored unsized " << *AI << " as allocation site\n";
+              if (DSAInfoToOutput)
+                errs () << "DSAInfo ignored unsized " << *AI << " as allocation site\n";
               continue;
             }
             unsigned int alloc_site_id; 
@@ -563,7 +576,8 @@ namespace seahorn
       }
 
 
-      writeDSAnalysisInfo(errs ());
+      if (DSAInfoToOutput)
+        writeDSAnalysisInfo(errs ());
       writeAllocSitesInfo(errs (), false);
       if (DSAInfoToFile != "") {
         std::string filename(DSAInfoToFile);
@@ -574,7 +588,8 @@ namespace seahorn
         File.close();
       }
 
-      llvm::errs () << " ========== End Llvm Dsa info ==========\n";
+      if (DSAInfoToOutput)
+        llvm::errs () << " ========== End Llvm Dsa info ==========\n";
 
       return false;
   }
@@ -599,4 +614,3 @@ namespace seahorn{
   X ("dsa-info", "Show information about DSA Nodes");
 
 } 
-
