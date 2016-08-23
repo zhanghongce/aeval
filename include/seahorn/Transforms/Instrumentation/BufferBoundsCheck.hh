@@ -36,7 +36,8 @@ namespace seahorn
      DsaWrapper (llvm::Pass *abc): m_abc (abc) {}
 
     public:
-     virtual bool shouldBeTrackedPtr (const llvm::Value &ptr, const llvm::Function& fn) = 0;
+     /* tag only for debugging purposes */
+     virtual bool shouldBeTrackedPtr (const llvm::Value &ptr, const llvm::Function& fn, int tag) = 0;
      virtual unsigned int getAllocSiteId (const llvm::Value &ptr) = 0;
      virtual const char* getDsaName () const = 0;
    };

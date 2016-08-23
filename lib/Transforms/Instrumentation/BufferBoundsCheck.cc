@@ -118,7 +118,7 @@ namespace seahorn {
 
       const char* getDsaName () const { return "SeaHorn Dsa analysis";}
       
-      bool shouldBeTrackedPtr (const llvm::Value &ptr, const llvm::Function& fn)
+      bool shouldBeTrackedPtr (const llvm::Value &ptr, const llvm::Function& fn, int tag)
       {
         auto &v = *(ptr.stripPointerCasts ());
 
@@ -127,20 +127,21 @@ namespace seahorn {
 
         if (!m_dsa) 
         {
-          errs () << "Warning Sea Dsa: dsa information not found\n";
+          errs () << "WARNING ABC: Sea Dsa information not found " << tag << "\n";
           return true; 
         }
         
         dsa::Graph* g = m_dsa->getDsaGraph (fn);
         if (!g) 
         {
-          errs () << "Warning Sea Dsa: graph not found for " << fn.getName () << "\n";
+          errs () << "WARNING ABC: Sea Dsa graph not found for " << fn.getName () 
+                  << " " << tag << "\n";
           return true; 
         }
         
         if (!(g->hasCell (v)))
         {
-          errs () << "Warning Sea Dsa: node not found " << v << "\n";
+          errs () << "WARNING ABC: Sea Dsa node not found " << v << " " << tag << "\n";
           return true; 
         }
       
@@ -156,19 +157,24 @@ namespace seahorn {
         
         if (TrackedAllocSite > 0) 
         {
-          if (const Value* alloc_v = m_dsa->getAllocValue (TrackedAllocSite))
+          if (c.getNode ()->getAllocSites().empty ())
           {
-            if (c.getNode ()->getAllocSites().empty ())
-            errs () << "Warning Sea Dsa: node has no allocation site\n";
-            
-            auto const &alloc_sites = c.getNode ()->getAllocSites ();
-            return (std::find(alloc_sites.begin(), alloc_sites.end(), alloc_v) !=
-                    alloc_sites.end());
+            errs () << "WARNING ABC: Sea Dsa found node for " << v 
+                    << " without allocation site " << tag << "\n"
+                    << *c.getNode () << "\n"; 
+            return true;
+          }
+          
+          if (const Value* AV = m_dsa->getAllocValue (TrackedAllocSite))
+          {
+            auto const &s = c.getNode ()->getAllocSites ();
+            return (std::find(s.begin(), s.end(), AV) != s.end());
           }
           else
           {
-            errs () << "Warning Sea Dsa: not value found for allocation site\n";
-            return false;
+            errs () << "WARNING ABC: Sea Dsa not value found for allocation site " 
+                    << tag << "\n";
+            return true;
           }
         } 
         
@@ -192,7 +198,7 @@ namespace seahorn {
 
       const char* getDsaName () const { return "Llvm Dsa analysis";}
 
-      bool shouldBeTrackedPtr (const llvm::Value &ptr, const llvm::Function& fn)
+      bool shouldBeTrackedPtr (const llvm::Value &ptr, const llvm::Function& fn, int tag)
       {
 
         if (!ptr.getType()->isPointerTy ())
@@ -210,14 +216,14 @@ namespace seahorn {
         }
         
         if (!dsg || !gDsg) {
-          errs () << "Warning Llvm Dsa: DSA graph not found. This should not happen.\n";
+          errs () << "WARNING ABC: Llvm Dsa graph not found. This should not happen.\n";
           return true; 
         }
         
         const DSNode* n = dsg->getNodeForValue (&ptr).getNode ();
         if (!n) n = gDsg->getNodeForValue (&ptr).getNode ();
         if (!n)  {
-          errs () << "Warning Llvm Dsa: DSA node not found " 
+          errs () << "WARNING ABC: Llvm Dsa node not found " 
                   << *(ptr.stripPointerCasts ()) << "\n";
           return true; 
       }
@@ -232,8 +238,8 @@ namespace seahorn {
           } else if (TrackedAllocSite > 0) {
             const Value* v = m_dsa->getAllocValue (TrackedAllocSite);
             if (!v) {
-              errs () << "Warning Llvm Dsa: not value found for allocation site\n";
-              return false;
+              errs () << "WARNING ABC:  Llvm Dsa not value found for allocation site\n";
+              return true;
             }
             
             const DSNode* alloc_n = dsg->getNodeForValue (v).getNode ();
@@ -1283,7 +1289,7 @@ namespace seahorn
     // adds shadow parameters by making new copies of the existing
     // functions and then removing those functions.
     if (TrackedDsaNode != 0) {
-      errs () << "Warning: Dsa is invalidated so we cannot use Dsa info ...\n";
+      errs () << "WARNING ABC: Dsa is invalidated so we cannot use Dsa info ...\n";
       TrackedDsaNode = 0;
     }
     
@@ -1301,7 +1307,7 @@ namespace seahorn
           Value* ptr = LI->getPointerOperand ();
           if (ptr == m_ret_offset || ptr == m_ret_size) continue;
             
-          if (dsa->shouldBeTrackedPtr (*ptr, F))
+          if (dsa->shouldBeTrackedPtr (*ptr, F, __LINE__))
             WorkList.push_back (I);
           else
             untracked_dsa_checks++; 
@@ -1310,20 +1316,20 @@ namespace seahorn
           Value* ptr = SI->getPointerOperand ();
           if (ptr == m_ret_offset || ptr == m_ret_size) continue;
 
-          if (dsa->shouldBeTrackedPtr (*ptr, F))
+          if (dsa->shouldBeTrackedPtr (*ptr, F, __LINE__))
             WorkList.push_back (I);
           else
             untracked_dsa_checks++; 
           
         } else if (MemTransferInst *MTI = dyn_cast<MemTransferInst>(I)) {
-          if (dsa->shouldBeTrackedPtr (*MTI->getDest (), F) || 
-              dsa->shouldBeTrackedPtr (*MTI->getSource (), F))
+          if (dsa->shouldBeTrackedPtr (*MTI->getDest (), F, __LINE__) || 
+              dsa->shouldBeTrackedPtr (*MTI->getSource (), F, __LINE__))
             WorkList.push_back (I);
           else
             untracked_dsa_checks+=2;
         } else if (MemSetInst *MSI = dyn_cast<MemSetInst>(I)) {
           Value* ptr = MSI->getDest ();
-          if (dsa->shouldBeTrackedPtr (*ptr, F))
+          if (dsa->shouldBeTrackedPtr (*ptr, F, __LINE__))
             WorkList.push_back (I);            
           else
             untracked_dsa_checks++; 
@@ -1630,7 +1636,7 @@ namespace seahorn {
         if (!Ty->isSized()) continue;
         if (!GV.hasInitializer()) continue;
         if (globalGeneratedBySeaHorn (&GV)) continue;
-        if (!(m_dsa->shouldBeTrackedPtr (GV, *main))) continue;
+        if (!(m_dsa->shouldBeTrackedPtr (GV, *main, __LINE__))) continue;
         if (GV.hasSection()) {
           StringRef Section(GV.getSection());
           // Globals from llvm.metadata aren't emitted, do not instrument them.
@@ -1643,7 +1649,7 @@ namespace seahorn {
         }
         else {
           // this should not happen unless the global is external
-          errs () << "Warning: cannot infer statically the size of global " 
+          errs () << "WARNING ABC: cannot infer statically the size of global " 
                   << GV << "\n";
         }
       }
@@ -2250,7 +2256,7 @@ namespace seahorn {
         if (Value* size = Data.first) 
           doAllocaSite (I, size, abc::getNextInst (I));
         else
-          errs () << "Warning: missing allocation site " << *I << "\n";        
+          errs () << "WARNING ABC: missing allocation site " << *I << "\n";        
         return;
       }
 
@@ -2260,7 +2266,7 @@ namespace seahorn {
         // the call.
         Function* F = I->getParent()->getParent();
         
-        if (!(m_dsa->shouldBeTrackedPtr (*I->getArgOperand (0), *F)))
+        if (!(m_dsa->shouldBeTrackedPtr (*I->getArgOperand (0), *F, __LINE__)))
           return;
         
         uint64_t n = I->getDereferenceableBytes (0);
@@ -2319,7 +2325,7 @@ namespace seahorn {
           vtracked_base = vtracked_ptr = vtracked_size = vtracked_offset = nullptr;
           for (Argument& A : F->args()) {
 
-            if (!(m_dsa->shouldBeTrackedPtr (A, *F))) continue;
+            if (!(m_dsa->shouldBeTrackedPtr (A, *F, __LINE__))) continue;
             uint64_t n = A.getDereferenceableBytes ();
             if (n == 0) continue;
     
@@ -2465,7 +2471,7 @@ namespace seahorn {
             if (GetElementPtrInst* GEP  = dyn_cast<GetElementPtrInst> (I)) {
               Value *ptr = GEP->getPointerOperand ();            
               if (abc::isInterestingType (ptr->getType()) && 
-                  dsa->shouldBeTrackedPtr (*ptr, F) && 
+                  dsa->shouldBeTrackedPtr (*ptr, F, __LINE__) && 
                   abc::canEscape (GEP)) {
                 ToInstrument.push_back (I);
               }
@@ -2473,32 +2479,32 @@ namespace seahorn {
               // We've seen this temp in the current BB.
               if (!TempsToInstrument.insert(Addr).second) continue;  
 
-              if (dsa->shouldBeTrackedPtr (*Addr, F)) {
+              if (dsa->shouldBeTrackedPtr (*Addr, F, __LINE__)) {
                 ToInstrument.push_back (I);
               }
               else
                 untracked_dsa_checks++; 
             } else if (MemTransferInst *MTI = dyn_cast<MemTransferInst>(I)) {
               if (!InstrumentMemIntrinsics) continue;
-              if (dsa->shouldBeTrackedPtr (*MTI->getDest (), F) || 
-                  dsa->shouldBeTrackedPtr (*MTI->getSource (),F))
+              if (dsa->shouldBeTrackedPtr (*MTI->getDest (), F, __LINE__) || 
+                  dsa->shouldBeTrackedPtr (*MTI->getSource (),F, __LINE__))
                 ToInstrument.push_back (I);
               else 
                 untracked_dsa_checks+=2; 
             } else if (MemSetInst *MSI = dyn_cast<MemSetInst>(I)) {
               if (!InstrumentMemIntrinsics) continue;
               Value* ptr = MSI->getDest ();
-              if (dsa->shouldBeTrackedPtr (*ptr, F)) 
+              if (dsa->shouldBeTrackedPtr (*ptr, F, __LINE__)) 
                 ToInstrument.push_back (I);
               else 
                 untracked_dsa_checks++; 
             } else if (AllocaInst* AI = dyn_cast<AllocaInst>(I)) {
               if (abc::isInterestingAlloca (dl, *AI) && 
-                  dsa->shouldBeTrackedPtr (*I, F))
+                  dsa->shouldBeTrackedPtr (*I, F, __LINE__))
                 ToInstrument.push_back (I);
             } else {
               CallSite CS (I);
-              if (CS && dsa->shouldBeTrackedPtr (*I, F)) {
+              if (CS && dsa->shouldBeTrackedPtr (*I, F, __LINE__)) {
                 ToInstrument.push_back (I);
                 // XXX: do we really need to do this?
                 //if (CS.getCalledFunction ()) 
@@ -2719,7 +2725,7 @@ namespace seahorn {
         Type *Ty = cast<PointerType>(GV.getType())->getElementType();
         if (!Ty->isSized()) continue;
         if (!GV.hasInitializer()) continue;
-        if (!(dsa->shouldBeTrackedPtr (GV, *main))) continue;
+        if (!(dsa->shouldBeTrackedPtr (GV, *main, __LINE__))) continue;
         if (GV.hasSection()) {
           StringRef Section(GV.getSection());
           // Globals from llvm.metadata aren't emitted, do not instrument them.
@@ -2735,7 +2741,7 @@ namespace seahorn {
           abc::update_cg (cg, main, B.CreateCall2 (abc_alloc, baseAddr, allocSize));
         }
         else {// this should not happen unless global is external
-          errs () << "Warning: cannot infer statically the size of global " 
+          errs () << "WARNING ABC: cannot infer statically the size of global " 
                   << GV << "\n";
         }
       }
@@ -2764,7 +2770,7 @@ namespace seahorn {
             Instruction *I = &i;
             if (GetElementPtrInst* GEP  = dyn_cast<GetElementPtrInst> (I)) {
               Value *base = GEP->getPointerOperand ();            
-              if (dsa->shouldBeTrackedPtr (*base, F) && 
+              if (dsa->shouldBeTrackedPtr (*base, F, __LINE__) && 
                   abc::isInterestingType (base->getType()) && 
                   abc::canEscape (GEP) && 
                   !abc::IsTrivialCheck (dl, tli, dyn_cast<Value> (I))) {
@@ -2781,7 +2787,7 @@ namespace seahorn {
               if (!TempsToInstrument.insert(ptr).second) continue;  
 
               if (ptr->getName ().startswith ("sea_")) continue;
-              if (dsa->shouldBeTrackedPtr (*ptr, F)) { 
+              if (dsa->shouldBeTrackedPtr (*ptr, F, __LINE__)) { 
                 mem_accesses++;
                 if (abc::IsTrivialCheck (dl, tli, ptr)) {
                   trivial_checks++;
@@ -2819,8 +2825,8 @@ namespace seahorn {
             } else if (MemTransferInst *MTI = dyn_cast<MemTransferInst>(I)) {
               if (!InstrumentMemIntrinsics) continue;
               
-              if (dsa->shouldBeTrackedPtr (*MTI->getDest (), F) || 
-                  dsa->shouldBeTrackedPtr (*MTI->getSource (), F)) {
+              if (dsa->shouldBeTrackedPtr (*MTI->getDest (), F, __LINE__) || 
+                  dsa->shouldBeTrackedPtr (*MTI->getSource (), F, __LINE__)) {
                 mem_accesses+=2;
                 B.SetInsertPoint (MTI); 
                 
@@ -2851,7 +2857,7 @@ namespace seahorn {
               if (!InstrumentMemIntrinsics) continue;
               
               Value* ptr = MSI->getDest ();
-              if (dsa->shouldBeTrackedPtr (*ptr, F))  {
+              if (dsa->shouldBeTrackedPtr (*ptr, F, __LINE__))  {
                 mem_accesses++;
                 Value* dest = MSI->getDest ();
                 B.SetInsertPoint (MSI); 
@@ -2869,7 +2875,7 @@ namespace seahorn {
             } else if (AllocaInst *AI = dyn_cast<AllocaInst>(I)) {
               if (!abc::isInterestingAlloca (dl, *AI)) continue;
 
-              if (dsa->shouldBeTrackedPtr (*AI, F))  {
+              if (dsa->shouldBeTrackedPtr (*AI, F, __LINE__))  {
                 B.SetInsertPoint (abc::getNextInst (I));
                 SizeOffsetEvalType Data = size_offset_eval.compute (I);
                 if (Value* size = Data.first) {
@@ -2889,7 +2895,7 @@ namespace seahorn {
               }
             } else if (isMallocLikeFn(I, tli, true) || isOperatorNewLikeFn(I, tli, true)){
               
-              if (dsa->shouldBeTrackedPtr (*I, F)) {
+              if (dsa->shouldBeTrackedPtr (*I, F, __LINE__)) {
                 SizeOffsetEvalType Data = size_offset_eval.compute (I);
                 if (Value* size = Data.first) {
                   B.SetInsertPoint (abc::getNextInst (I));
@@ -2907,7 +2913,7 @@ namespace seahorn {
                                                        abc::createNullCst (ctx))));
                   }
                 } else 
-                  errs () << "Warning: missing allocation site " << *I << "\n"; 
+                  errs () << "WARNING ABC: missing allocation site " << *I << "\n"; 
               }
             }
           }
