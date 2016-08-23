@@ -120,21 +120,21 @@ namespace seahorn {
       
       bool shouldBeTrackedPtr (const llvm::Value &ptr, const llvm::Function& fn)
       {
-        if (!m_dsa) 
-        {
-          //errs () << "Warning Sea Dsa: dsa information not found\n";
-          return true; 
-        }
-
         auto &v = *(ptr.stripPointerCasts ());
 
         if (!v.getType()->isPointerTy ())
           return false;
+
+        if (!m_dsa) 
+        {
+          errs () << "Warning Sea Dsa: dsa information not found\n";
+          return true; 
+        }
         
         dsa::Graph* g = m_dsa->getDsaGraph (fn);
         if (!g) 
         {
-          errs () << "Warning Sea Dsa: graph not found\n";
+          errs () << "Warning Sea Dsa: graph not found for " << fn.getName () << "\n";
           return true; 
         }
         
@@ -147,28 +147,29 @@ namespace seahorn {
         const dsa::Cell &c = g->getCell(v);
 
         /// XXX: if the dsa analysis is context-sensitive we can have
-        /// a node that is not accessed in this function but then
-        /// passed to another funciton where it is accessed.
+        /// a node that is not accessed in one function but accessed
+        /// in another. Thus, we cannot skip nodes that are not
+        /// accessed in the current function.
 
         if (TrackedDsaNode > 0) 
-        { return (m_dsa->getDsaNodeId (*c.getNode ()) == TrackedDsaNode);  }    
+        { return (m_dsa->getDsaNodeId (*c.getNode ()) == TrackedDsaNode); }
         
         if (TrackedAllocSite > 0) 
         {
-          const Value* alloc_v = m_dsa->getAllocValue (TrackedAllocSite);
-          if (!alloc_v) 
+          if (const Value* alloc_v = m_dsa->getAllocValue (TrackedAllocSite))
+          {
+            if (c.getNode ()->getAllocSites().empty ())
+            errs () << "Warning Sea Dsa: node has no allocation site\n";
+            
+            auto const &alloc_sites = c.getNode ()->getAllocSites ();
+            return (std::find(alloc_sites.begin(), alloc_sites.end(), alloc_v) !=
+                    alloc_sites.end());
+          }
+          else
           {
             errs () << "Warning Sea Dsa: not value found for allocation site\n";
-              return false;
+            return false;
           }
-          
-          if (!(g->hasCell (*alloc_v)))
-          {
-            errs () << "Warning Sea Dsa: node not found " << *alloc_v << "\n";
-            return true; 
-          }
-          
-          return (g->getCell (*alloc_v).getNode () == c.getNode ());
         } 
         
         return true;
