@@ -301,22 +301,19 @@ class Seapp(sea.LimitedCmd):
             if enable_sea_dsa (extra): argv.append ('--abc-sea-dsa')
 
             if args.dsa_info: 
-                # avoid duplicates in argv
-                if '--horn-sea-dsa-info' not in dsa_opts: 
-                    if enable_sea_dsa (extra):
-                        argv.append ('--horn-sea-dsa-info')
-                    else:
-                        argv.append ('--dsa-info')
+                if enable_sea_dsa (extra):
+                    argv.append ('--sea-dsa-info')
+                else:
+                    argv.append ('--dsa-info')
 
             if args.dsa_info_to_file is not None: 
                 if enable_sea_dsa (extra):
-                    argv.append ('--horn-sea-dsa-info-to-file={n}'.format(n=args.dsa_info_to_file))
+                    argv.append ('--sea-dsa-info-to-file={n}'.format(n=args.dsa_info_to_file))
                 else:
                     argv.append ('--dsa-info-to-file={n}'.format(n=args.dsa_info_to_file))
 
             # add dsa options     
             argv.extend (dsa_opts)
-
                 
             argv.append ('--abc-dsa-node={n}'.format (n=args.abc_dsa))
             argv.append ('--abc-alloc-site={n}'.format (n=args.abc_site))

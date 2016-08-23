@@ -274,7 +274,6 @@ def horn_opts(args):
 
     if args.dsa != 'llvm': 
         opts = opts + ['--horn-sea-dsa']
-        opts = opts + ['--horn-sea-dsa-info']
         if args.dsa == 'sea-ci':
             opts = opts + ['--horn-sea-dsa-cs-global=false']
         else:
@@ -325,18 +324,32 @@ def prove_abc_cmmd (in_file, alloca_id, args, extra = []):
         asm_filename, asm_file_ext = os.path.splitext(args.asm_out_file)
         asm_filename = asm_filename + '.alloc.' + str(alloca_id) + asm_file_ext
         pf_cmd.extend(['--oll={0}'.format(asm_filename)])
+
+    ### XXX: needed by seapp during abc instrumentation    
+    pf_cmd.extend(['--dsa-info'])
+
     pf_cmd = [get_sea(), 'pf'] + pf_cmd + extra + [in_file]
     return pf_cmd
 
 # if alloca_id is None then it will try to prove all checks, 
 # otherwise only those checks originated from alloca_id
 def prove_abc (in_file, alloca_id, args, extra = []):
+
+    if alloca_id is None:
+        print "--- Running abc checker "
+    else:
+        print "--- Running abc checker for allocation site id=" + str(alloca_id)
+
     pf_cmd = prove_abc_cmmd(in_file, alloca_id, args, extra)
+
     if verbose: print " ".join(pf_cmd)
+
     p = sub.Popen(pf_cmd, shell=False, stdout=sub.PIPE, stderr=sub.STDOUT)
     results, _ = p.communicate()
+
     if verbose: print results
     if args.zverbose > 0: print results
+
     return get_results (results, p.returncode, args.cpu)
 
 
@@ -397,16 +410,15 @@ def get_alloc_sites (in_file, work_dir, args):
     opts = abc_opts (args)   
     alloca_file = work_dir + '/alloc.csv'
 
-    if args.dsa == 'llvm':
-        opts.extend(['--dsa-info-to-file=' + alloca_file])
-    else:
+    opts.extend(['--dsa-info-to-file=' + alloca_file])
+    opts.extend(['--dsa-info'])
+    
+    if args.dsa != 'llvm':
         opts.extend(['--horn-sea-dsa'])
-        opts.extend(['--horn-sea-dsa-info'])
         if args.dsa == 'sea-ci':
             opts.extend(['--horn-sea-dsa-cs-global=false'])
         else:
             opts.extend(['--horn-sea-dsa-cs-global=true'])
-        opts.extend(['--horn-sea-dsa-info-to-file=' + alloca_file])
 
     opts = [get_sea(), 'pp'] + opts
     ext = '.pp.bc'
@@ -419,6 +431,9 @@ def get_alloc_sites (in_file, work_dir, args):
         report_fatal_error('\n\n%s\n' % (result), p.returncode)
     allocas = []
     total_num_checks = get_num_checks (result)
+
+    ## XXX: the relationship between allocation sites and nodes is
+    ## many-to-many
     try:
         with open(alloca_file, 'rb') as csvfile:
             reader = csv.DictReader(csvfile)
@@ -429,7 +444,8 @@ def get_alloc_sites (in_file, work_dir, args):
                     ## site is located in an external function.
                     if row["alloc_site"] == '': continue
 
-                    allocas.append(row["alloc_site"])
+                    if row["alloc_site"] not in allocas: 
+                        allocas.append(row["alloc_site"])
             except csv.Error as e:
                 report_fatal_error('file %s, line %d: %s' % (alloca_file, reader.line_num, e))
     except (IOError):
@@ -479,9 +495,10 @@ def sea_abc(args, extra): # extra is unused
     else:
         (allocas, num_checks) = get_alloc_sites (in_file, work_dir, args)
         if verbose: print "Allocation sites = " + str(allocas)
-        print "The analysis found " + str(len(allocas)) + " allocation sites."
+        print "--- Found " + str(len(allocas)) + " allocation sites"
+
         if len(allocas) == 0:
-            print "No allocation sites found so do nothing"
+            print "--- No allocation sites found so do nothing"
             return
         
         fmt = csv_results_keys()
@@ -520,7 +537,6 @@ def sea_abc(args, extra): # extra is unused
 
                 if args.dsa != 'llvm':
                     sea_abc_cmd.extend(['--horn-sea-dsa'])
-                    sea_abc_cmd.extend(['--horn-sea-dsa-info'])
                     if args.dsa == 'sea-ci':
                         sea_abc_cmd.extend(['--horn-sea-dsa-cs-global=false'])
                     else:
@@ -528,9 +544,16 @@ def sea_abc(args, extra): # extra is unused
 
                 xargs.append(' '.join(sea_abc_cmd))
 
-            if verbose: print "Running in parallel "  + str(xargs) + " ... "
+            if verbose: 
+                print "--- Running GNU parallel:" 
+                for a in xargs:
+                    print "\t" + str(a)
 
-            xargs = [get_gnu_parallel(),"--progress", "--eta", ":::"] + xargs
+            gnupar_opts = []
+            #if verbose:
+            #    gnupar_opts = gnupar_opts + ["--progress", "--eta"]
+            xargs = [get_gnu_parallel()] + gnupar_opts + [":::"] + xargs
+                
             #p = sub.Popen(xargs, shell=False, stdout=sub.PIPE, stderr=sub.STDOUT)
             p = sub.Popen(xargs, shell=False)
             result, _ = p.communicate()
