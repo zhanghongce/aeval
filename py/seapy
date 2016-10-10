@@ -30,7 +30,9 @@ def main (argv):
             sea.commands.Unroll(),
             sea.commands.seaTerm,
             sea.commands.SeaAbc(),
-            sea.commands.seaClangAbc
+            sea.commands.seaClangAbc,
+            sea.commands.LinkRt(),
+            sea.commands.Exe
     ]
 
 

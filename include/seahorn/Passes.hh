@@ -63,6 +63,8 @@ namespace seahorn
 
   llvm::Pass* createCanReadUndefPass ();
 
+  llvm::Pass *createApiAnalysisPass(std::string &config);
+
   llvm::Pass* createBmcPass (llvm::raw_ostream* out, bool solve);
 
   llvm::Pass* createProfilerPass();
@@ -74,6 +76,7 @@ namespace seahorn
   llvm::Pass* createPromoteSeahornAssumePass ();
   llvm::Pass* createKleeInternalizePass ();
   llvm::Pass* createWrapMemPass ();  
+  llvm::Pass* createRenameNondetPass();
 }
 
 #ifdef HAVE_LLVM_SEAHORN
