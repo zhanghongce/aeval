@@ -26,6 +26,8 @@
 #include "seahorn/HornWrite.hh"
 #include "seahorn/HornifyModule.hh"
 #include "seahorn/HornSolver.hh"
+#include "seahorn/Houdini.hh"
+#include "seahorn/PredicateAbstraction.hh"
 #include "seahorn/HornCex.hh"
 #include "seahorn/Transforms/Scalar/PromoteVerifierCalls.hh"
 #include "seahorn/Transforms/Scalar/LowerGvInitializers.hh"
@@ -114,7 +116,7 @@ PrintStats ("horn-stats",
             llvm::cl::desc ("Print statistics"), llvm::cl::init(false));
 
 static llvm::cl::opt<bool>
-Cex ("horn-cex", llvm::cl::desc ("Produce detailed counterexample"),
+Cex ("horn-cex-pass", llvm::cl::desc ("Produce detailed counterexample"),
      llvm::cl::init (false));
 
 static llvm::cl::opt<bool>
@@ -130,6 +132,22 @@ static llvm::cl::opt<bool>
 OneAssumePerBlock ("horn-one-assume-per-block", 
                    llvm::cl::desc ("Make sure there is at most one call to verifier.assume per block"), 
                    llvm::cl::init (false));
+
+static llvm::cl::opt<bool>
+SeaHornDsa ("horn-sea-dsa",
+            llvm::cl::desc ("Use Seahorn Dsa analysis"),
+            llvm::cl::init (false));
+
+static llvm::cl::opt<bool>
+HoudiniInv ("horn-houdini",
+         llvm::cl::desc ("Use Houdini algorithm to generate inductive invariants"),
+         llvm::cl::init (false));
+
+static llvm::cl::opt<bool>
+PredAbs ("horn-pred-abs",
+        llvm::cl::desc ("Use Predicate Abstraction to generate inductive invariants"),
+        llvm::cl::init (false));
+
 
 // removes extension from filename if there is one
 std::string getFileName(const std::string &str) {
@@ -244,7 +262,11 @@ int main(int argc, char **argv) {
 
   // -- initialize any global variables that are left
   pass_manager.add (new seahorn::LowerGvInitializers ());
-  pass_manager.add (seahorn::createShadowMemDsaPass ());
+  if (SeaHornDsa)
+    pass_manager.add (seahorn::createShadowMemSeaDsaPass ());
+  else
+    pass_manager.add (seahorn::createShadowMemDsaPass ());
+
   // lowers shadow.mem variables created by ShadowMemDsa pass
   pass_manager.add (seahorn::createPromoteMemoryToRegisterPass ());
 
@@ -295,8 +317,12 @@ int main(int argc, char **argv) {
   {
     if (!OutputFilename.empty ()) pass_manager.add (new seahorn::HornWrite (output->os ()));
     if (Crab) pass_manager.add (seahorn::createLoadCrabPass ());
-    if (Solve) pass_manager.add (new seahorn::HornSolver ());
-    if (Cex) pass_manager.add (new seahorn::HornCex ());
+    if (HoudiniInv) pass_manager.add (new seahorn::HoudiniPass ());
+    if (PredAbs) pass_manager.add(new seahorn::PredicateAbstraction());
+    if (Solve)
+    { 	  pass_manager.add (new seahorn::HornSolver ());
+          if (Cex) pass_manager.add (new seahorn::HornCex ());
+    }
   }
 
   pass_manager.run(*module.get());

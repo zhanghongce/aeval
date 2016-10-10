@@ -1,15 +1,22 @@
 #include "seahorn/HornCex.hh"
+#include "seahorn/Harness.hh"
+
+#include "seahorn/MemSimulator.hh"
 
 #include "llvm/IR/Function.h"
 #include "ufo/Stats.hh"
 
 #include "boost/range/algorithm/reverse.hpp"
 
+#include "seahorn/UfoSymExec.hh"
+#include "seahorn/BvSymExec.hh"
+
 #include "seahorn/HornifyModule.hh"
 #include "seahorn/HornSolver.hh"
 #include "seahorn/Analysis/CutPointGraph.hh"
 #include "seahorn/Analysis/CanFail.hh"
 
+#include "seahorn/Transforms/Utils/Local.hh"
 #include "seahorn/Bmc.hh"
 
 #include "boost/range.hpp"
@@ -31,14 +38,25 @@
 #include "llvm/IR/ValueMap.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Verifier.h"
-
 #include "llvm/Bitcode/ReaderWriter.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/Target/TargetLibraryInfo.h"
 
 #include <gmpxx.h>
 
 static llvm::cl::opt<std::string>
-SvCompCexFile("horn-svcomp-cex", llvm::cl::desc("Counterexample in SV-COMP XML format"),
+HornCexFile("horn-cex", llvm::cl::desc("Counterexample in SV-COMP (.xml) or LLVM bitcode (.bc or .ll) format"),
               llvm::cl::init(""), llvm::cl::value_desc("filename"));
+
+static llvm::cl::opt<bool>
+UseBv ("horn-cex-bv",
+       llvm::cl::desc("Construct bit-precise counterexamples"),
+       llvm::cl::init (false));
+
+static llvm::cl::opt<bool>
+MemSim ("horn-cex-bv-memsim",
+        llvm::cl::desc ("Run memory simulation on the counterexample"),
+        llvm::cl::init (false));
 
 static llvm::cl::opt<std::string>
 SvCompCexFileSpec("horn-svcomp-cex-spec", 
@@ -60,16 +78,23 @@ HornCexSmtFilename("horn-cex-smt", llvm::cl::desc("Counterexample validate SMT p
                llvm::cl::init(""), llvm::cl::value_desc("filename"), llvm::cl::Hidden);
 
 static llvm::cl::opt<std::string>
-HornCexLLVM("horn-llvm-cex", llvm::cl::desc("Produce detailed counterexample in executable LLVM bitcode format"),
-               llvm::cl::init(""), llvm::cl::value_desc("filename"));
+    BmcSliceOutputFile("horn-bmc-slice", llvm::cl::desc("Output sliced bitcode by BmcTrace"),
+                    llvm::cl::init(""), llvm::cl::value_desc("filename"));
+
+static llvm::cl::opt<std::string>
+    CpSliceOutputFile("horn-cp-slice", llvm::cl::desc("Output sliced bitcode by cut point trace"),
+                    llvm::cl::init(""), llvm::cl::value_desc("filename"));
+
 
 using namespace llvm;
 namespace seahorn
 {
   
   template <typename O> class SvCompCex;
-  static void dumpSvCompCex (BmcTrace &trace);
-  
+  static void dumpSvCompCex (BmcTrace &trace, std::string CexFile);
+  static void dumpLLVMCex (BmcTrace &trace, StringRef CexFile, const DataLayout &dl);
+  static void dumpLLVMBitcode(const Module &M, StringRef BcFile);
+
   char HornCex::ID = 0;
   
   bool HornCex::runOnModule (Module &M)
@@ -77,119 +102,6 @@ namespace seahorn
     for (Function &F : M)
       if (F.getName ().equals ("main")) return runOnFunction (M, F);
     return false;
-  }
-
-  static Constant* exprToLlvm (IntegerType *ty, Expr e)
-  {
-    if (isOpX<TRUE> (e))
-      return ConstantInt::getTrue (ty);
-    else if (isOpX<FALSE> (e))
-      return ConstantInt::getFalse (ty);
-    else if (isOpX<MPZ> (e))
-    {
-      mpz_class mpz = getTerm<mpz_class> (e);
-      return ConstantInt::get (ty, mpz.get_str (), 10);
-    }
-    else
-    {
-      // if all fails, try 0
-      LOG("cex", errs () << "WARNING: Not handled value: " << *e << "\n";);
-      return ConstantInt::get (ty, 0);
-    }
-  }
-
-  static void writeLLVMHarness(std::string HarnessFilename, Function &F, BmcTrace &trace)
-  {
-
-    Module Harness("harness", getGlobalContext());
-
-    ValueMap<Function*, ExprVector> FuncValueMap;
-
-    // Look for calls in the trace
-    for (unsigned loc = 0; loc < trace.size(); loc++)
-    {
-      const BasicBlock &BB = *trace.bb(loc);
-      for (auto &I : BB)
-      {
-        if (const CallInst *ci = dyn_cast<CallInst> (&I))
-        {
-          Function *CF = ci->getCalledFunction ();
-          if (!CF) continue;
-
-          Expr V = trace.eval (loc, I);
-          if (!V) continue;
-
-          // If the function name does not have a period in it,
-          // we assume it is an original function.
-          if (CF->hasName() &&
-              CF->getName().find_first_of('.') == StringRef::npos &&
-              CF->isExternalLinkage(CF->getLinkage())) {
-            FuncValueMap[CF].push_back(V);
-          }
-        }
-      }
-    }
-
-    // Build harness functions
-    for (auto CFV : FuncValueMap) {
-
-      auto CF = CFV.first;
-      auto& values = CFV.second;
-
-      // This is where we will build the harness function
-      Function *HF = cast<Function> (Harness.getOrInsertFunction(CF->getName(), cast<FunctionType> (CF->getFunctionType())));
-
-      IntegerType *RT = dyn_cast<IntegerType> (CF->getReturnType());
-      if (!RT)
-      {
-        errs () << "Skipping non-integer function: " << CF->getName () << "\n";
-        continue;
-      }
-      
-      
-      ArrayType* AT = ArrayType::get(RT, values.size());
-
-      // Convert Expr to LLVM constants
-      SmallVector<Constant*, 20> LLVMarray;
-      std::transform(values.begin(), values.end(), std::back_inserter(LLVMarray),
-                     [RT](Expr e) { return exprToLlvm(RT, e); });
-
-      // This is an array containing the values to be returned
-      GlobalVariable* CA = new GlobalVariable(Harness,
-                                              AT,
-                                              true,
-                                              GlobalValue::PrivateLinkage,
-                                              ConstantArray::get(AT, LLVMarray));
-
-      // Build the body of the harness function
-      BasicBlock *BB = BasicBlock::Create(getGlobalContext(), "entry", HF);
-      IRBuilder<> Builder(BB);
-
-      Type *CountType = Type::getInt32Ty (F.getContext ());
-      GlobalVariable* Counter = new GlobalVariable(Harness,
-                                                   CountType,
-                                                   false,
-                                                   GlobalValue::PrivateLinkage,
-                                                   ConstantInt::get(CountType, 0));
-
-      Value *LoadCounter = Builder.CreateLoad(Counter);
-      Value* Idx[] = {ConstantInt::get(CountType, 0), LoadCounter};
-      Value *ArrayLookup = Builder.CreateLoad(Builder.CreateInBoundsGEP(CA, Idx));
-
-      Builder.CreateStore(Builder.CreateAdd(LoadCounter,
-                                            ConstantInt::get(CountType, 1)),
-                          Counter);
-      Builder.CreateRet(ArrayLookup);
-    }
-
-    std::error_code error_code;
-    raw_fd_ostream out(HornCexLLVM, error_code, sys::fs::F_None);
-    assert (!out.has_error());
-    verifyModule(Harness, &errs());
-    StringRef s = HornCexLLVM;
-    if (s.endswith(".ll")) out << Harness;
-    else WriteBitcodeToFile(&Harness, out);
-    out.close();
   }
 
   bool HornCex::runOnFunction (Module &M, Function &F)
@@ -274,8 +186,13 @@ namespace seahorn
     // -- semantics. Possibly different than the semantics used by the
     // -- HornSolver
     ExprFactory &efac = hm.getExprFactory ();
-    UfoSmallSymExec sem (efac, *this, MEM);
-    BmcEngine bmc (sem, hm.getZContext ());
+    
+    UfoSmallSymExec semUfo (efac, *this, MEM);
+    BvSmallSymExec semBv (efac, *this, MEM);
+    
+    SmallStepSymExec *sem = UseBv ? static_cast<SmallStepSymExec*>(&semBv) :
+      static_cast<SmallStepSymExec*>(&semUfo);
+    BmcEngine bmc (*sem, hm.getZContext ());
     
     // -- load the trace into the engine
     for (const CutPoint *cp : cpTrace)
@@ -315,22 +232,70 @@ namespace seahorn
     
     // get bmc trace
     BmcTrace trace (bmc.getTrace ());
-
-    if (!HornCexLLVM.empty()) {
-      writeLLVMHarness(HornCexLLVM, F, trace);
-    }
-
     LOG ("cex", trace.print (errs ()););
 
-    dumpSvCompCex (trace);
+    
+    if (UseBv)
+    {
+      const DataLayout &dl = getAnalysis<DataLayoutPass> ().getDataLayout();
+      const TargetLibraryInfo &tli = getAnalysis<TargetLibraryInfo> ();
+      if (MemSim)
+      {
+        MemSimulator memSim (trace, dl, tli);
+        bool simRes = memSim.simulate ();
+      }
+    }
+    
+    StringRef HornCexFileRef(HornCexFile);
+    if (HornCexFileRef.endswith(".ll") ||
+        HornCexFileRef.endswith(".bc")) {
+      const DataLayout &dl = getAnalysis<DataLayoutPass> ().getDataLayout();
+      dumpLLVMCex(trace, HornCexFileRef, dl);
+    } else if (HornCexFileRef.endswith(".xml")) {
+      dumpSvCompCex (trace, HornCexFileRef);
+    } else if (!HornCexFileRef.empty()) {
+      errs () << "Unrecognized counter-example file suffix in " << HornCexFileRef
+              << ". Expected .xml, .ll, or .bc.\n";
+    }
+
+    if (!BmcSliceOutputFile.empty()) {
+      llvm::DenseSet<const llvm::BasicBlock *> region;
+      for (int i = 0; i < trace.size(); i++)
+        region.insert(trace.bb(i));
+      reduceToRegion(F, region);
+      dumpLLVMBitcode(M, BmcSliceOutputFile.c_str());
+      return true;
+    }
+
+    if (!CpSliceOutputFile.empty()) {
+      DenseSet<const BasicBlock *> region;
+      for (int i = 0; i < cpTrace.size(); i++) {
+        const CutPoint *cp = cpTrace[i];
+        region.insert(&cp->bb());
+        for (CutPoint::const_iterator it = cp->succ_begin();
+             it != cp->succ_end(); it++) {
+          const CpEdge *const edge = *it;
+          if (&edge->target() == cpTrace[i + 1]) {
+            for (CpEdge::const_iterator bb = edge->begin(); bb != edge->end();
+                 bb++) {
+              region.insert(&*bb);
+            }
+          }
+        }
+      }
+      reduceToRegion(F, region);
+      dumpLLVMBitcode(M, CpSliceOutputFile.c_str());
+      return true;
+    }
+
     return false;
   }
-  
-  
+
   void HornCex::getAnalysisUsage (AnalysisUsage &AU) const
   {
     AU.setPreservesAll ();
     AU.addRequired<DataLayoutPass> ();
+    AU.addRequired<TargetLibraryInfo> ();
     AU.addRequired<CutPointGraph> ();
     AU.addRequired<HornifyModule> ();
     AU.addRequired<HornSolver> ();
@@ -445,12 +410,10 @@ namespace seahorn
   }
   
   
-  static void dumpSvCompCex (BmcTrace &trace)
+  static void dumpSvCompCex (BmcTrace &trace, std::string CexFile)
   {
-    if (SvCompCexFile.empty ()) return;
-    
     std::error_code ec;
-    llvm::tool_output_file out (SvCompCexFile.c_str (), ec, llvm::sys::fs::F_Text);
+    llvm::tool_output_file out (CexFile.c_str (), ec, llvm::sys::fs::F_Text);
     if (ec)
     {
       errs () << "ERROR: Cannot open CEX file: " << ec.message () << "\n";
@@ -473,7 +436,35 @@ namespace seahorn
     svcomp.footer ();
     out.keep ();
   }
+
+  static void dumpLLVMCex(BmcTrace &trace, StringRef CexFile, const DataLayout &dl)
+  {
+    std::unique_ptr<Module> Harness = createLLVMHarness(trace, dl);
+    std::error_code error_code;
+    llvm::tool_output_file out(CexFile, error_code, sys::fs::F_None);
+    assert (!error_code);
+    verifyModule(*Harness, &errs());
+    if (CexFile.endswith(".ll")) out.os() << *Harness;
+    else WriteBitcodeToFile(Harness.get(), out.os());
+    out.os ().close ();
+    out.keep ();
+  }
+
   
+
+  static void dumpLLVMBitcode(const Module &M, StringRef BcFile) {
+    std::error_code error_code;
+    tool_output_file sliceOutput(BcFile, error_code, sys::fs::F_None);
+    assert(!error_code);
+    verifyModule(M, &errs());
+    if (BcFile.endswith(".ll"))
+      sliceOutput.os() << M;
+    else
+      WriteBitcodeToFile(&M, sliceOutput.os());
+    sliceOutput.os().close();
+    sliceOutput.keep();
+  }
+
 
 }
 

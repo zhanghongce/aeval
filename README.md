@@ -1,14 +1,26 @@
-# SeaHorn #
-[![Build Status](https://travis-ci.org/seahorn/seahorn.svg?branch=master)](https://travis-ci.org/seahorn/seahorn)
 
-![18093415-vector-illustration-of-seahorse-cartoon--coloring-book.jpg](https://bitbucket.org/repo/gngGo9/images/174701276-18093415-vector-illustration-of-seahorse-cartoon--coloring-book.jpg)
+<p align=center><a href="https://seahorn.github.io"><img src="https://seahorn.github.io/images/seahorn-logo.png" alt="seahorn" width="200px" height="200px"/></a></p>
+
+<table>
+  <tr>
+    <th>Windows</th><th>Ubuntu</th><th>OS X</th><th>Chat with us</th><th>Stories</th>
+  </tr>
+    <td>TBD</td>
+    <td><a href="https://travis-ci.org/seahorn/seahorn"><img src="https://travis-ci.org/seahorn/seahorn.svg?branch=master" title="Ubuntu 12.04 LTS 64bit, g++-4.8"/></a></td>
+    <td>TBD</td>
+    <td><a href="https://gitter.im/seahorn/seahorn?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge"><img src="https://badges.gitter.im/seahorn/seahorn.svg" title="Gitter"/></a></td>
+    <td> <a href="http://waffle.io/seahorn/seahorn/"><img src="https://badge.waffle.io/seahorn/seahorn.svg?label=ready&title=Ready"/></a></td>
+  </tr>
+</table>
+
+
 
 #About#
 
-An LLVM based verification framework.
+<a href="http://seahorn.github.io/">SeaHorn</a> is an automated analysis framework for LLVM-based languages.
 
 #License#
-SeaHorn is distributed under a modified BSD license. See [license.txt](license.txt) for details.
+<a href="http://seahorn.github.io/">SeaHorn</a> is distributed under a modified BSD license. See [license.txt](license.txt) for details.
 
 #Installation#
 
@@ -115,28 +127,33 @@ To see all the options, type `sea --help`.
 
 This is an example of a C program annotated with a safety property:
 ``` c
-    /* verification command: sea pf --crab test.c */
-    extern int nd(void);
-    extern void __VERIFIER_error(void) __attribute__((noreturn));
-    #define assert(X) if(!(X)){__VERIFIER_error();}
-    int main(){
-      int x,y;
-      x=1; y=0;
-      while (nd ())
-      {
-        x=x+y;
-        y++;
+    /* verification command: sea pf --horn-stats test.c */
+    #include "seahorn/seahorn.h"
+    int nd();
+
+    int main(void){
+      int k=1;
+      int i=1;
+      int j=0;
+      int n = nd();
+      while(i<n) {
+        j=0;
+        while(j<i) {
+          k += (i-j);
+          j++;
+        }
+        i++;
       }
-      assert (x>=y);
-     return 0;
+      sassert(k>=n);
     }
+
 ```
 SeaHorn follows [SV-COMP][svcomp] convention of encoding error locations by a call
-to the designated error function 
+to the designated error function
 `__VERIFIER_error()`. SeaHorn returns `unsat` when `__VERIFIER_error()`
 is unreachable, and the program is considered safe. SeaHorn returns `sat`
 when `__VERIFIER_error()` is reachable and the
-program is unsafe.
+program is unsafe. `sassert()` method is defined in `seahorn/seahorn.h` which can be found in `seahorn/share`.
 
 [svcomp]: (http://sv-comp.sosy-lab.org)
 

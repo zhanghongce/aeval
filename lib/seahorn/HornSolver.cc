@@ -1,6 +1,7 @@
 #include "seahorn/HornSolver.hh"
 #include "seahorn/HornifyModule.hh"
 #include "seahorn/HornClauseDBTransf.hh"
+#include "seahorn/HornDbModel.hh"
 
 #include "llvm/IR/Function.h"
 #include "llvm/Support/CommandLine.h"
@@ -19,6 +20,11 @@ PdrEngine ("horn-pdr-engine",
 static llvm::cl::opt<bool>
 PrintAnswer ("horn-answer",
              cl::desc ("Print Horn answer"), cl::init (false));
+
+static llvm::cl::opt<bool>
+EstimateSizeInvars ("horn-estimate-size-invars",
+             cl::desc ("Give an estimation about the size of all inferred invariants"), 
+             cl::init (false));
 
 static llvm::cl::opt<bool>
 SkipConstraints ("horn-skip-constraints",
@@ -91,10 +97,17 @@ namespace seahorn
 
 
     if (PrintAnswer && !m_result)
-      printInvars (M);
+    {
+      HornDbModel dbModel;
+      initDBModelFromFP(dbModel, db, fp);
+      printInvars(M, dbModel);
+    }
     else if (PrintAnswer && m_result)
       printCex ();
-    
+
+    if (EstimateSizeInvars)
+      estimateSizeInvars(M);
+
     return false;
   }
 
@@ -141,12 +154,42 @@ namespace seahorn
     
   }
 
-  void HornSolver::printInvars (Module &M)
+  void HornSolver::estimateSizeInvars (Module &M)
   {
-    for (auto &F : M) printInvars (F);
+    HornifyModule &hm = getAnalysis<HornifyModule> ();
+    ZFixedPoint<EZ3> fp = *m_fp;
+
+    Expr allInvars;
+    bool first = true;
+    unsigned numBlocks = 0;
+    for (auto &F : M) 
+    {
+      if (F.isDeclaration ()) continue;
+      for (auto &BB : F)
+      {
+        if (!hm.hasBbPredicate (BB)) continue;
+        Expr bbPred = hm.bbPredicate (BB);
+        const ExprVector &live = hm.live (BB);
+        Expr invars = fp.getCoverDelta (bind::fapp (bbPred, live));
+        numBlocks++;
+        if (first) {
+          allInvars = invars;
+          first = false;
+        } else {
+          allInvars = mk<AND> (allInvars, invars);
+        }
+      }
+    }
+    Stats::uset ("NumOfBlocksWithInvariants", numBlocks);
+    Stats::uset ("SizeOfInvariants", (allInvars ? dagSize(allInvars) : 0));
   }
 
-  void HornSolver::printInvars (Function &F)
+  void HornSolver::printInvars (Module &M, HornDbModel &model)
+  {
+    for (auto &F : M) printInvars (F, model);
+  }
+
+  void HornSolver::printInvars(Function &F, HornDbModel &model)
   {
     if (F.isDeclaration ()) return;
 
@@ -155,7 +198,7 @@ namespace seahorn
 
     // -- not used for now
     Expr summary = hm.summaryPredicate (F);
-    
+
     ZFixedPoint<EZ3> fp = *m_fp;
 
     for (auto &BB : F)
@@ -166,7 +209,8 @@ namespace seahorn
 
       outs () << *bind::fname (bbPred) << ":";
       const ExprVector &live = hm.live (BB);
-      Expr invars = fp.getCoverDelta (bind::fapp (bbPred, live));
+      //Expr invars = fp.getCoverDelta (bind::fapp (bbPred, live));
+      Expr invars = model.getDef(bind::fapp(bbPred, live));
 
       if (isOpX<AND> (invars))
       {
@@ -178,5 +222,6 @@ namespace seahorn
         outs () << " " << *invars << "\n";
     }
   }
+
 
 }

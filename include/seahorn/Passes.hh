@@ -39,7 +39,8 @@ namespace seahorn
   llvm::Pass* createDevirtualizeFunctionsPass ();
   llvm::Pass* createPromoteMemoryToRegisterPass (); 
   llvm::Pass* createLoadCrabPass ();
-  llvm::Pass* createShadowMemDsaPass ();
+  llvm::Pass* createShadowMemDsaPass (); // llvm dsa
+  llvm::Pass* createShadowMemSeaDsaPass (); // seahorn dsa
   llvm::Pass* createStripShadowMemPass ();
 
   llvm::Pass* createCutLoopsPass ();
@@ -48,17 +49,22 @@ namespace seahorn
   llvm::Pass* createPromoteMallocPass ();
   llvm::Pass* createKillVarArgFnPass ();
   llvm::Pass* createLowerArithWithOverflowIntrinsicsPass ();
-  llvm::Pass* createLowerLibCxxAbiAllocatorsPass ();
+  llvm::Pass* createLowerLibCxxAbiFunctionsPass ();
   llvm::Pass* createSimplifyPointerLoopsPass ();
   llvm::Pass* createSymbolizeConstantLoopBoundsPass ();
   llvm::Pass* createLowerAssertPass ();
-
+  llvm::Pass* createUnfoldLoopForDsaPass ();
+  llvm::Pass* createPromoteArraysPass ();
   llvm::Pass* createStripLifetimePass ();
   llvm::Pass* createStripUselessDeclarationsPass ();
 
   llvm::Pass* createPromoteBoolLoadsPass ();
 
+  llvm::Pass* createEnumVerifierCallsPass ();
+
   llvm::Pass* createCanReadUndefPass ();
+
+  llvm::Pass *createApiAnalysisPass(std::string &config);
 
   llvm::Pass* createBmcPass (llvm::raw_ostream* out, bool solve);
 
@@ -67,6 +73,11 @@ namespace seahorn
   llvm::Pass* createCFGOnlyPrinterPass ();
   llvm::Pass* createCFGViewerPass ();
   llvm::Pass* createCFGOnlyViewerPass ();
+
+  llvm::Pass* createPromoteSeahornAssumePass ();
+  llvm::Pass* createKleeInternalizePass ();
+  llvm::Pass* createWrapMemPass ();  
+  llvm::Pass* createRenameNondetPass();
 }
 
 #ifdef HAVE_LLVM_SEAHORN

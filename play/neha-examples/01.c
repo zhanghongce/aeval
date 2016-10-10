@@ -1,8 +1,5 @@
-#include <assert.h>
+#include "seahorn.h"
 int unknown1();
-int unknown2();
-int unknown3();
-int unknown4();
 
 /*
  * IC3 motivating example
@@ -17,9 +14,5 @@ int main()
    x = t1+ t2;
    y = t1 + t2;
  }
- //static_assert(y>=1);
- if (! (y >= 1)) return 42;
-
- UFO: goto UFO;
-
+  sassert(y >=1);
 }

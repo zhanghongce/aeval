@@ -1,13 +1,102 @@
 #include "seahorn/HornClauseDB.hh"
 
 #include <boost/range.hpp>
+#include <boost/algorithm/string/predicate.hpp>
 #include <boost/range/algorithm/sort.hpp>
 #include <boost/range/algorithm/copy.hpp>
+#include <boost/lexical_cast.hpp>
+
+#include "ufo/ExprLlvm.hpp"
+#include "avy/AvyDebug.h"
 
 #include <sstream>
 
 namespace seahorn
 {
+
+  void HornClauseDB::resetIndexes ()
+  {
+    m_body_idx.clear ();
+    m_head_idx.clear ();
+  }
+  
+  void HornClauseDB::buildIndexes ()
+  {
+    resetIndexes ();
+      
+    /// update indexes
+    for (HornRule &r : m_rules)
+    {
+      // -- update head index
+      m_head_idx [bind::fname (r.head ())].insert (&r);
+      // -- update body index
+      ExprVector use;
+      r.used_relations (*this, std::back_inserter (use));
+      for (Expr decl : use) m_body_idx[decl].insert (&r);
+
+    }
+  }
+
+  void HornClauseDBCallGraph::buildCallGraph ()
+  {
+    // indexes must be first computed
+    m_db.buildIndexes ();
+    
+    for (auto p: m_db.getRelations ())
+    {
+      // -- callees
+      HornClauseDB::expr_set_type callees;
+      const boost::container::flat_set<HornRule*>& uses = m_db.use(p);
+      for (const HornRule* r: uses)
+      { callees.insert(bind::fname(r->head())); }
+      m_callees.insert(std::make_pair(p, callees));
+
+      // -- callers
+      HornClauseDB::expr_set_type callers;
+      const boost::container::flat_set<HornRule*>& defs = m_db.def(p);
+      for (const HornRule* r: defs)
+        filter (r->body (), HornClauseDB::IsRelation(m_db),
+                std::inserter(callers, callers.begin())); 
+      m_callers.insert(std::make_pair(p, callers));
+
+      LOG("horn-cg", 
+          errs () << *(bind::fname(p)) << "\n"
+          << "\tNumber of callers=" << callers.size() << "\n"
+          << "\tNumber of callees=" << callees.size() << "\n";
+          if (!callers.empty()) {
+            errs () << "\tCALLERS=";
+            for (auto c: callers) {
+              errs () << *(bind::fname(c)) << "  ";
+            }
+            errs () << "\n";
+          }
+          if (!callees.empty()) {
+            errs () << "\tCALLEES=";
+            for (auto c: callees) {
+              errs ()  << *(bind::fname(c)) << "  ";
+            }
+            errs () << "\n";
+          });
+    }
+
+    // XXX: we are looking for a predicate that corresponds to the
+    // entry block of main. It is not enough to search for a predicate
+    // with no callers since predicates from each function entry won't
+    // have callers.
+    for (auto p: m_db.getRelations ())
+    {
+      Expr fname = bind::fname(p);
+      std::string sname = boost::lexical_cast<std::string> (fname);
+      if (boost::starts_with(sname, "main") && callers(p).size() == 0) { 
+        m_cg_entry = p;
+        break;
+      }
+    }
+
+    LOG("horn-cg", 
+        errs () << "Entry=" << *(bind::fname(m_cg_entry)) << "\n";);
+  }
+
   const ExprVector &HornClauseDB::getVars () const
   {
     boost::sort (m_vars);
@@ -72,6 +161,39 @@ namespace seahorn
     o << oss.str ();
     o.flush ();
     return o;
+  }
+
+  HornClauseDB::horn_set_type HornClauseDB::m_empty_set;
+  HornClauseDB::expr_set_type HornClauseDBCallGraph::m_expr_empty_set;
+
+  Expr extractTransitionRelation(HornRule r, HornClauseDB &db)
+  {
+    Expr ruleBody = r.body();
+    ExprMap body_map;
+    ExprVector body_pred_apps;
+    get_all_pred_apps(ruleBody, db, std::back_inserter(body_pred_apps));
+
+    for (Expr p : body_pred_apps)
+      body_map.insert (std::make_pair (p, mk<TRUE> (p->efac ())));
+
+    Expr body_constraints = replace(ruleBody, body_map);
+    return body_constraints;
+  }
+
+  bool hasBvarInRule(HornRule r, HornClauseDB &db,
+                          std::map<Expr, ExprVector> currentCandidates)
+  {
+    ExprVector pred_vector;
+    get_all_pred_apps(r.body(), db, std::back_inserter(pred_vector));
+    pred_vector.push_back(r.head());
+
+    for (Expr pred : pred_vector)
+    {
+      ExprVector term_vec = currentCandidates.find(bind::fname(pred))->second;
+      if(term_vec.size() > 1 || (term_vec.size() == 1 && !isOpX<TRUE>(term_vec[0])))
+        return true;
+    }
+    return false;
   }
 
 }

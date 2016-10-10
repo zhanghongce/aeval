@@ -759,7 +759,15 @@ namespace expr
   {
     static inline void print (std::ostream &OS, const mpz_class &v, 
 			      int depth, bool brkt)
-    { OS << v; }
+    {
+      /* print large numbers in hex */
+      if (v >= 65535 || v <= -65535)
+        OS << std::hex << std::showbase;
+      
+      OS << v;
+      
+      OS << std::dec << std::noshowbase;
+    }
     
     static inline bool less(const mpz_class &v1, const mpz_class &v2)
     { return v1 < v2; }
@@ -1546,7 +1554,7 @@ namespace expr
 	      if (trueE == exp->right ()) return trueE;
 
 	      // x -> FALSE == !x
-	      if (trueE == exp->right ()) return lneg (exp->left ());
+	      if (falseE == exp->right ()) return lneg (exp->left ());
 
 	      return exp;
 	    }
@@ -2026,12 +2034,30 @@ namespace expr
 	  args [0]->Print (OS, depth, true);
 	}
       };
+
+      struct PS_TAG
+      {
+	static inline void print (std::ostream &OS,
+				  int depth,
+				  bool brkt,
+				  const std::string &name,
+				  const std::vector<ENode*> &args)
+	{
+	  args [1]->Print (OS, depth, true);
+	  OS << "!";
+	  args [0]->Print (OS, depth, true);
+	}
+      };
     }
     NOP_BASE(VariantOp)
     NOP(VARIANT,"variant",variant::PS,VariantOp)
+    NOP(TAG,"tag",variant::PS_TAG,VariantOp)
     
     namespace variant
     {
+      /** Creates a variant of an expression. For example, 
+          `variant (1, e)` creates an expression `e_1`
+      */
       inline Expr variant (int v, Expr e) 
       { return mk<VARIANT>(mkTerm(v, e->efac ()), e); }
       
@@ -2049,7 +2075,22 @@ namespace expr
       inline Expr prime (Expr e) { return variant (1, e); }
       inline bool isPrime (Expr e) { return variantNum (e) == 1; }
 
+      /** Creates an expression tagged by another expression (or
+          string).  For example, `variant::tag (e, h)` creates an
+          expression `e!h`.
+      */
 
+      inline Expr tag (Expr e, Expr tag)
+      { return mk<TAG> (tag, e); }
+
+      inline Expr tag (Expr e, const std::string &t)
+      {return tag (e, mkTerm<std::string> (t, e->efac ()));}
+
+      inline Expr getTag (Expr e)
+      { return e->left (); }
+
+      inline std::string getTagStr (Expr e)
+      {return getTerm<std::string> (getTag (e));}
     }
   } 
 
@@ -2463,6 +2504,13 @@ namespace expr
   namespace op
   {
     
+    /** 
+        Binders with Locally Nameless representation. 
+        
+        Arthur Charguéraud: The Locally Nameless
+        Representation. J. Autom. Reasoning 49(3): 363-408 (2012)
+     */
+    
     namespace bind
     {
       struct BINDER
@@ -2510,8 +2558,7 @@ namespace expr
       {return fname (decl (e, i));}
       inline Expr boundSort (Expr e, unsigned i)
       {return rangeTy (decl (e, i));}
-      
-      
+            
       inline Expr body (Expr e) {return *(--(e->args_end ()));}
       
       
@@ -2577,6 +2624,45 @@ namespace expr
         return sub (a, e);
       }
        
+      template <typename Range>
+      Expr betaReduce (Expr lambda, const Range &r)
+      {
+        // -- nullptr
+        if (!lambda) return lambda;
+        // -- not lambda
+        if (!isOpX<LAMBDA> (lambda)) return lambda;
+
+        // -- nullary
+        if (numBound (lambda) == 0) return body (lambda);
+        
+        // -- number of arguments must match number of bound variables
+        assert (std::distance(std::begin(r), std::end(r)) == numBound(lambda));
+        
+        // -- replace bound variables
+        // XXX Need to decide on the order, this might be opposite from what clients expect
+        return sub(r, body(lambda));
+      }
+
+      inline Expr betaReduce (Expr lambda, Expr v0)
+      {
+        std::array<Expr,1> a = {v0};
+        return betaReduce (lambda, a);
+      }
+      inline Expr betaReduce (Expr lambda, Expr v0, Expr v1)
+      {
+        std::array<Expr,2> a = {v0, v1};
+        return betaReduce (lambda, a);
+      }
+      inline Expr betaReduce (Expr lambda, Expr v0, Expr v1, Expr v2)
+      {
+        std::array<Expr,3> a = {v0, v1, v2};
+        return betaReduce (lambda, a);
+      }
+      inline Expr betaReduce (Expr lambda, Expr v0, Expr v1, Expr v2, Expr v3)
+      {
+        std::array<Expr,4> a = {v0, v1, v2, v3};
+        return betaReduce (lambda, a);
+      }
     }
   }
   

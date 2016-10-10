@@ -21,21 +21,21 @@
 #include "llvm/IR/Verifier.h"
 
 #include "seahorn/Passes.hh"
+#include "seahorn/Analysis/DSA/DsaAnalysis.hh"
 
 static llvm::cl::opt<std::string>
 InputFilename(llvm::cl::Positional, llvm::cl::desc("<input LLVM bitcode file>"),
               llvm::cl::Required, llvm::cl::value_desc("filename"));
 
 static llvm::cl::opt<std::string>
-DefaultDataLayout("default-data-layout",
-                  llvm::cl::desc("data layout string to use if not specified by module"),
-                  llvm::cl::init(""), llvm::cl::value_desc("layout-string"));
+ApiConfig("api-config",
+         llvm::cl::desc("Comma separated API function calls"),
+         llvm::cl::init(""), llvm::cl::value_desc("api-string"));
 
-
-static llvm::cl::opt<bool>
-Lint("lint",
-     llvm::cl::desc("Statically lint-checks LLVM IR"),
-     llvm::cl::init(false));
+static llvm::cl::opt<std::string>
+DefaultDataLayout("-data-layout",
+        llvm::cl::desc("data layout string to use if not specified by module"),
+        llvm::cl::init(""), llvm::cl::value_desc("layout-string"));
 
 static llvm::cl::opt<bool>
 Profiler("profiler",
@@ -62,6 +62,11 @@ static llvm::cl::opt<bool>
 CfgOnlyViewer("cfg-only-viewer",
               llvm::cl::desc("View CFG of function (with no function bodies)"),
               llvm::cl::init(false));
+
+static llvm::cl::opt<bool>
+RunDsa("dsa",
+       llvm::cl::desc("Print an abstraction of the heap"),
+       llvm::cl::init(false));
 
 
 int main(int argc, char **argv) {
@@ -107,10 +112,8 @@ int main(int argc, char **argv) {
 
   //pass_manager.add (llvm::createVerifierPass());
 
-  if (Lint) {
-    llvm::errs () << "Ran statically lint-like checks of LLVM IR\n";
-    pass_manager.add (llvm::createLintPass ());
-  }
+  if (!ApiConfig.empty())
+    pass_manager.add(seahorn::createApiAnalysisPass(ApiConfig));
 
   if (Profiler)
     pass_manager.add (seahorn::createProfilerPass ());
@@ -126,6 +129,12 @@ int main(int argc, char **argv) {
 
   if (CfgOnlyViewer)
     pass_manager.add (seahorn::createCFGOnlyViewerPass ());
+
+  // XXX: for now we just call the analysis pass.
+  // Later we will have a pass that call this analysis pass and do
+  // some pretty printer of the heap.
+  if (RunDsa)
+    pass_manager.add (new seahorn::dsa::DsaAnalysis ());
 
   pass_manager.run(*module.get());
 

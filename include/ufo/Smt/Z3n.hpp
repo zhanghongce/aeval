@@ -432,6 +432,12 @@ namespace ufo
     ExprFactory &getExprFactory () { return z3.getExprFactory (); }
     Expr operator() (Expr e) { return eval (e); }
 
+    template <typename OutputStream>
+    friend OutputStream &operator<< (OutputStream &out, this_type &model)
+    {
+      out << Z3_model_to_string (model.ctx, model.model);
+      return out;
+    }
     
   };
 
@@ -916,10 +922,19 @@ namespace ufo
 
     std::string getAnswer ()
     {
-
       z3::ast res (ctx, Z3_fixedpoint_get_answer (ctx, fp));
       //return z3.toExpr (res);
       return std::string (Z3_ast_to_string (ctx, res));
+    }
+
+    /**
+     ** Return a bottom-up (from query) formula of ground predicates
+     ** that together from a ground derivation to query
+     **/
+    Expr getGroundSatAnswer ()
+    {
+      z3::ast res (ctx, Z3_fixedpoint_get_ground_sat_answer (ctx, fp));
+      return z3.toExpr (res);
     }
 
     Expr getCex ()

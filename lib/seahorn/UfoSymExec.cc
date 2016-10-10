@@ -305,7 +305,9 @@ namespace
       if (cond && op0 && op1)
       {
         Expr rhs = mk<ITE> (cond, op0, op1);
-        if (UseWrite) write (I, rhs);
+
+        /* avoid creating nest ite expressions by always introducing fresh constants */
+        if (false && UseWrite) write (I, rhs);
         else side (lhs, rhs);
       }
     }
@@ -948,6 +950,16 @@ namespace seahorn
     return this->SmallStepSymExec::errorFlag (BB);
   }
   
+  Expr UfoSmallSymExec::memStart (unsigned id)
+  {
+    Expr sort = sort::intTy (m_efac);
+    return shadow_dsa::memStartVar (id, sort);
+  }
+  Expr UfoSmallSymExec::memEnd (unsigned id)
+  {
+    Expr sort = sort::intTy (m_efac);
+    return shadow_dsa::memEndVar (id, sort);
+  }
   void UfoSmallSymExec::exec (SymStore &s, const BasicBlock &bb, ExprVector &side,
                               Expr act)
   {
@@ -1190,6 +1202,10 @@ namespace seahorn
       // XXX Consider using global EZ3 
       zctx.reset (new EZ3 (m_sem.efac ()));
       smt.reset (new ZSolver<EZ3> (*zctx));
+      ZParams<EZ3> params (*zctx);
+      params.set (":smt.array.weak", true);
+      params.set (":smt.arith.ignore_int", true);
+      smt->set (params);
     }
       
     unsigned head = side.size ();
@@ -1240,15 +1256,24 @@ namespace seahorn
             file.close ();
           });
         
-        auto res = smt->solveAssuming (a);
-        if (!res)
+        try
         {
-          errs () << "F";
-          errs ().flush ();
-          Stats::count ("LargeSymExec.smt.unsat");
-          smt->assertExpr (boolop::lneg (bbV));
-          side.push_back (boolop::lneg (bbV));
+          auto res = smt->solveAssuming (a);
+          if (!res)
+          {
+            errs () << "F";
+            errs ().flush ();
+            Stats::count ("LargeSymExec.smt.unsat");
+            smt->assertExpr (boolop::lneg (bbV));
+            side.push_back (boolop::lneg (bbV));
+          }
         }
+        catch (z3::exception &e)
+        {
+          errs () << e.msg () << "\n";
+          // std::exit (1);
+        }
+        
       }
       
       
@@ -1266,13 +1291,20 @@ namespace seahorn
         if (!bind::isFapp (e) || isConst (e)) smt->assertExpr (e);
       }    
     
-      ufo::ScopedStats __st__ ("LargeSymExec.smt.last");
-      auto res = smt->solve ();
-      if (!res)
+      try
       {
-        Stats::count ("LargeSymExec.smt.last.unsat");
-        side.push_back (mk<FALSE> (m_sem.efac ()));
+        ufo::ScopedStats __st__ ("LargeSymExec.smt.last");
+        auto res = smt->solve ();
+        if (!res)
+        {
+          Stats::count ("LargeSymExec.smt.last.unsat");
+          side.push_back (mk<FALSE> (m_sem.efac ()));
+        }
+      } catch (z3::exception &e)
+      {
+        errs () << e.msg () << "\n";
       }
+      
     }
   }
   

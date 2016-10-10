@@ -11,7 +11,13 @@ add_llvm_library (seahorn.LIB
   IncHornifyFunction.cc
   HornWrite.cc
   HornSolver.cc
+  Houdini.cc
+  HornModelConverter.cc
+  HornDbModel.cc
+  PredicateAbstraction.cc
+  GuessCandidates.cc
   HornCex.cc
+  Harness.cc
   ClpWrite.cc
   HornClauseDB.cc
   HornClauseDBTransf.cc
@@ -19,6 +25,7 @@ add_llvm_library (seahorn.LIB
   BmcPass.cc
   BvSymExec.cc
   BvInt.cc
+  MemSimulator.cc
   ZOption.cc
   )
 
