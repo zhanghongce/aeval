@@ -967,3 +967,4 @@ feCrab = sea.SeqCmd ('fe-crab', 'alias for fe|crab', FrontEnd.cmds + [Crab()])
 seaTerm = sea.SeqCmd ('term', 'SeaHorn Termination analysis', Smt.cmds + [SeaTerm()])
 Exe = sea.SeqCmd ('exe', 'alias for clang|pp --internalize|linkrt',
                   [Clang(), Seapp(internalize=True), LinkRt()])
+seaClangAbc = sea.SeqCmd ('clang-abc', 'alias for clang|abc', [Clang(), SeaAbc()])

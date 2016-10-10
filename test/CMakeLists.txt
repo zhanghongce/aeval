@@ -28,3 +28,12 @@ add_lit_testsuite(test-solve "Regression test on Predicate Abstraction"
    sea_cmd="${PROJECT_BINARY_DIR}/run/bin/sea"
    DEPENDS seahorn
    )
+
+ # add the test suite
+add_lit_testsuite(test-abc "Regression test for Array Bounds Checks"
+  -v
+  ${CMAKE_CURRENT_SOURCE_DIR}/abc
+  PARAMS
+  test_dir=${CMAKE_CURRENT_BINARY_DIR}
+  DEPENDS seahorn
+  )

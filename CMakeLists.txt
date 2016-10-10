@@ -384,4 +384,3 @@ configure_file( include/seahorn/config.h.cmake
 
 add_subdirectory(py)
 add_subdirectory(test)
-add_subdirectory(play/boa)
