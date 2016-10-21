@@ -115,6 +115,9 @@ int main(int argc, char **argv) {
   if (!ApiConfig.empty())
     pass_manager.add(seahorn::createApiAnalysisPass(ApiConfig));
 
+  if (!ApiConfig.empty())
+    pass_manager.add(seahorn::createApiAnalysisPass(ApiConfig));
+
   if (Profiler)
     pass_manager.add (seahorn::createProfilerPass ());
 
