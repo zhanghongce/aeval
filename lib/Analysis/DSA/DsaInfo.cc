@@ -193,7 +193,7 @@ void InfoAnalysis::assignAllocSiteIdAndPrinting
     unsigned num_alloc_sites = n.getNode()->getAllocSites ().size ();
     if (num_alloc_sites == 0) 
     {
-      o << *n.getNode () << " has no alllocation site\n";
+      //o << *n.getNode () << " has no alllocation site\n";
       num_orphan_nodes++;
       num_orphan_checks += n.getAccesses();
       continue;
