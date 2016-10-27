@@ -159,10 +159,16 @@ namespace seahorn {
         {
           if (c.getNode ()->getAllocSites().empty ())
           {
-            errs () << "WARNING ABC: Sea Dsa found node for " << v 
-                    << " without allocation site " << tag << "\n"
-                    << *c.getNode () << "\n"; 
-            return true;
+            // errs () << "WARNING ABC: Sea Dsa found node for " << v 
+            //         << " without allocation site " << tag << "\n"
+            //         << *c.getNode () << "\n";
+	    
+	    // XXX: return false is unsound!
+	    // We do this so at least be able to claim "all memory
+	    // accesses within dsa nodes with allocation sites are
+	    // safe."
+	    
+            return false;
           }
           
           if (const Value* AV = m_dsa->getAllocValue (TrackedAllocSite))
@@ -2543,6 +2549,9 @@ namespace seahorn {
       }
       
       errs () << " ========== ABC  ==========\n";
+      if (TrackedAllocSite > 0)
+	errs ()<< " ## Soundness note: accesses within Dsa nodes without an allocation site are not instrumented.\n\n";
+	
       errs () << "-- " << abc.m_trivial_checks
               << " Total number of trivially safe memory reads/writes (not instrumented)\n"
               << "-- " << abc.m_mem_accesses - abc.m_trivial_checks
