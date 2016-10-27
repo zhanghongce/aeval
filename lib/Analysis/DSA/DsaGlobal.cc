@@ -259,14 +259,19 @@ namespace seahorn
     ContextSensitiveGlobalAnalysis::decidePropagation 
     (const DsaCallSite& cs, Graph &calleeG, Graph& callerG) 
     {
+      const bool do_sanity_checks = false;      
+      const bool only_modified = true; /* do not change this */
+      
       PropagationKind res = UP;
       SimulationMapper sm;
       if (Graph::computeCalleeCallerMapping(cs, calleeG, callerG, 
-                                            true,  /*only modified nodes*/
-                                            false, /*no report if sanity check failed*/
-                                            sm)) {
-        if (sm.isFunction ())
-          res = (sm.isInjective () ? NONE: DOWN);
+                                            only_modified, do_sanity_checks,
+					    sm)) {
+                                            
+        if (sm.isFunction ()) {
+	  // XXX: only need injectiveness if the node is modified
+          res = (sm.isInjective (only_modified) ? NONE: DOWN);
+	}
       }
       return res;
     }
@@ -589,10 +594,8 @@ namespace seahorn
           ImmutableCallSite CS (I);
           DsaCallSite dsaCS (CS);
           
-          assert (dsaCS.getCaller ());
-          assert (dsaCS.getCallee ());
-          
-          if (m_ga.hasGraph (*dsaCS.getCaller ()) && m_ga.hasGraph (*dsaCS.getCallee ()))
+          if (dsaCS.getCaller () && m_ga.hasGraph (*dsaCS.getCaller ()) &&
+	      dsaCS.getCallee () && m_ga.hasGraph (*dsaCS.getCallee ()))
           {
             Graph &calleeG = m_ga.getGraph (*dsaCS.getCallee());        
             Graph &callerG = m_ga.getGraph (*dsaCS.getCaller());
