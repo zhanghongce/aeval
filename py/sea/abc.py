@@ -215,8 +215,10 @@ def get_results (output, returnvalue, timeout):
 # options for `sea pp` with array bounds checks
 def abc_opts(args):
     opts = ['--kill-vaarg=true',
-            ## these two should not be needed with sea dsa
-            '--inline-constructors', 
+            ### these two should not be needed with sea dsa
+            ## this one seems buggy somehow:
+            ## it leaves the call graph in an inconsistent state.
+            # '--inline-constructors', 
             '--inline-allocators',            
             ## this should not be needed with sea dsa.
             ## Commented anyway because it is buggy.
