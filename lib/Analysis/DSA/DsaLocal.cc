@@ -258,6 +258,15 @@ namespace
     // -- skip read from NULL
     if (BlockBuilderBase::isNullConstant (*LI.getPointerOperand ()->stripPointerCasts ()))
       return;
+
+    if (!m_graph.hasCell (*LI.getPointerOperand ()->stripPointerCasts ()))
+    {
+      /// XXX: this is very likely because the pointer operand is the
+      /// result of applying one or several gep instructions starting
+      /// from NULL. Note that this is undefined behavior but it
+      /// occurs in ldv benchmarks.
+      return;
+    }
     
     Cell base = valueCell  (*LI.getPointerOperand ()->stripPointerCasts ());
     assert (!base.isNull ());
@@ -282,7 +291,16 @@ namespace
     // -- skip store into NULL
     if (BlockBuilderBase::isNullConstant (*SI.getPointerOperand ()->stripPointerCasts ()))
       return;
-    
+
+    if (!m_graph.hasCell (*SI.getPointerOperand ()->stripPointerCasts ()))
+    {
+      /// XXX: this is very likely because the pointer operand is the
+      /// result of applying one or several gep instructions starting
+      /// from NULL. Note that this is undefined behavior but it
+      /// occurs in ldv benchmarks.
+      return;
+    }
+	      
     Cell base = valueCell  (*SI.getPointerOperand ()->stripPointerCasts ());
     assert (!base.isNull ());
 
@@ -401,11 +419,17 @@ namespace
   void BlockBuilderBase::visitGep (const Value &gep,
                                    const Value &ptr, ArrayRef<Value *> indicies)
   {
-    
     // -- skip NULL
     if (const Constant *c = dyn_cast<Constant>(&ptr)) 
       if (c->isNullValue()) return;
 
+    // -- skip NULL
+    if (const LoadInst *LI = dyn_cast<LoadInst>(&ptr)) {
+      /// XXX: this occurs in several ldv benchmarks
+      if (BlockBuilderBase::isNullConstant (*(LI->getPointerOperand ()->stripPointerCasts ())))
+	return;
+    }
+    
     assert (m_graph.hasCell (ptr) || isa<GlobalValue> (&ptr));
     
     // -- empty gep that points directly to the base
@@ -413,6 +437,12 @@ namespace
 
     dsa::Cell base = valueCell (ptr);
     assert (!base.isNull ());
+
+    if (m_graph.hasCell (gep)) {
+      // gep can have already a cell if it can be stripped to another
+      // pointer different from the base.
+      if (gep.stripPointerCasts () != &gep) return;
+    }
 
     assert (!m_graph.hasCell (gep));
     dsa::Node *baseNode = base.getNode ();
@@ -613,6 +643,7 @@ namespace
     // -- skip copy to an unallocated address
     if (isNullConstant (*I.getDest ()))
       return;
+
     
     bool TrustTypes = true;
     assert (m_graph.hasCell (*I.getDest ()));

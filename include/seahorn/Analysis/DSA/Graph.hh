@@ -129,10 +129,9 @@ namespace seahorn
       /// XXX: we might want to make the last argument a template
       /// parameter but then the definition should be in a header file.
       static bool computeCalleeCallerMapping (const DsaCallSite &cs, 
-                                              Graph& calleeG, Graph& callerG,
-                                              const bool onlyModified,
-                                              const bool reportIfSanityCheckFailed,
-                                              SimulationMapper& simMap);
+                                              Graph& calleeG, Graph& callerG,                                             
+                                              SimulationMapper& simMap,
+					      const bool reportIfSanityCheckFailed = true);
       
       /// import the given graph into the current one
       /// copies all nodes from g and unifies all common scalars
@@ -432,6 +431,8 @@ namespace seahorn
       /// 0x0 (no change), 0x1 (this changed), 0x2 (n changed), 0x3
       /// (both changed).
       unsigned mergeUniqueScalar (Node &n);
+      template<typename Cache>
+      unsigned mergeUniqueScalar (Node &n, Cache &seen);      
 
       inline bool isForwarding () const;
       
@@ -491,6 +492,8 @@ namespace seahorn
       /// 0x0 (no change), 0x1 (this changed), 0x2 (n changed), 0x3
       /// (both changed).
       unsigned mergeAllocSites (Node &n);
+      template<typename Cache>
+      unsigned mergeAllocSites (Node &n, Cache &seen);      
       
       /// pretty-printer of a node
       void write(llvm::raw_ostream&o) const;    

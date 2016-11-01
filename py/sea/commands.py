@@ -2,6 +2,7 @@ import sea
 
 import os.path
 import sys
+import shutil
 
 from sea import add_in_out_args, add_tmp_dir_args, which, createWorkDir
 
@@ -200,9 +201,10 @@ def enable_sea_dsa (args):
     return l 
 
 class Seapp(sea.LimitedCmd):
-    def __init__(self, quiet=False, internalize=False):
+    def __init__(self, quiet=False, internalize=False, strip_extern=False):
         super(Seapp, self).__init__('pp', 'Pre-processing', allow_extra=True)
         self._internalize = internalize
+        self._strip_extern = strip_extern
         
     @property
     def stdout (self):
@@ -210,7 +212,11 @@ class Seapp(sea.LimitedCmd):
 
     def name_out_file (self, in_files, args=None, work_dir=None):
         assert (len(in_files) == 1)
-        ext = '.pp.bc'
+        
+        if self._strip_extern: ext = '.ext.bc'
+        elif self._internalize: ext = '.int.bc'
+        else: ext = '.pp.bc'
+        
         # if args.llvm_asm: ext = '.pp.ll'
         return _remap_file_name (in_files[0], ext, work_dir)
 
@@ -493,6 +499,47 @@ class MixedSem(sea.LimitedCmd):
         if args.llvm_asm: argv.append ('-S')
         argv.extend (args.in_files)
         return self.seappCmd.run (args, argv)
+    
+class WrapMem(sea.LimitedCmd):
+    def __init__(self, quiet=False):
+        super(WrapMem, self).__init__('wmem', 'Wrap external memory access with SeaRt calls',
+                                       allow_extra=True)
+        self.seppCmd = None
+
+    @property
+    def stdout (self):
+        return self.seappCmd.stdout
+
+    def name_out_file (self, in_files, args=None, work_dir=None):
+        assert (len (in_files) == 1)
+        
+        ext = '.wmem.bc'
+        return _remap_file_name (in_files[0], ext, work_dir)
+
+    def mk_arg_parser (self, ap):
+        ap = super (WrapMem, self).mk_arg_parser (ap)
+        ap.add_argument ('--no-wmem', dest='wmem_skip', help='Skipped wrap-mem pass',
+                         default=False, action='store_true')
+        add_in_out_args (ap)
+        _add_S_arg (ap)
+        return ap
+
+    def run (self, args, extra):
+        cmd_name = which ('seapp')
+        if cmd_name is None: raise IOError ('seapp not found')
+        self.seappCmd = sea.ExtCmd (cmd_name)
+
+        if args.wmem_skip:
+            if args.out_file is not None:
+                shutil.copy2 (args.in_files[0], args.out_file)
+            return 0
+        else:
+            argv = list()
+            if args.out_file is not None: argv.extend (['-o', args.out_file])
+            argv.append ('--wrap-mem')
+            if args.llvm_asm: argv.append ('-S')
+            argv.extend (args.in_files)
+            return self.seappCmd.run (args, argv)
 
 class CutLoops(sea.LimitedCmd):
     def __init__(self, quiet=False):
@@ -681,6 +728,8 @@ class Seahorn(sea.LimitedCmd):
         add_in_out_args (ap)
         ap.add_argument ('--cex', dest='cex', help='Destination for a cex',
                          default=None, metavar='FILE')
+        ap.add_argument ('--bv-cex', dest='bv_cex', help='Generate bit-precise counterexamples',
+                         default=False, action='store_true')
         ap.add_argument ('--solve', dest='solve', action='store_true',
                          help='Solve', default=self.solve)
         ap.add_argument ('--ztrace', dest='ztrace', metavar='STR',
@@ -734,6 +783,8 @@ class Seahorn(sea.LimitedCmd):
             argv.append ('-horn-cex-pass')
             argv.append ('-horn-cex={0}'.format (args.cex))
             #argv.extend (['-log', 'cex'])
+            if args.bv_cex:
+                argv.append ('--horn-cex-bv=true')
         if args.asm_out_file is not None: argv.extend (['-oll', args.asm_out_file])
 
         argv.extend (['-horn-inter-proc',

@@ -212,8 +212,9 @@ namespace seahorn
     // BottomUp. They should be merged at some point.
     void ContextSensitiveGlobalAnalysis::
     cloneAndResolveArguments (const DsaCallSite &cs, 
-                              Graph& callerG, Graph& calleeG)
-    {      
+                              Graph& callerG, Graph& calleeG)      
+    {
+
       Cloner C (calleeG);
       
       // clone and unify globals 
@@ -259,14 +260,12 @@ namespace seahorn
     ContextSensitiveGlobalAnalysis::decidePropagation 
     (const DsaCallSite& cs, Graph &calleeG, Graph& callerG) 
     {
+      
       PropagationKind res = UP;
       SimulationMapper sm;
-      if (Graph::computeCalleeCallerMapping(cs, calleeG, callerG, 
-                                            true,  /*only modified nodes*/
-                                            false, /*no report if sanity check failed*/
-                                            sm)) {
+      if (Graph::computeCalleeCallerMapping(cs, calleeG, callerG, sm, false)) {
         if (sm.isFunction ())
-          res = (sm.isInjective () ? NONE: DOWN);
+          res = (sm.isInjective () ? NONE: DOWN); // isInjective only checks modified nodes by default
       }
       return res;
     }
@@ -282,7 +281,7 @@ namespace seahorn
             errs () << "Sanity check failed:"
                     << " we should not need more top-down propagation\n";
           });
-            
+      //errs () << "Top-down propagation at " << *cs.getInstruction () << "\n";
       assert (decidePropagation (cs, calleeG, callerG) != DOWN);
     }
 
@@ -297,7 +296,7 @@ namespace seahorn
             errs () << "Sanity check failed:"
                     << " we should not need more bottom-up propagation\n";
           });
-      
+      //errs () << "Bottom-up propagation at " << *cs.getInstruction () << "\n";      
       assert (decidePropagation (cs, calleeG, callerG) != UP);
     }
 
@@ -334,6 +333,8 @@ namespace seahorn
                                                  bu.callee_caller_mapping_end ()))
       {
         auto const &simMapper = *(kv.second);
+	assert (simMapper.isFunction ());
+	
         if (!simMapper.isInjective ()) 
           w.enqueue (kv.first);  // they do need top-down
       }
@@ -383,7 +384,7 @@ namespace seahorn
           auto &callerU = dsaCG.getUses (*caller);
           auto &callerD = dsaCG.getDefs (*caller);
           for (auto ci: callerU) w.enqueue(ci); // they might need bottom-up
-          for (auto ci: callerD) w.enqueue(ci); // they might need top-down
+	  for (auto ci: callerD) w.enqueue(ci); // they might need top-down
         }
       }
 
@@ -453,7 +454,7 @@ namespace seahorn
             if (pkind != NONE)
             {
               auto pkind_str = (pkind==UP)? "bottom-up": "top-down";
-              errs () << "WARNING sanity check failed:" 
+              errs () << "ERROR sanity check failed:" 
                       << *(cs.getInstruction ()) << " requires " 
                       << pkind_str << " propagation.\n";
               return false;
@@ -589,10 +590,8 @@ namespace seahorn
           ImmutableCallSite CS (I);
           DsaCallSite dsaCS (CS);
           
-          assert (dsaCS.getCaller ());
-          assert (dsaCS.getCallee ());
-          
-          if (m_ga.hasGraph (*dsaCS.getCaller ()) && m_ga.hasGraph (*dsaCS.getCallee ()))
+          if (dsaCS.getCaller () && m_ga.hasGraph (*dsaCS.getCaller ()) &&
+	      dsaCS.getCallee () && m_ga.hasGraph (*dsaCS.getCallee ()))
           {
             Graph &calleeG = m_ga.getGraph (*dsaCS.getCallee());        
             Graph &callerG = m_ga.getGraph (*dsaCS.getCaller());

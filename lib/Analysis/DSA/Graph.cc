@@ -18,6 +18,7 @@
 
 #include "boost/range/algorithm/set_algorithm.hpp"
 #include "boost/range/iterator_range.hpp"
+#include "boost/unordered_set.hpp"
 
 #include "avy/AvyDebug.h"
 
@@ -378,11 +379,29 @@ void dsa::Node::unifyAt (Node &n, unsigned o)
 
 
 /// pre: this simulated by n
-unsigned dsa::Node::mergeUniqueScalar (Node &n)
+unsigned dsa::Node::mergeUniqueScalar (Node &n) {
+  boost::unordered_set<Node*> seen;
+  return mergeUniqueScalar (n, seen);
+}
+
+template<typename Cache>
+unsigned dsa::Node::mergeUniqueScalar (Node &n, Cache &seen)
 {
   unsigned res = 0x0;
+
+  auto it = seen.find (&n);
+  if (it != seen.end ()) return res;
+  seen.insert (&n);
+  
   if (getUniqueScalar () && n.getUniqueScalar ())
-  { assert (getUniqueScalar () == n.getUniqueScalar ()); }
+  {
+    if (getUniqueScalar () != n.getUniqueScalar ())
+    {
+      setUniqueScalar (nullptr);
+      n.setUniqueScalar (nullptr);
+      res = 0x03;
+    }
+  }  
   else if (getUniqueScalar ()) 
   {
     setUniqueScalar (nullptr);
@@ -402,7 +421,7 @@ unsigned dsa::Node::mergeUniqueScalar (Node &n)
     if (hasLink (j))
     {
       Node *n1 = getLink (j).getNode ();
-      res |= n1->mergeUniqueScalar (*n2);
+      res |= n1->mergeUniqueScalar (*n2, seen);
     }
   }
 
@@ -421,13 +440,24 @@ void dsa::Node::joinAllocSites(const AllocaSet &s)
   std::swap (res, m_alloca_sites);
 }
 
+
 // pre: this simulated by n
-unsigned dsa::Node::mergeAllocSites (Node &n)
+unsigned dsa::Node::mergeAllocSites (Node &n) {
+  boost::unordered_set<Node*> seen;
+  return mergeAllocSites (n, seen);
+}
+
+template<typename Cache>
+unsigned dsa::Node::mergeAllocSites (Node &n, Cache &seen)
 {
+  unsigned res = 0x0; 
+
+  auto it = seen.find (&n);
+  if (it != seen.end ()) return res;
+  seen.insert (&n);
+
   auto const& s1 = getAllocSites ();
   auto const& s2 = n.getAllocSites ();
-  
-  unsigned res = 0x0; 
   
   if (std::includes(s1.begin(), s1.end (), s2.begin(), s2.end ()))
   {
@@ -457,7 +487,7 @@ unsigned dsa::Node::mergeAllocSites (Node &n)
     if (hasLink (j))
     {
       Node *n1 = getLink (j).getNode ();
-      res |= n1->mergeAllocSites (*n2);
+      res |= n1->mergeAllocSites (*n2, seen);
     }
   }
 
@@ -810,11 +840,13 @@ void dsa::Node::dump() const {
 }
 
 bool dsa::Graph::computeCalleeCallerMapping (const DsaCallSite &cs, 
-                                             Graph& calleeG, Graph &callerG, 
-                                             const bool onlyModified,
-                                             const bool reportIfSanityCheckFailed,
-                                             SimulationMapper& simMap) 
+                                             Graph& calleeG, Graph &callerG,
+                                             SimulationMapper& simMap,
+					     const bool reportIfSanityCheckFailed) 
 {
+  // XXX: to be removed
+  const bool onlyModified = false;
+  
   for (auto &kv : boost::make_iterator_range (calleeG.globals_begin (),
                                               calleeG.globals_end ()))
   {
@@ -826,11 +858,11 @@ bool dsa::Graph::computeCalleeCallerMapping (const DsaCallSite &cs,
       {
         if (reportIfSanityCheckFailed)
         {
-          errs () << "Callee is not simulated by caller at " 
+          errs () << "ERROR: callee is not simulated by caller at " 
                   << *cs.getInstruction() << "\n"
-                  << "Global: " << *kv.first << "\n"
-                  << "Callee cell=" << c << "\n"
-                  << "Caller cell=" << nc << "\n";
+                  << "\tGlobal: " << *kv.first << "\n"
+                  << "\tCallee cell=" << c << "\n"
+                  << "\tCaller cell=" << nc << "\n";
         }
         return false; 
       }
@@ -848,11 +880,11 @@ bool dsa::Graph::computeCalleeCallerMapping (const DsaCallSite &cs,
       {
         if (reportIfSanityCheckFailed)
         {
-          errs () << "Callee is not simulated by caller at " 
+          errs () << "ERROR: callee is not simulated by caller at " 
                   << *cs.getInstruction() << "\n"
-                  << "Return value of " << callee.getName () << "\n"
-                  << "Callee cell=" << c << "\n"
-                  << "Caller cell=" << nc << "\n";
+                  << "\rReturn value of " << callee.getName () << "\n"
+                  << "\rCallee cell=" << c << "\n"
+                  << "\rCaller cell=" << nc << "\n";
         }
         return false; 
       }
@@ -874,12 +906,12 @@ bool dsa::Graph::computeCalleeCallerMapping (const DsaCallSite &cs,
         {
           if (reportIfSanityCheckFailed)
           {
-            errs () << "Callee is not simulated by caller at " 
+            errs () << "ERROR: callee is not simulated by caller at " 
                     << *cs.getInstruction() << "\n"
-                    << "Formal param " << *fml << "\n"
-                    << "Actual param " << *arg << "\n"
-                    << "Callee cell=" << c << "\n"
-                    << "Caller cell=" << nc << "\n";
+                    << "\tFormal param " << *fml << "\n"
+                    << "\tActual param " << *arg << "\n"
+                    << "\tCallee cell=" << c << "\n"
+                    << "\tCaller cell=" << nc << "\n";
           }
           return false; 
         }
