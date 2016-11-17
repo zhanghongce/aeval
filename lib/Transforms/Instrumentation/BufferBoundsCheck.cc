@@ -113,7 +113,9 @@ namespace seahorn {
       {
         auto &dsa = this->m_abc->getAnalysis<dsa::DsaAnalysis>();
         if (dsa.hasDsaInfo ())
-          m_dsa = &dsa.getDsaInfo ();    
+          m_dsa = &dsa.getDsaInfo ();
+	else
+	  errs () << "WARNING ABC: No Sea Dsa found\n";
       }
 
       const char* getDsaName () const { return "SeaHorn Dsa analysis";}
@@ -127,21 +129,22 @@ namespace seahorn {
 
         if (!m_dsa) 
         {
-          errs () << "WARNING ABC: Sea Dsa information not found " << tag << "\n";
+          //errs () << "WARNING ABC: Sea Dsa information not found " << tag << "\n";
           return true; 
         }
         
         dsa::Graph* g = m_dsa->getDsaGraph (fn);
         if (!g) 
         {
-          errs () << "WARNING ABC: Sea Dsa graph not found for " << fn.getName () 
-                  << " " << tag << "\n";
+          errs () << "WARNING ABC: Sea Dsa graph not found for " << fn.getName () << "\n";
+	          //<< " " << tag << "\n";
           return true; 
         }
         
         if (!(g->hasCell (v)))
         {
-          errs () << "WARNING ABC: Sea Dsa node not found " << v << " " << tag << "\n";
+          errs () << "WARNING ABC: Sea Dsa node not found for " << v << "\n";
+	          //<< " " << tag << "\n";
           return true; 
         }
       
@@ -178,8 +181,7 @@ namespace seahorn {
           }
           else
           {
-            errs () << "WARNING ABC: Sea Dsa not value found for allocation site " 
-                    << tag << "\n";
+            errs () << "WARNING ABC: allocation site " << TrackedAllocSite << " not understood by Sea Dsa\n"; 
             return true;
           }
         } 
