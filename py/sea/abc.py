@@ -218,7 +218,7 @@ def abc_opts(args):
             ### these two should not be needed with sea dsa
             ## this one seems buggy somehow:
             ## it leaves the call graph in an inconsistent state.
-            # '--inline-constructors', 
+            '--inline-constructors', 
             '--inline-allocators',            
             ## this should not be needed with sea dsa.
             ## Commented anyway because it is buggy.
