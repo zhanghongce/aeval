@@ -114,7 +114,7 @@ ArrayBoundsChecks ("abc",
      llvm::cl::init (0)); /* 0 no checks*/
 
 static llvm::cl::opt<bool>
-OverflowChecks ("overflow-check", 
+IntegerChecks ("integer-check", 
      llvm::cl::desc ("Insert signed integer overflow checks"), 
      llvm::cl::init (false));
 
@@ -447,7 +447,7 @@ int main(int argc, char **argv) {
       }      
     }
 
-    if (OverflowChecks)
+    if (IntegerChecks)
     { 
       pass_manager.add (new seahorn::LowerCstExprPass ());
       pass_manager.add (new seahorn::IntegerOverflowCheck ());

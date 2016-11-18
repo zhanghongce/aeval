@@ -292,7 +292,7 @@ class Seapp(sea.LimitedCmd):
         ap.add_argument ('--dsa-info-to-file', dest='dsa_info_to_file',
                          help='Dump some Dsa info to a file',
                          metavar='DIR', default=None)
-        ap.add_argument ('--overflow-check', dest='ioc', help='Insert signed integer overflow checks (OBSOLETE)',
+        ap.add_argument ('--integer-check', dest='ioc', help='Insert signed integer overflow checks (OBSOLETE)',
                          default=False, action='store_true')
         ap.add_argument ('--null-check', dest='ndc', help='Insert null dereference checks (OBSOLETE)',
                          default=False, action='store_true')
@@ -418,7 +418,7 @@ class Seapp(sea.LimitedCmd):
                 if args.abc_use_deref: argv.append ('--abc-use-deref') 
                 if args.abc_track_base_only: argv.append ('--abc-track-base-only') 
                 
-            if args.ioc: argv.append ('--overflow-check')
+            if args.ioc: argv.append ('--integer-check')
             if args.ndc: argv.append ('--null-check')
 
             if args.extern_funcs:
