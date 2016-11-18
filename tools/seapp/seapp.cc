@@ -415,9 +415,6 @@ int main(int argc, char **argv) {
     if (!MixedSem)
       pass_manager.add (new seahorn::LowerGvInitializers ());
 
-    if (!MixedSem)
-      pass_manager.add (new seahorn::LowerGvInitializers ());
-    
     pass_manager.add(llvm::createUnifyFunctionExitNodesPass ());
 
     if (SimplifyPointerLoops) {
