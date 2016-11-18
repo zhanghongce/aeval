@@ -215,11 +215,10 @@ def get_results (output, returnvalue, timeout):
 # options for `sea pp` with array bounds checks
 def abc_opts(args):
     opts = ['--kill-vaarg=true',
-            ### these two should not be needed with sea dsa
-            ## this one seems buggy somehow:
-            ## it leaves the call graph in an inconsistent state.
+            '--inline-allocators',                        
+            ## XXX: this one seems buggy somehow:
+            ##      it leaves the call graph in an inconsistent state (run in debug mode).
             '--inline-constructors', 
-            '--inline-allocators',            
             ## this should not be needed with sea dsa.
             ## Commented anyway because it is buggy.
             #'--promote-arrays', 
@@ -236,7 +235,7 @@ def abc_opts(args):
     if args.abc_escape_ptr: opts.extend(['--abc-escape-ptr'])
     if args.abc_use_deref: opts.extend(['--abc-use_deref'])
     if args.abc_track_base_only: opts.extend(['--abc-track-base-only'])
-    if args.extern_funcs is not None: 
+    if args.extern_funcs is not None:
         opts.extend(['--externalize-functions={0}'.format(args.extern_funcs)])
 
     return opts
@@ -265,7 +264,8 @@ def horn_opts(args):
             '--horn-global-constraints=true',
             '--horn-stats',
             '--horn-skip-constraints=true',
-            '--horn-make-undef-warning-error=false',
+            #'--horn-make-undef-warning-error=false',
+            '--horn-make-undef-warning-error=true',
             '--horn-child-order=false',
             '--horn-reduce-constraints',
             '--horn-use-write',
@@ -280,7 +280,9 @@ def horn_opts(args):
             opts = opts + ['--horn-sea-dsa-cs-global=false']
         else:
             opts = opts + ['--horn-sea-dsa-cs-global=true']
-
+            opts = opts + ['--horn-sea-dsa-local-mod=true']
+            opts = opts + ['--horn-sea-dsa-split=true']
+            
     return opts
 
 def csv_results_keys ():
@@ -319,6 +321,7 @@ def prove_abc_cmmd (in_file, alloca_id, args, extra = []):
     pf_cmd.extend(['-O{0}'.format(args.opt_level)])
     pf_cmd.extend(horn_opts(args))
     pf_cmd.extend(['--cpu={0}'.format(args.cpu), '--mem={0}'.format(args.mem)])
+    #pf_cmd.extend(['--verbose={0}'.format(args.verbose)])
     pf_cmd.extend(['--verbose={0}'.format(args.zverbose)])
     if args.out_file is not None: 
         pf_cmd.extend (['-o', args.out_file])
@@ -344,15 +347,21 @@ def prove_abc (in_file, alloca_id, args, extra = []):
 
     pf_cmd = prove_abc_cmmd(in_file, alloca_id, args, extra)
 
-    if verbose: print " ".join(pf_cmd)
+    #if verbose: print " ".join(pf_cmd)
 
     p = sub.Popen(pf_cmd, shell=False, stdout=sub.PIPE, stderr=sub.STDOUT)
     results, _ = p.communicate()
 
-    if verbose: print results
-    if args.zverbose > 0: print results
-
-    return get_results (results, p.returncode, args.cpu)
+    checks, ans, time, blks, invars_size, exitcode, signalcode = get_results (results, p.returncode, args.cpu)
+    if time == float(args.cpu):
+        print "    Timeout!"
+    elif checks == 0 or blks == invars_size:
+        print "    Trivially safe (no checks or proven by frontend) "
+    elif verbose or args.zverbose > 0:
+        print " ".join(pf_cmd)        
+        print results
+        
+    return (checks, ans, time, blks, invars_size, exitcode, signalcode)
 
 
 def print_results (outfile, num_allocas, orig_num_checks, isParallel):
@@ -446,8 +455,9 @@ def get_alloc_sites (in_file, work_dir, args):
                     ## site is located in an external function.
                     if row["alloc_site"] == '': continue
 
-                    if row["alloc_site"] not in allocas: 
-                        allocas.append(row["alloc_site"])
+                    if int(row["alloc_site"]) not in allocas: 
+                        allocas.append(int(row["alloc_site"]))
+                allocas.sort()
             except csv.Error as e:
                 report_fatal_error('file %s, line %d: %s' % (alloca_file, reader.line_num, e))
     except (IOError):
@@ -496,7 +506,7 @@ def sea_abc(args, extra): # extra is unused
         return
     else:
         (allocas, num_checks) = get_alloc_sites (in_file, work_dir, args)
-        if verbose: print "Allocation sites = " + str(allocas)
+        #if verbose: print "Allocation sites = " + str(allocas)
         print "--- Found " + str(len(allocas)) + " allocation sites"
 
         if len(allocas) == 0:
@@ -524,7 +534,7 @@ def sea_abc(args, extra): # extra is unused
                                '--zverbose={0}'.format(args.zverbose), 
                                '--add-extra-cutpoints={0}'.format(args.add_cuts),                               
                                '--csv={0}'.format(args.csv_file)]
-                if args.extern_funcs is not None: 
+                if args.extern_funcs is not None:
                     sea_abc_cmd.extend(['--externalize-functions={0}'.format(args.extern_funcs)])
                 if args.abc_no_under: sea_abc_cmd.extend(['--abc-disable-underflow'])
                 if args.abc_no_reads: sea_abc_cmd.extend(['--abc-disable-reads'])
@@ -543,6 +553,7 @@ def sea_abc(args, extra): # extra is unused
                         sea_abc_cmd.extend(['--horn-sea-dsa-cs-global=false'])
                     else:
                         sea_abc_cmd.extend(['--horn-sea-dsa-cs-global=true'])
+                        
 
                 xargs.append(' '.join(sea_abc_cmd))
 

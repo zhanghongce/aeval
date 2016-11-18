@@ -195,6 +195,10 @@ def _is_sea_dsa_opt (x):
     if x == '--horn-sea-dsa': return False
     if x.startswith ('-'):
         y = x.strip ('-')
+        ## ShadowMemSeaDsa pass
+        if y.startswith('horn-sea-dsa-local-mod'): return False
+        ## ShadowMemSeaDsa pass        
+        if y.startswith('horn-sea-dsa-split'): return False        
         return y.startswith ('horn-sea-dsa')
     return False
 
