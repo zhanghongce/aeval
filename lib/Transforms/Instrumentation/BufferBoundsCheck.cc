@@ -113,7 +113,9 @@ namespace seahorn {
       {
         auto &dsa = this->m_abc->getAnalysis<dsa::DsaAnalysis>();
         if (dsa.hasDsaInfo ())
-          m_dsa = &dsa.getDsaInfo ();    
+          m_dsa = &dsa.getDsaInfo ();
+	else
+	  errs () << "WARNING ABC: No Sea Dsa found\n";
       }
 
       const char* getDsaName () const { return "SeaHorn Dsa analysis";}
@@ -127,21 +129,22 @@ namespace seahorn {
 
         if (!m_dsa) 
         {
-          errs () << "WARNING ABC: Sea Dsa information not found " << tag << "\n";
+          //errs () << "WARNING ABC: Sea Dsa information not found " << tag << "\n";
           return true; 
         }
         
         dsa::Graph* g = m_dsa->getDsaGraph (fn);
         if (!g) 
         {
-          errs () << "WARNING ABC: Sea Dsa graph not found for " << fn.getName () 
-                  << " " << tag << "\n";
+          errs () << "WARNING ABC: Sea Dsa graph not found for " << fn.getName () << "\n";
+	          //<< " " << tag << "\n";
           return true; 
         }
         
         if (!(g->hasCell (v)))
         {
-          errs () << "WARNING ABC: Sea Dsa node not found " << v << " " << tag << "\n";
+          errs () << "WARNING ABC: Sea Dsa node not found for " << v << "\n";
+	          //<< " " << tag << "\n";
           return true; 
         }
       
@@ -159,10 +162,16 @@ namespace seahorn {
         {
           if (c.getNode ()->getAllocSites().empty ())
           {
-            errs () << "WARNING ABC: Sea Dsa found node for " << v 
-                    << " without allocation site " << tag << "\n"
-                    << *c.getNode () << "\n"; 
-            return true;
+            // errs () << "WARNING ABC: Sea Dsa found node for " << v 
+            //         << " without allocation site " << tag << "\n"
+            //         << *c.getNode () << "\n";
+	    
+	    // XXX: return false is unsound!
+	    // We do this so at least be able to claim "all memory
+	    // accesses within dsa nodes with allocation sites are
+	    // safe."
+	    
+            return false;
           }
           
           if (const Value* AV = m_dsa->getAllocValue (TrackedAllocSite))
@@ -172,8 +181,7 @@ namespace seahorn {
           }
           else
           {
-            errs () << "WARNING ABC: Sea Dsa not value found for allocation site " 
-                    << tag << "\n";
+            errs () << "WARNING ABC: allocation site " << TrackedAllocSite << " not understood by Sea Dsa\n"; 
             return true;
           }
         } 
@@ -183,6 +191,9 @@ namespace seahorn {
       
       unsigned int getAllocSiteId (const llvm::Value &ptr) 
       { return m_dsa->getAllocSiteId(&ptr); }
+
+      const llvm::Value* getAllocValue (unsigned int id)
+      { return m_dsa->getAllocValue (id); }
     };
 
     // A wrapper for llvm dsa
@@ -252,6 +263,11 @@ namespace seahorn {
       
       unsigned int getAllocSiteId (const llvm::Value &ptr) 
       { return m_dsa->getAllocSiteID (&ptr); }
+
+      // not implemented
+      const llvm::Value* getAllocValue (unsigned int id)
+      { return nullptr;}
+      
     };
    
 
@@ -2395,6 +2411,12 @@ namespace seahorn {
 
       errs () << " --- Using " << dsa->getDsaName () << "\n";
 
+      if (TrackedAllocSite > 0)
+      {
+	if (const Value* allocVal = dsa->getAllocValue (TrackedAllocSite))
+	  errs () << "     Allocation site id=" << TrackedAllocSite << "  " << *allocVal << "\n";
+      }
+      
       LLVMContext &ctx = M.getContext ();
 
       const TargetLibraryInfo * tli = &getAnalysis<TargetLibraryInfo>();
@@ -2543,6 +2565,9 @@ namespace seahorn {
       }
       
       errs () << " ========== ABC  ==========\n";
+      if (TrackedAllocSite > 0)
+	errs ()<< " ## Soundness note: accesses within Dsa nodes without an allocation site are not instrumented.\n\n";
+	
       errs () << "-- " << abc.m_trivial_checks
               << " Total number of trivially safe memory reads/writes (not instrumented)\n"
               << "-- " << abc.m_mem_accesses - abc.m_trivial_checks

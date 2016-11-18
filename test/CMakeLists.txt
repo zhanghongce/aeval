@@ -37,4 +37,3 @@ add_lit_testsuite(test-abc "Regression test for Array Bounds Checks"
   test_dir=${CMAKE_CURRENT_BINARY_DIR}
   DEPENDS seahorn
   )
-

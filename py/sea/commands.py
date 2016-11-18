@@ -68,6 +68,8 @@ class Clang(sea.LimitedCmd):
                     out_files.append(f)
                 else:
                     out_files.append(_remap_file_name (f, '.bc', workdir))
+        # do nothing on .bc and .ll files
+        if _bc_or_ll_file (args.in_files[0]): return 0
 
         if self.plusplus:
             cmd_name = which (['clang++-mp-3.6', 'clang++-3.6', 'clang++',
@@ -193,6 +195,10 @@ def _is_sea_dsa_opt (x):
     if x == '--horn-sea-dsa': return False
     if x.startswith ('-'):
         y = x.strip ('-')
+        ## ShadowMemSeaDsa pass
+        if y.startswith('horn-sea-dsa-local-mod'): return False
+        ## ShadowMemSeaDsa pass        
+        if y.startswith('horn-sea-dsa-split'): return False        
         return y.startswith ('horn-sea-dsa')
     return False
 
@@ -286,7 +292,7 @@ class Seapp(sea.LimitedCmd):
         ap.add_argument ('--dsa-info-to-file', dest='dsa_info_to_file',
                          help='Dump some Dsa info to a file',
                          metavar='DIR', default=None)
-        ap.add_argument ('--overflow-check', dest='ioc', help='Insert signed integer overflow checks (OBSOLETE)',
+        ap.add_argument ('--integer-check', dest='ioc', help='Insert signed integer overflow checks (OBSOLETE)',
                          default=False, action='store_true')
         ap.add_argument ('--null-check', dest='ndc', help='Insert null dereference checks',
                          default=False, action='store_true')
@@ -319,7 +325,7 @@ class Seapp(sea.LimitedCmd):
         ap.add_argument ('--strip-extern', help='Replace external function calls ' +
                          'by non-determinism', default=False, action='store_true',
                          dest='strip_external')
-        ap.add_argument ('--slice-functions',
+        ap.add_argument ('--slice-functions', 
                          help='Slice program onto these functions',
                          dest='slice_funcs', type=str, metavar='str,...')
         ap.add_argument ('--internalize', help='Create dummy definitions for all ' +
@@ -343,7 +349,9 @@ class Seapp(sea.LimitedCmd):
         if args.llvm_asm: argv.append ('-S')
         
         # internalize takes precedence over all other options and must run alone
-        if args.internalize:
+        if self._strip_extern:
+            argv.append ('--only-strip-extern=true')
+        elif args.internalize:
             argv.append ('--klee-internalize')
         else:
 
@@ -418,7 +426,7 @@ class Seapp(sea.LimitedCmd):
                 if args.abc_use_deref: argv.append ('--abc-use-deref') 
                 if args.abc_track_base_only: argv.append ('--abc-track-base-only') 
                 
-            if args.ioc: argv.append ('--overflow-check')
+            if args.ioc: argv.append ('--integer-check')
             if args.ndc:
                 argv.append ('--null-check')
                 if args.ndc_opt:
@@ -1085,6 +1093,6 @@ feCrab = sea.SeqCmd ('fe-crab', 'alias for fe|crab', FrontEnd.cmds + [Crab()])
 seaTerm = sea.SeqCmd ('term', 'SeaHorn Termination analysis', Smt.cmds + [SeaTerm()])
 funcInfo = sea.SeqCmd ('finfo', 'Functions info for Inconsistency analysis', [Clang(), Seapp()])
 seaInc = sea.SeqCmd ('inc', 'SeaHorn Inconsistency analysis', Smt.cmds + [SeaInc()])
-Exe = sea.SeqCmd ('exe', 'alias for clang|pp --internalize|linkrt',
-                  [Clang(), Seapp(internalize=True), LinkRt()])
 seaClangAbc = sea.SeqCmd ('clang-abc', 'alias for clang|abc', [Clang(), SeaAbc()])
+Exe = sea.SeqCmd ('exe', 'alias for clang|pp --strip-extern|pp --internalize|wmem|linkrt',
+                  [Clang(), Seapp(strip_extern=True), Seapp(internalize=True), WrapMem(), LinkRt()])

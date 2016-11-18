@@ -16,6 +16,8 @@
 #include "dsa/AllocatorIdentification.h"
 #endif 
 
+#include "llvm/Analysis/CallGraphSCCPass.h"
+
 using namespace llvm;
 
 namespace seahorn
@@ -118,26 +120,29 @@ namespace seahorn
     {return "Mark C++ constructors/destructors with AlwaysInline attribute";}
     
     void getAnalysisUsage (AnalysisUsage &AU) const
-    {AU.setPreservesAll ();}
+    { AU.setPreservesAll ();}
 
     bool runOnModule (Module &M)
     {
+      bool Change = false;
       for (Function &F : M) {
         if (!F.isDeclaration () && F.hasLocalLinkage ()) {
           if (isConstructor(F)){
             LOG("inline", 
                 errs () << "INLINED CONSTRUCTOR " << F.getName () << "\n");
             F.addFnAttr (Attribute::AlwaysInline);
+    	    Change = true;
           } else if (isDestructor(F)){
             LOG("inline", 
                 errs () << "INLINED DESTRUCTOR " << F.getName () << "\n");
             F.addFnAttr (Attribute::AlwaysInline);
+    	    Change = true;
           }
         }
       }
-      return true;
+      return Change;
     }
-    
+
   };
   
   char MarkInternalAllocOrDeallocInline::ID = 0;

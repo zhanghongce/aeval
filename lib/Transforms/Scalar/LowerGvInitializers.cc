@@ -38,8 +38,8 @@ namespace seahorn
                                     DL->getABITypeAlignment (ety));
         change=true;
       }
-      else
-        errs () << "WARNING: Ignoring initializer for" << gv << "\n";
+      // else
+      //   errs () << "WARNING: Ignoring initializer for" << gv << "\n";
     }
       
     return change;
