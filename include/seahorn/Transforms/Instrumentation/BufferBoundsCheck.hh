@@ -39,6 +39,7 @@ namespace seahorn
      /* tag only for debugging purposes */
      virtual bool shouldBeTrackedPtr (const llvm::Value &ptr, const llvm::Function& fn, int tag) = 0;
      virtual unsigned int getAllocSiteId (const llvm::Value &ptr) = 0;
+     virtual const llvm::Value* getAllocValue (unsigned int id) = 0;    
      virtual const char* getDsaName () const = 0;
    };
 

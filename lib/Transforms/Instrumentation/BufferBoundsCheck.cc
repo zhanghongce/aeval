@@ -191,6 +191,9 @@ namespace seahorn {
       
       unsigned int getAllocSiteId (const llvm::Value &ptr) 
       { return m_dsa->getAllocSiteId(&ptr); }
+
+      const llvm::Value* getAllocValue (unsigned int id)
+      { return m_dsa->getAllocValue (id); }
     };
 
     // A wrapper for llvm dsa
@@ -260,6 +263,11 @@ namespace seahorn {
       
       unsigned int getAllocSiteId (const llvm::Value &ptr) 
       { return m_dsa->getAllocSiteID (&ptr); }
+
+      // not implemented
+      const llvm::Value* getAllocValue (unsigned int id)
+      { return nullptr;}
+      
     };
    
 
@@ -2403,6 +2411,12 @@ namespace seahorn {
 
       errs () << " --- Using " << dsa->getDsaName () << "\n";
 
+      if (TrackedAllocSite > 0)
+      {
+	if (const Value* allocVal = dsa->getAllocValue (TrackedAllocSite))
+	  errs () << "     Allocation site id=" << TrackedAllocSite << "  " << *allocVal << "\n";
+      }
+      
       LLVMContext &ctx = M.getContext ();
 
       const TargetLibraryInfo * tli = &getAnalysis<TargetLibraryInfo>();
