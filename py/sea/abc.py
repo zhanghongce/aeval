@@ -264,7 +264,6 @@ def horn_opts(args):
             '--horn-global-constraints=true',
             '--horn-stats',
             '--horn-skip-constraints=true',
-            #'--horn-make-undef-warning-error=false',
             '--horn-make-undef-warning-error=true',
             '--horn-child-order=false',
             '--horn-reduce-constraints',
@@ -354,9 +353,15 @@ def prove_abc (in_file, alloca_id, args, extra = []):
 
     checks, ans, time, blks, invars_size, exitcode, signalcode = get_results (results, p.returncode, args.cpu)
     if time == float(args.cpu):
-        print "    Timeout!"
+        if "WARNING: found call to verifier.error()" in results:
+            print "    SKIPPED: assertion found but unreachable from main"
+        else:
+            print " ".join(pf_cmd)                
+            print "    Timeout!"
     elif checks == 0 or blks == invars_size:
         print "    Trivially safe (no checks or proven by frontend) "
+    elif "WARNING: found call to verifier.error()" in results:
+        print "    SKIPPED: assertion found but unreachable from main"
     elif verbose or args.zverbose > 0:
         print " ".join(pf_cmd)        
         print results
