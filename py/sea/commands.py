@@ -349,12 +349,13 @@ class Seapp(sea.LimitedCmd):
             argv.append ('--klee-internalize')
         else:
 
-            if args.inline_only:
-                argv.append ('--horn-inline-all')
-                for f in args.inline_only.split(','):
-                    argv.append ('--horn-inline-only={0}'.format(f))
-            if args.inline_alloc: argv.append ('--horn-inline-allocators')
-            if args.inline_const: argv.append ('--horn-inline-constructors') 
+            if args.inline: argv.append ('--horn-inline-all')
+            else:
+                if args.inline_only:
+                    for f in args.inline_only.split(','):
+                        argv.append ('--horn-inline-only={0}'.format(f))
+                if args.inline_alloc: argv.append ('--horn-inline-allocators')
+                if args.inline_const: argv.append ('--horn-inline-constructors') 
             
             if args.strip_external:
                 argv.append ('--strip-extern=true')
