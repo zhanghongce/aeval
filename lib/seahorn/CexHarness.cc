@@ -61,8 +61,8 @@ namespace seahorn
           const Function *CF = CS.getCalledFunction ();
           if (!CF) continue;
 
-          LOG("cex",
-              errs () << "Considering harness for: " << CF->getName () << "\n";);
+          // LOG("cex",
+          //     errs () << "Considering harness for: " << CF->getName () << "\n";);
 
           if (!CF->hasName()) continue;
           if (CF->isIntrinsic ()) continue;
