@@ -15,9 +15,8 @@
 #include "avy/AvyDebug.h"
 
 // For proving absence of null dereferences this option better be
-// enabled.
-// However, for finding code inconsistencies it might be useful to
-// disable it.
+// enabled. However, for finding code inconsistencies it might be
+// useful to disable it.
 static llvm::cl::opt<bool>
 OptimizeNullChecks("null-check-optimize",
                    llvm::cl::desc ("Minimize the number of instrumented null checks"),
@@ -81,11 +80,11 @@ namespace seahorn
     if (Constant* C = dyn_cast<Constant> (isNull)) {
       if (ConstantInt* CI = dyn_cast<ConstantInt> (C)) {
         if (CI == ConstantInt::getFalse (B.getContext ())) {
-          LOG ("null-check", errs () << "Memory access is trivially safe\n";);
+          LOG ("null-check", errs () << "Memory access is trivially safe " << *I <<"\n";);
           TrivialChecks++;
         }
         else if (CI == ConstantInt::getTrue (B.getContext ())) {
-          LOG ("null-check", errs () << "Memory access is trivially unsafe\n";);
+          LOG ("null-check", errs () << "Memory access is trivially unsafe " << *I << "\n";);
           TrivialChecks++;
         }
       }
@@ -141,31 +140,41 @@ namespace seahorn
     SmallSet<Value*, 16> TempsToInstrument;
     std::vector<Instruction*> Worklist;
     for (auto&BB : F)  {
-      // XXX: uncomment if only consider within a basic block 
       TempsToInstrument.clear();
       for (auto &i: BB) {
         Instruction *I = &i;
         if (isa<LoadInst>(I)) {
-          if (Value* BasePtr = getBasePtr (I)) {
-            // We've checked BasePtr in the current BB.
-            if (OptimizeNullChecks && !TempsToInstrument.insert(BasePtr).second) {
-              LOG ("null-check", 
-                   errs () << "Skipped " << *BasePtr << " because already checked!\n";);
-              continue;  
-            }
-          }
+
+	  if (OptimizeNullChecks) {
+	    if (Value* BasePtr = getBasePtr (I)) {
+	      // We've checked BasePtr in the current BB.
+	      if (!TempsToInstrument.insert(BasePtr).second) {
+		LOG ("null-check", 
+		     errs () << "Skipped " << *BasePtr << " because already checked!\n";);
+		continue;  
+	      }
+	    }
+	  }
+	  
           Worklist.push_back (I);
         } else if (isa<StoreInst>(I)) {
-          if (Value* BasePtr = getBasePtr (I)) {
-            // We've checked BasePtr in the current BB.
-            if (OptimizeNullChecks && !TempsToInstrument.insert(BasePtr).second) {
-              LOG ("null-check", 
-                   errs () << "Skipped " << *BasePtr << " because already checked!\n";);
-              continue;  
-            }
+
+	  if (OptimizeNullChecks) {
+	    if (Value* BasePtr = getBasePtr (I)) {
+	      // We've checked BasePtr in the current BB.
+	      if (!TempsToInstrument.insert(BasePtr).second) {
+		LOG ("null-check", 
+		     errs () << "Skipped " << *BasePtr << " because already checked!\n";);
+		continue;  
+	      }
+	    }
           }
+	  
           Worklist.push_back (I);
         }
+	else {
+	  // TODO memory intrinsics
+	}
       }
     }
 
@@ -180,44 +189,44 @@ namespace seahorn
         Ptr = LI->getPointerOperand();
       } else if (auto *SI = dyn_cast<StoreInst>(I)) {
         Ptr = SI->getPointerOperand();
+      } else {
+	errs () << "ERROR: unknown instruction " << *I << "\n";
+	continue;
       }
+      assert (Ptr);
+      
+      Value * Base = nullptr;
+      if (OptimizeNullChecks) Base = getBasePtr(Ptr);
+      
+      // -- Instrument the memory access
+      insertNullCheck (Base ? Base : Ptr, B, I);
 
-      if (Ptr) {
-
-        Value * Base = nullptr;
-        if (OptimizeNullChecks)
-          Base = getBasePtr(Ptr);
-
-        // -- Instrument the memory access
-        insertNullCheck (Base ? Base : Ptr, B, I);
-
-        if (!OptimizeNullChecks) {
-          // -- Add extra memory safety assumption: successful load/store
-          //    implies validity of their arguments.
-          if (GetElementPtrInst* gep = dyn_cast<GetElementPtrInst>(Ptr)) {
-            if (gep->isInBounds() && gep->getPointerAddressSpace() == 0) {
-              Value* base = gep->getPointerOperand ();
-              B.SetInsertPoint (I);
-              auto It = B.GetInsertPoint();
-              ++It;
-              B.SetInsertPoint(I->getParent(), It);
-              CallInst* CI = B.CreateCall(AssumeFn, B.CreateIsNotNull(base));
-              CI->setDebugLoc (I->getDebugLoc ());
+      if (!OptimizeNullChecks) {
+	// -- Add extra memory safety assumption: successful load/store
+	//    implies validity of their arguments.
+	if (GetElementPtrInst* gep = dyn_cast<GetElementPtrInst>(Ptr)) {
+	  if (gep->isInBounds() && gep->getPointerAddressSpace() == 0) {
+	    Value* base = gep->getPointerOperand ();
+	    B.SetInsertPoint (I);
+	    auto It = B.GetInsertPoint();
+	    ++It;
+	    B.SetInsertPoint(I->getParent(), It);
+	    CallInst* CI = B.CreateCall(AssumeFn, B.CreateIsNotNull(base));
+	    CI->setDebugLoc (I->getDebugLoc ());
               
-              LOG ("null-check",
-                   errs () << "Added memory safety assumption for " << *base << "\n";);
-
-              // update call graph
-              if (CG) {
-                auto f1 = CG->getOrInsertFunction (&F);
-                auto f2 = CG->getOrInsertFunction (AssumeFn);
-                f1->addCalledFunction (CallSite (CI), f2);
-              }
-            }
-          }
-        }
-        change = true;
+	    LOG ("null-check",
+		 errs () << "Added memory safety assumption for " << *base << "\n";);
+	    
+	    // update call graph
+	    if (CG) {
+	      auto f1 = CG->getOrInsertFunction (&F);
+	      auto f2 = CG->getOrInsertFunction (AssumeFn);
+	      f1->addCalledFunction (CallSite (CI), f2);
+	    }
+	  }
+	}
       }
+      change = true;
     }
     return change;
   }
@@ -258,7 +267,6 @@ namespace seahorn
       change |= runOnFunction (F); 
     }
 
-    //errs () << "After NullCheck pass \n" << M << "\n";
     errs () << "-- Inserted " << ChecksAdded << " null dereference checks " 
             << " (skipped " << TrivialChecks << " trivial checks).\n";
 
