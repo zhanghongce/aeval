@@ -296,6 +296,8 @@ class Seapp(sea.LimitedCmd):
                          default=False, action='store_true')
         ap.add_argument ('--null-check', dest='ndc', help='Insert null dereference checks (OBSOLETE)',
                          default=False, action='store_true')
+        ap.add_argument ('--integer-check', dest='ioc', help='Insert signed integer overflow checks',
+                         default=False, action='store_true')        
         ap.add_argument ('--externalize-addr-taken-functions',
                          help='Externalize uses of address-taken functions',
                          dest='enable_ext_funcs', default=False,

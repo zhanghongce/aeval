@@ -41,6 +41,11 @@ EnableDiv ("horn-enable-div",
                 cl::init (true));
 
 static llvm::cl::opt<bool>
+RewriteDiv ("horn-rewrite-div",
+	    llvm::cl::desc ("Rewrite division constraints to multiplications."),
+	    cl::init (false));
+
+static llvm::cl::opt<bool>
 EnableUniqueScalars ("horn-singleton-aliases",
                      llvm::cl::desc ("Treat singleton alias sets as scalar values"),
                      cl::init (false));
@@ -55,6 +60,12 @@ InferMemSafety ("horn-use-mem-safety",
 static llvm::cl::opt<bool>
 IgnoreCalloc ("horn-ignore-calloc",
               llvm::cl::desc ("Treat calloc same as malloc, ignore that memory is initialized"),
+              cl::init (false),
+              cl::Hidden);
+
+static llvm::cl::opt<bool>
+IgnoreMemset ("horn-ignore-memset",
+              llvm::cl::desc ("Ignore that memset writes into a memory"),
               cl::init (false),
               cl::Hidden);
 
@@ -124,8 +135,12 @@ namespace
     
     /// -- parameters for a function call
     ExprVector m_fparams;
-    
+   
     Expr m_activeLit;
+
+    // -- input and output parameter regions for a function call
+    ExprVector m_inRegions;
+    ExprVector m_outRegions;
     
     SymExecBase (SymStore &s, UfoSmallSymExec &sem, ExprVector &side) : 
       m_s(s), m_efac (m_s.getExprFactory ()), m_sem (sem), m_side (side) 
@@ -331,7 +346,7 @@ namespace
       case BinaryOperator::URem:
         doArithmetic (lhs, I);
         break;
-          
+	
       case BinaryOperator::And:
       case BinaryOperator::Or:
       case BinaryOperator::Xor:
@@ -355,6 +370,7 @@ namespace
       
       Expr sixteen = mkTerm<mpz_class> (16, m_efac);
       Expr thirtytwo = mkTerm<mpz_class> (32, m_efac);
+      Expr twoToSixteenMinusOne = mkTerm<mpz_class> (65535, m_efac);      
       switch(i.getOpcode())
       {
       case BinaryOperator::And:
@@ -368,7 +384,11 @@ namespace
           if (op1 == sixteen)
             val.push_back (mk<IMPL> (mk<EQ> (op0, thirtytwo),
                                      mk<EQ> (lhs, zeroE)));
-          
+	  // x & 65535 == x (if x <= 65535)	  
+	  if (op1 == twoToSixteenMinusOne)
+	    val.push_back (mk<IMPL>(mk<LEQ>(op0, twoToSixteenMinusOne),
+				    mk<EQ> (lhs, op0)));
+	  			 
           // val.push_back (mk<IMPL> (mk<AND> (mk<EQ> (op0, thirtytwo),
           //                                   mk<EQ> (op1, sixteen)),
           //                          mk<EQ> (lhs, zeroE)));
@@ -386,6 +406,23 @@ namespace
       }
       
       addCondSide (res);
+    }
+
+    Expr doLShr (Expr lhs, Expr op1, const ConstantInt *op2)
+    {
+      if (!EnableDiv) return Expr(nullptr);
+
+      mpz_class shift = expr::toMpz (op2->getValue ());
+      mpz_class factor = 1;
+      for (unsigned long i = 0; i < shift.get_ui (); ++i) 
+          factor = factor * 2;
+      Expr factorE = mkTerm<mpz_class> (factor, m_efac);
+      if (RewriteDiv)
+	return mk<IMPL>(mk<GEQ>(op1, zeroE),
+			mk<EQ>(mk<MULT>(lhs, factorE), op1));	      	
+      else
+	return mk<IMPL>(mk<GEQ>(op1, zeroE), mk<DIV>(op1, factorE));
+			
     }
     
     void doLogic (Expr lhs, BinaryOperator &I)
@@ -415,6 +452,12 @@ namespace
         case BinaryOperator::Xor:
 	  rhs = mk<XOR>(op0,op1);
           break;
+	case BinaryOperator::LShr:
+	  if (const ConstantInt *ci = dyn_cast<ConstantInt> (&v1)) {
+	    Expr res = doLShr (lhs, op0, ci);
+	    side (res);
+	    return;
+	  }
         default:
           break;
 	}
@@ -433,19 +476,23 @@ namespace
       }
       return mk<MULT>(op1, mkTerm<mpz_class> (factor, m_efac));
     }
-    Expr doAShr (Expr op1, const ConstantInt *op2)
+
+    Expr doAShr (Expr lhs, Expr op1, const ConstantInt *op2)    
     {
       if (!EnableDiv) return Expr(nullptr);
-      
+
       mpz_class shift = expr::toMpz (op2->getValue ());
       mpz_class factor = 1;
       for (unsigned long i = 0; i < shift.get_ui (); ++i) 
           factor = factor * 2;
-      return mk<DIV>(op1, mkTerm<mpz_class> (factor, m_efac));
+      Expr factorE = mkTerm<mpz_class> (factor, m_efac);
+      
+      if (RewriteDiv)
+	return mk<EQ>(mk<MULT>(lhs, factorE), op1);
+      else
+	return mk<EQ>(lhs ,mk<DIV>(op1, factorE));
     }
     
-
-
     void doArithmetic (Expr lhs, BinaryOperator &I)
     {
       const Value& v1 = *I.getOperand(0);
@@ -478,8 +525,14 @@ namespace
         // if StrictlyLinear then require that divisor is a constant
         if (EnableDiv && 
             (!StrictlyLinear || 
-             isOpX<MPZ> (op2) || isOpX<MPQ> (op2)))
-          rhs = mk<DIV>(op1, op2);
+             isOpX<MPZ> (op2) || isOpX<MPQ> (op2))) {
+	  if (RewriteDiv) {
+	    side (mk<MULT>(lhs, op2), op1, true);
+	    return;
+	  }
+	  else 
+	    rhs = mk<DIV>(op1, op2);	    
+	}
         break;
       case BinaryOperator::SRem:
       case BinaryOperator::URem:
@@ -493,8 +546,11 @@ namespace
           rhs = doLeftShift(op1, ci);
         break;
       case BinaryOperator::AShr:
-        if (const ConstantInt *ci = dyn_cast<ConstantInt> (&v2))
-          rhs = doAShr (op1, ci);
+        if (const ConstantInt *ci = dyn_cast<ConstantInt> (&v2)) {
+	  Expr res = doAShr (lhs, op1, ci);
+	  side (res, true);
+	  return;
+	}
         break;
       default:
         break;
@@ -623,8 +679,9 @@ namespace
       const Function &F = *f;
       const Function &PF = *I.getParent ()->getParent ();
       
-      // skip intrinsic functions
-      if (F.isIntrinsic ()) { assert (m_fparams.size () == 3); return;}
+      // skip intrinsic functions, except for memory-related ones
+      if (F.isIntrinsic () && !isa<MemIntrinsic> (&I))
+      { assert (m_fparams.size () == 3); return;}
     
       
       if (F.getName ().startswith ("verifier.assume"))
@@ -653,7 +710,28 @@ namespace
                                     (sort::intTy (m_efac), zeroE)));
         }
       }
-      
+      else if (MemSetInst *MSI = dyn_cast<MemSetInst>(&I))		
+      {
+	if (m_inMem && m_outMem && m_sem.isTracked (*(MSI->getDest ()))) {
+	  assert (m_fparams.size () == 3);
+	  assert (!m_uniq);
+	  if (IgnoreMemset)
+	    m_side.push_back (mk<EQ> (m_outMem, m_inMem));
+	  else
+	  {
+	    if (const ConstantInt *c = dyn_cast<const ConstantInt> (MSI->getValue ()))
+	    {
+	      // XXX This is potentially unsound if the corresponding DSA
+	      // XXX node corresponds to multiple allocation sites
+	      Expr val = mkTerm<mpz_class> (expr::toMpz (c->getValue ()), m_efac); 
+	      errs () << "WARNING: initializing DSA node due to memset()\n";
+	      m_side.push_back (mk<EQ> (m_outMem,
+					op::array::constArray
+					(sort::intTy (m_efac), val)));
+	    }
+	  }
+	}
+      }
       // else if (F.getName ().equals ("verifier.assert"))
       // {
       //   Expr ein = m_s.read (m_sem.errorFlag ());
@@ -714,6 +792,9 @@ namespace
         m_fparams.push_back (falseE);
         m_fparams.push_back (falseE);
         m_fparams.push_back (falseE);
+
+	m_inRegions.clear();
+	m_outRegions.clear();
       }
       else if (F.getName ().startswith ("shadow.mem"))
       {
@@ -738,8 +819,12 @@ namespace
           m_fparams.push_back (m_s.read (symb (*CS.getArgument (1))));
         else if (F.getName ().equals ("shadow.mem.arg.mod"))
         {
-          m_fparams.push_back (m_s.read (symb (*CS.getArgument (1))));
-          m_fparams.push_back (m_s.havoc (symb (I)));
+	  auto in_par = m_s.read (symb (*CS.getArgument (1)));
+          m_fparams.push_back (in_par);
+	  m_inRegions.push_back (in_par);	  
+	  auto out_par = m_s.havoc (symb (I));
+          m_fparams.push_back (out_par);
+	  m_outRegions.push_back (out_par);
         }
         else if (F.getName ().equals ("shadow.mem.arg.new"))
           m_fparams.push_back (m_s.havoc (symb (I)));
@@ -765,11 +850,27 @@ namespace
       {
         if (m_fparams.size () > 3)
         {
-          m_fparams.resize (3);
-          errs () << "WARNING: skipping a call to " << F.getName () 
-                  << " (recursive call?)\n";
+
+	  if (m_sem.isAbstracted (*f))
+	  {
+	    assert (m_inRegions.size () m_outRegions.size());
+	    for (unsigned i=0;i<m_inRegions.size(); i++) {
+	      addCondSide (mk<EQ> (m_inRegions[i], m_outRegions[i]));
+	    }
+	    errs () << "WARNING: abstracted unsoundly a call to "
+		    << F.getName () << "\n";
+	  }
+	  else
+	  {
+	    errs () << "WARNING: skipping a call to " << F.getName () 
+		    << " (recursive call?)\n";
+	  }
+
+          m_fparams.resize (3);	  
+	  m_inRegions.clear();
+	  m_outRegions.clear();	
         }
-        
+
         visitInstruction (*CS.getInstruction ());
       }
           
@@ -1136,7 +1237,12 @@ namespace seahorn
     // -- always track integer registers
     return v.getType ()->isIntegerTy ();
   }
-  
+
+  bool UfoSmallSymExec::isAbstracted (const Function &fn) 
+  {
+    return (m_abs_funcs.count (&fn) > 0);
+  }
+
   Expr UfoSmallSymExec::lookup (SymStore &s, const Value &v)
   {
     Expr u = symb (v);
