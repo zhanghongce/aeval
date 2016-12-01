@@ -116,6 +116,10 @@ def add_abc_args(ap):
     ap.add_argument ('--externalize-functions',
                      help='Externalize these functions',
                      dest='extern_funcs', type=str, metavar='str,...')
+    ap.add_argument ('--abstract-functions',
+                     help="Abstract all calls to these functions.\n"
+                          "Similar effect as --externalize-functions but at the level of horn clauses\n",
+                     dest='abstract_funcs', type=str, metavar='str,...')
     ap.add_argument ('--dsa', 
                      help="Dsa analysis:\n"
                           "- llvm  : context-insensitive Llvm Dsa\n"
@@ -212,22 +216,27 @@ def get_results (output, returnvalue, timeout):
         if timeout > -1 : total_time = float(timeout)
     return (num_checks, ans, total_time, num_blks, invars_size, exitcode, signalcode)
 
-# options for `sea pp` with array bounds checks
-def abc_opts(args):
+# options for `sea pp`
+def pp_opts (args):
     opts = ['--kill-vaarg=true',
             '--inline-allocators',                        
             ## XXX: this one seems buggy somehow:
-            ##      it leaves the call graph in an inconsistent state (run in debug mode).
+            ##      it leaves the call graph in an inconsistent state.
             '--inline-constructors', 
-            ## this should not be needed with sea dsa.
-            ## Commented anyway because it is buggy.
             #'--promote-arrays', 
             '--unfold-loops-for-dsa',
             '--simplify-pointer-loops', 
             '--lower-invoke', 
             '--devirt-functions', 
-            '--externalize-addr-taken-funcs',
-            '--abc=2']
+            '--externalize-addr-taken-funcs']
+    if args.extern_funcs is not None:
+        opts.extend(['--externalize-functions={0}'.format(args.extern_funcs)])
+        
+    return opts
+    
+# extra options for `sea pp` with array bounds checks
+def abc_opts(args, alloca_id = None):    
+    opts = ['--abc=2', '--dsa-info']
     if args.abc_no_under: opts.extend(['--abc-disable-underflow'])
     if args.abc_no_reads: opts.extend(['--abc-disable-reads'])
     if args.abc_no_writes: opts.extend(['--abc-disable-writes'])
@@ -235,9 +244,7 @@ def abc_opts(args):
     if args.abc_escape_ptr: opts.extend(['--abc-escape-ptr'])
     if args.abc_use_deref: opts.extend(['--abc-use_deref'])
     if args.abc_track_base_only: opts.extend(['--abc-track-base-only'])
-    if args.extern_funcs is not None:
-        opts.extend(['--externalize-functions={0}'.format(args.extern_funcs)])
-
+    if alloca_id is not None: opts.extend(['--abc-alloc-site={0}'.format(str(alloca_id))])
     return opts
 
 # options for `sea ms`
@@ -251,7 +258,8 @@ def opt_opts(args):
             #,'--enable-loop-idiom'
             #,'--enable-nondet-init'
             #,'--llvm-inline-threshold=150'
-            '--llvm-unroll-threshold=150']
+            #,'--llvm-unroll-threshold=150'
+            ]
     return opts
 
 # options for `sea horn`
@@ -281,6 +289,9 @@ def horn_opts(args):
             opts = opts + ['--horn-sea-dsa-cs-global=true']
             opts = opts + ['--horn-sea-dsa-local-mod=true']
             opts = opts + ['--horn-sea-dsa-split=true']
+
+    if args.abstract_funcs is not None:
+        opts.extend(['--horn-abstract={0}'.format(args.abstract_funcs)])
             
     return opts
 
@@ -312,15 +323,14 @@ def csv_results_line (filename, fmt, res_dic):
 
 def prove_abc_cmmd (in_file, alloca_id, args, extra = []):
     pf_cmd = list ()
-    pf_cmd.extend(abc_opts(args))
-    if alloca_id is not None:
-        pf_cmd.extend(['--abc-alloc-site={0}'.format(str(alloca_id))])
+
+    pf_cmd.extend(pp_opts(args))
+    pf_cmd.extend(abc_opts(args, alloca_id))
     pf_cmd.extend(ms_opts(args))
     pf_cmd.extend(opt_opts(args))
     pf_cmd.extend(['-O{0}'.format(args.opt_level)])
     pf_cmd.extend(horn_opts(args))
     pf_cmd.extend(['--cpu={0}'.format(args.cpu), '--mem={0}'.format(args.mem)])
-    #pf_cmd.extend(['--verbose={0}'.format(args.verbose)])
     pf_cmd.extend(['--verbose={0}'.format(args.zverbose)])
     if args.out_file is not None: 
         pf_cmd.extend (['-o', args.out_file])
@@ -328,10 +338,6 @@ def prove_abc_cmmd (in_file, alloca_id, args, extra = []):
         asm_filename, asm_file_ext = os.path.splitext(args.asm_out_file)
         asm_filename = asm_filename + '.alloc.' + str(alloca_id) + asm_file_ext
         pf_cmd.extend(['--oll={0}'.format(asm_filename)])
-
-    ### XXX: needed by seapp during abc instrumentation    
-    pf_cmd.extend(['--dsa-info'])
-
     pf_cmd = [get_sea(), 'pf'] + pf_cmd + extra + [in_file]
     return pf_cmd
 
@@ -423,7 +429,10 @@ def print_results (outfile, num_allocas, orig_num_checks, isParallel):
 
 # return a list with all allocation sites 
 def get_alloc_sites (in_file, work_dir, args):
-    opts = abc_opts (args)   
+    opts = list ()
+    opts.extend(pp_opts(args))
+    opts.extend(abc_opts(args))
+    
     alloca_file = work_dir + '/alloc.csv'
 
     opts.extend(['--dsa-info-to-file=' + alloca_file])
@@ -541,6 +550,8 @@ def sea_abc(args, extra): # extra is unused
                                '--csv={0}'.format(args.csv_file)]
                 if args.extern_funcs is not None:
                     sea_abc_cmd.extend(['--externalize-functions={0}'.format(args.extern_funcs)])
+                if args.abstract_funcs is not None:
+                    sea_abc_cmd.extend(['--abstract-functions={0}'.format(args.abstract_funcs)])
                 if args.abc_no_under: sea_abc_cmd.extend(['--abc-disable-underflow'])
                 if args.abc_no_reads: sea_abc_cmd.extend(['--abc-disable-reads'])
                 if args.abc_no_writes: sea_abc_cmd.extend(['--abc-disable-writes'])

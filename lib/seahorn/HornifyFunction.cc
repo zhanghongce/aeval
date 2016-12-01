@@ -27,7 +27,7 @@ ReduceWeak ("horn-reduce-weakly",
 #include "ufo/Stats.hh"
 namespace seahorn
 {
-  
+
   void HornifyFunction::extractFunctionInfo (const BasicBlock &BB)
   {
     const ReturnInst *ret = dyn_cast<const ReturnInst> (BB.getTerminator ());
@@ -150,6 +150,8 @@ namespace seahorn
   void SmallHornifyFunction::runOnFunction (Function &F)
   {
 
+    if (m_sem.isAbstracted(F)) return;
+    
     const BasicBlock *exit = findExitBlock (F);
     if (!exit)
     {
@@ -291,6 +293,8 @@ namespace seahorn
   void LargeHornifyFunction::runOnFunction (Function &F)
   {
     ScopedStats _st_("LargeHornifyFunction");
+
+    if (m_sem.isAbstracted(F)) return;    
     
     const BasicBlock *exit = findExitBlock (F);
     if (!exit)
