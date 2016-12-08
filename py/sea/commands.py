@@ -387,7 +387,7 @@ class Seapp(sea.LimitedCmd):
                 argv.append ('--externalize-addr-taken-funcs')
 
             if args.lower_assert: argv.append('--lower-assert')                           
-                
+
             if args.abc:
                 argv.append ('--abc={id}'.format(id=args.abc))
 
@@ -992,12 +992,13 @@ class SeaTerm(sea.LimitedCmd):
         except Exception as e:
             raise IOError(str(e))
 
+## XXX: we prefer not to expose SeaInc to users.
+#       That is, 'inc' is not an option of the 'sea' command.
 class SeaInc(sea.LimitedCmd):
   def __init__ (self, quiet=False):
-      super (SeaInc, self).__init__ ('inc', 'SeaHorn Inconsistency Checks',
+      super (SeaInc, self).__init__ ('inc',
+                                     'Helper for inconsistency analysis',
                                       allow_extra=True)
-
-
   @property
   def stdout (self):
       return
@@ -1008,11 +1009,11 @@ class SeaInc(sea.LimitedCmd):
   def mk_arg_parser (self, ap):
       ap = super (SeaInc, self).mk_arg_parser (ap)
       ap.add_argument ('--stop', help='stop after n iterations', dest="stop",
-                  default=None, type=int)
+                       default=None, type=int)
       ap.add_argument ('--all', help='assert all failing flags', dest="all",
                       default=False,action='store_true')
       ap.add_argument ('--bench', help='Output Benchmarking Info', action='store_true',
-                  default=False, dest="bench")
+                       default=False, dest="bench")
       ap.add_argument ('--debug_cex', help='Print RAW CEX for debugging', action='store_true',
                       default=False, dest="debug_cex")
       ap.add_argument ('--inv', help='Outpu Invariants', action='store_true',
@@ -1020,14 +1021,15 @@ class SeaInc(sea.LimitedCmd):
       ap.add_argument ('--stat', help='Print statistics', dest="stat",
                   default=False, action='store_true')
       ap.add_argument ('--spacer_verbose', help='Spacer Verbose', action='store_true',
-                  default=False, dest="z3_verbose")
-      ap.add_argument ('--no_dl', help='Disable Difference Logic (UTVPI) in SPACER', action='store_true',
-                  default=False, dest="utvpi")
+                       default=False, dest="z3_verbose")
+      ap.add_argument ('--no_dl', help='Disable Difference Logic (UTVPI) in SPACER',
+                       action='store_true',
+                       default=False, dest="utvpi")
       ap.add_argument ('--pp',
-                  help='Enable default pre-processing in the solver',
-                  action='store_true', default=False)
+                       help='Enable default pre-processing in the solver',
+                       action='store_true', default=False)
       ap.add_argument ('--inc_verbose', help='Verbose', action='store_true',
-                  default=False, dest="inc_verbose")
+                       default=False, dest="inc_verbose")
       ap.add_argument ('--save', help='Save results file', action='store_true',
                       default=False, dest="save")
       ap.add_argument ('--timeout', help='Timeout per function',
@@ -1076,7 +1078,7 @@ class SeaAbc(sea.LimitedCmd):
             raise IOError(str(e))
 
 
-## SeaHorn commands
+## SeaHorn alias commands
 FrontEnd = sea.SeqCmd ('fe', 'Front end: alias for clang|pp|ms|opt',
                        [Clang(), Seapp(), MixedSem(), Seaopt ()])
 Smt = sea.SeqCmd ('smt', 'alias for fe|horn', FrontEnd.cmds + [Seahorn()])
@@ -1092,8 +1094,10 @@ Bpf = sea.SeqCmd ('bpf', 'alias for fe|unroll|cut-loops|opt|horn --solve',
                   FrontEnd.cmds + [Unroll(), CutLoops(), Seaopt(), Seahorn(solve=True)])
 feCrab = sea.SeqCmd ('fe-crab', 'alias for fe|crab', FrontEnd.cmds + [Crab()])
 seaTerm = sea.SeqCmd ('term', 'SeaHorn Termination analysis', Smt.cmds + [SeaTerm()])
-funcInfo = sea.SeqCmd ('finfo', 'Functions info for Inconsistency analysis', [Clang(), Seapp()])
-seaInc = sea.SeqCmd ('inc', 'SeaHorn Inconsistency analysis', Smt.cmds + [SeaInc()])
+ClangPP = sea.SeqCmd ('clang-pp', 'alias for clang|pp', [Clang(), Seapp()])
+seaIncSmt = sea.SeqCmd ('inc-smt', 'alias for fe|horn|inc. ' +
+                        'It should be used only as a helper by sea_inc.',
+                        Smt.cmds + [SeaInc()])
 seaClangAbc = sea.SeqCmd ('clang-abc', 'alias for clang|abc', [Clang(), SeaAbc()])
 Exe = sea.SeqCmd ('exe', 'alias for clang|pp --strip-extern|pp --internalize|wmem|linkrt',
                   [Clang(), Seapp(strip_extern=True), Seapp(internalize=True), WrapMem(), LinkRt()])

@@ -114,8 +114,8 @@ def getFuncInfo (workdir, fname, opt):
     if bench: print "Getting functions information ..."
     sea_cmd = getSea()
     name = os.path.splitext (os.path.basename (fname))[0]
-    info = '--slice-function=\"' + opt.finfo
-    getInfo_cmd = [sea_cmd, 'finfo', info, '-O0', fname]
+    info = '--slice-function=\"' + opt.finfo + '\"'
+    getInfo_cmd = [sea_cmd, 'clang-pp', info, '-O0', fname]
     if verbose: print " ".join(getInfo_cmd)
     p = sub.Popen(getInfo_cmd, shell=False, stdout=sub.PIPE, stderr=sub.STDOUT)
     result_info, _ = p.communicate()
@@ -152,7 +152,7 @@ def get_opt(opt, fname):
     reduce = reduce_weakly + reduce_large + reduce_false
     inv = ['--inv'] if opt.inv else []
     # The list of options sent to seahorn
-    cmd = [sea_cmd, 'inc',
+    cmd = [sea_cmd, 'inc-smt',
            '--horn-no-verif', '--lower-invoke', '--lower-assert'
            , '--devirt-functions', '--step=incsmall'
            , '--horn-one-assume-per-block'
@@ -341,6 +341,8 @@ def main (argv):
     (opt, args) = parseOpt (argv)
     workdir = createWorkDir (opt.temp_dir, opt.save_temps)
     returnvalue = 0
+    if len(args) <= 1:
+        raise Exception('Too few arguments. Type \'sea_inc --help\' for details.')
     fname = args[1]
     global verbose
     verbose = opt.verbose

@@ -29,10 +29,17 @@ add_lit_testsuite(test-solve "Regression test on Predicate Abstraction"
    DEPENDS seahorn
    )
 
- # add the test suite
 add_lit_testsuite(test-abc "Regression test for Array Bounds Checks"
   -v
   ${CMAKE_CURRENT_SOURCE_DIR}/abc
+  PARAMS
+  test_dir=${CMAKE_CURRENT_BINARY_DIR}
+  DEPENDS seahorn
+  )
+
+add_lit_testsuite(test-inc "Regression test for Inconsistency Analysis"
+  -v
+  ${CMAKE_CURRENT_SOURCE_DIR}/inc
   PARAMS
   test_dir=${CMAKE_CURRENT_BINARY_DIR}
   DEPENDS seahorn
