@@ -345,7 +345,9 @@ int main(int argc, char **argv) {
     pass_manager.add (llvm::createGlobalDCEPass ()); // kill unused internal global
   
     // -- global optimizations
-    //pass_manager.add (llvm::createGlobalOptimizerPass());
+    // FIXME: for inconsistency analysis this causes problems with
+    //        trivial examples.
+    pass_manager.add (llvm::createGlobalOptimizerPass());
   
     // -- SSA
     pass_manager.add(llvm::createPromoteMemoryToRegisterPass());
@@ -391,6 +393,10 @@ int main(int argc, char **argv) {
     // lower libc++abi functions
     pass_manager.add(seahorn::createLowerLibCxxAbiFunctionsPass ());
 
+    // cleanup after lowering 
+    pass_manager.add (seahorn::createInstCombine ());
+    pass_manager.add (llvm::createCFGSimplificationPass ());
+    
     if (InlineAll || InlineAllocFn || InlineConstructFn)
     {
       if (InlineAll)
@@ -512,6 +518,9 @@ int main(int argc, char **argv) {
       pass_manager.add (seahorn::createPromoteSeahornAssumePass ());
   }
 
+  // --- verify if an undefined value can be read
+  pass_manager.add (seahorn::createCanReadUndefPass ());
+  // --- verify if bitcode is well-formed
   pass_manager.add (llvm::createVerifierPass());
   
   if (!OutputFilename.empty ()) 
