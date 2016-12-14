@@ -231,7 +231,7 @@ def pp_opts (args):
             '--externalize-addr-taken-funcs']
     if args.extern_funcs is not None:
         opts.extend(['--externalize-functions={0}'.format(args.extern_funcs)])
-        
+                      
     return opts
     
 # extra options for `sea pp` with array bounds checks
@@ -520,10 +520,11 @@ def sea_abc(args, extra): # extra is unused
         return
     else:
         (allocas, num_checks) = get_alloc_sites (in_file, work_dir, args)
+        num_allocas = len(allocas)
         #if verbose: print "Allocation sites = " + str(allocas)
-        print "--- Found " + str(len(allocas)) + " allocation sites"
+        print "--- Found " + str(num_allocas) + " allocation sites"
 
-        if len(allocas) == 0:
+        if num_allocas == 0:
             print "--- No allocation sites found so do nothing"
             return
         
@@ -540,7 +541,13 @@ def sea_abc(args, extra): # extra is unused
                 csv_results_line (args.csv_file, fmt, results)    
         else:
             xargs = []
+            njobs = 0; acc_njobs = 0; maxjobs= 150 # this is tuneable!
+            ## XXX: In principle, we could pass one single xargs to Popen first argument. 
+            ## However, the maximum number of characters in Popen args is 131072.
+            ## As a workaround split xargs into multiple ones.            
             for alloca_id in allocas:
+                njobs = njobs + 1
+                acc_njobs = acc_njobs + 1
                 sea_abc_cmd = ['sea_abc', '--alloc-site={0}'.format(alloca_id), in_file, 
                                '--cpu={0}'.format(args.cpu), '--mem={0}'.format(args.mem),
                                '-O{0}'.format(args.opt_level), 
@@ -552,6 +559,7 @@ def sea_abc(args, extra): # extra is unused
                     sea_abc_cmd.extend(['--externalize-functions={0}'.format(args.extern_funcs)])
                 if args.abstract_funcs is not None:
                     sea_abc_cmd.extend(['--abstract-functions={0}'.format(args.abstract_funcs)])
+                                         
                 if args.abc_no_under: sea_abc_cmd.extend(['--abc-disable-underflow'])
                 if args.abc_no_reads: sea_abc_cmd.extend(['--abc-disable-reads'])
                 if args.abc_no_writes: sea_abc_cmd.extend(['--abc-disable-writes'])
@@ -569,27 +577,26 @@ def sea_abc(args, extra): # extra is unused
                         sea_abc_cmd.extend(['--horn-sea-dsa-cs-global=false'])
                     else:
                         sea_abc_cmd.extend(['--horn-sea-dsa-cs-global=true'])
-                        
-
                 xargs.append(' '.join(sea_abc_cmd))
-
-            if verbose: 
-                print "--- Running GNU parallel:" 
-                for a in xargs:
-                    print "\t" + str(a)
-
-            gnupar_opts = []
-            #if verbose:
-            #    gnupar_opts = gnupar_opts + ["--progress", "--eta"]
-            xargs = [get_gnu_parallel()] + gnupar_opts + [":::"] + xargs
                 
-            #p = sub.Popen(xargs, shell=False, stdout=sub.PIPE, stderr=sub.STDOUT)
-            p = sub.Popen(xargs, shell=False)
-            result, _ = p.communicate()
-            if p.returncode <> 0:  ## gnu parallel should not fail
-                report_fatal_error('\n\n%s\n' % (result), p.returncode)
-            if verbose or args.zverbose > 1: print str(result)
+                if njobs == maxjobs or acc_njobs == num_allocas:
+                    if verbose: 
+                        print "--- Running GNU parallel with "  + str(njobs) + " jobs.\n"
+                        for a in xargs:
+                            print "\t" + str(a)
 
+                    gnupar_opts = []
+                    #if verbose: gnupar_opts = gnupar_opts + ["--progress", "--eta"]
+                    xargs = [get_gnu_parallel()] + gnupar_opts + [":::"] + xargs
+                    #p = sub.Popen(xargs, shell=False, stdout=sub.PIPE, stderr=sub.STDOUT)
+                    p = sub.Popen(xargs, shell=False)
+                    result, _ = p.communicate()
+                    if p.returncode <> 0:  ## gnu parallel should not fail
+                        report_fatal_error('\n\n%s\n' % (result), p.returncode)
+                    if verbose or args.zverbose > 1: print str(result)
+                    njobs = 0; xargs = []
+
+        assert (xargs == [])
         print_results (args.csv_file, len(allocas), num_checks, not args.sequential)
 
 
