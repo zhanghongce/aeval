@@ -114,8 +114,10 @@ namespace seahorn {
         auto &dsa = this->m_abc->getAnalysis<dsa::DsaAnalysis>();
         if (dsa.hasDsaInfo ())
           m_dsa = &dsa.getDsaInfo ();
-	else
-	  errs () << "WARNING ABC: No Sea Dsa found\n";
+	else {
+	  if (TrackedAllocSite > 0 || TrackedDsaNode > 0)
+	    errs () << "WARNING ABC: No Sea Dsa found\n";
+	}
       }
 
       const char* getDsaName () const { return "SeaHorn Dsa analysis";}
