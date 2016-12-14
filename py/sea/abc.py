@@ -120,6 +120,10 @@ def add_abc_args(ap):
                      help="Abstract all calls to these functions.\n"
                           "Similar effect as --externalize-functions but at the level of horn clauses\n",
                      dest='abstract_funcs', type=str, metavar='str,...')
+    ap.add_argument ('--abstract-memory',
+                     help='Abstract memory instructions', dest='abs_mem_lvl',
+                     choices = ['none','only-load','only-store','load-and-store'],
+                     default='none')
     ap.add_argument ('--dsa', 
                      help="Dsa analysis:\n"
                           "- llvm  : context-insensitive Llvm Dsa\n"
@@ -231,6 +235,8 @@ def pp_opts (args):
             '--externalize-addr-taken-funcs']
     if args.extern_funcs is not None:
         opts.extend(['--externalize-functions={0}'.format(args.extern_funcs)])
+    if args.abs_mem_lvl <> 'none':
+        opts.extend (['--abstract-memory={0}'.format(args.abs_mem_lvl)])
                       
     return opts
     
@@ -559,6 +565,8 @@ def sea_abc(args, extra): # extra is unused
                     sea_abc_cmd.extend(['--externalize-functions={0}'.format(args.extern_funcs)])
                 if args.abstract_funcs is not None:
                     sea_abc_cmd.extend(['--abstract-functions={0}'.format(args.abstract_funcs)])
+                if args.abs_mem_lvl <> 'none':
+                    sea_abc_cmd.extend (['--abstract-memory={0}'.format(args.abs_mem_lvl)])
                                          
                 if args.abc_no_under: sea_abc_cmd.extend(['--abc-disable-underflow'])
                 if args.abc_no_reads: sea_abc_cmd.extend(['--abc-disable-reads'])

@@ -248,6 +248,10 @@ class Seapp(sea.LimitedCmd):
         ap.add_argument ('--unfold-loops-for-dsa', dest='unfold_loops_for_dsa', 
                          help='Unfold the first loop iteration if useful for DSA analysis',
                          default=False, action='store_true')
+        ap.add_argument ('--abstract-memory',
+                         help='Abstract memory instructions', dest='abs_mem_lvl',
+                         choices=['none','only-load','only-store','load-and-store'],
+                         default='none')
         ap.add_argument ('--entry', dest='entry', help='Make entry point if main does not exist',
                          default=None, metavar='str')
         ap.add_argument ('--abc', 
@@ -365,6 +369,10 @@ class Seapp(sea.LimitedCmd):
             if args.promote_arrays:
                 argv.append ('--promote-arrays')
 
+            if args.abs_mem_lvl <> 'none':
+                argv.append ('--abstract-memory')
+                argv.append ('--abstract-memory-level={0}'.format(args.abs_mem_lvl))
+                
             if args.simp_ptr_loops:
                 argv.append('--simplify-pointer-loops')
 
