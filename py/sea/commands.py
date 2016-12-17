@@ -242,6 +242,9 @@ class Seapp(sea.LimitedCmd):
         ap.add_argument ('--promote-arrays', dest='promote_arrays', 
                          help='Promote sized arrays to packed structs',
                          default=False, action='store_true')
+        ap.add_argument ('--no-promote-assumptions', dest='no_promote_assumptions', 
+                         help='Do not promote verifier.assume to llvm.assume',
+                         default=False, action='store_true')        
         ap.add_argument ('--simplify-pointer-loops', dest='simp_ptr_loops', 
                          help='Simplify loops that iterate over pointers',
                          default=False, action='store_true')
@@ -369,6 +372,9 @@ class Seapp(sea.LimitedCmd):
             if args.promote_arrays:
                 argv.append ('--promote-arrays')
 
+            if args.no_promote_assumptions:
+                argv.append ('--promote-assumptions=false')
+                
             if args.abs_mem_lvl <> 'none':
                 argv.append ('--abstract-memory')
                 argv.append ('--abstract-memory-level={0}'.format(args.abs_mem_lvl))
@@ -497,7 +503,9 @@ class MixedSem(sea.LimitedCmd):
         if args.out_file is not None: argv.extend (['-o', args.out_file])
         if not args.ms_skip: argv.append ('--horn-mixed-sem')
         if args.reduce_main: argv.append ('--ms-reduce-main')
-        if args.sym_bounds: argv.append ('--horn-symbolize-loops')
+        if args.sym_bounds:
+            argv.append ('--horn-symbolize-loops')
+            argv.append ('--promote-assumptions=false')            
         if args.ms_slice_funcs:
             for f in args.ms_slice_funcs.split(','):
                 argv.append ('--slice-function={0}'.format(f))
