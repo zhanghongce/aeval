@@ -301,8 +301,12 @@ namespace seahorn
       void visit (MemTransferInst *MTI);
       void visit (MemSetInst *MSI);
       void visit (AllocaInst *I);
+      void visit (IntToPtrInst *I);
+      void visit (InsertValueInst *I);
+      void visit (ExtractValueInst *I);            
       void visit (CallInst *I);
       void visit (Function *F);
+      
     }; // end class
     
    public:

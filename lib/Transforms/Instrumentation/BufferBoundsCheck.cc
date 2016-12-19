@@ -183,7 +183,8 @@ namespace seahorn {
           }
           else
           {
-            errs () << "WARNING ABC: allocation site " << TrackedAllocSite << " not understood by Sea Dsa\n"; 
+            errs () << "WARNING ABC: allocation site " << TrackedAllocSite
+		    << " not understood by Sea Dsa\n"; 
             return true;
           }
         } 
@@ -647,6 +648,8 @@ namespace seahorn {
    }
 
    bool isInterestingType (Type* Ty) {
+     if (!Ty->isPointerTy ()) return false;
+     
      if (InstrumentOnlyType.begin () == InstrumentOnlyType.end () &&
          InstrumentExceptType.begin () == InstrumentExceptType.end ()) {
        //errs () << "Instrumented type " << *Ty << "\n";
@@ -1667,14 +1670,15 @@ namespace seahorn {
         }
         else {
           // this should not happen unless the global is external
-          errs () << "WARNING ABC: cannot infer statically the size of global " 
-                  << GV << "\n";
-        }
+          errs () << "WARNING ABC: missing allocation site from global " << GV
+		  << " because its size cannot be inferred statically.\n";
+	}
       }
     }
 
     //! Instrument any allocation site
-    void ABC2::ABCInst::doAllocaSite (Value* Ptr, Value* Size /* bytes*/, 
+    void ABC2::ABCInst::doAllocaSite (Value* Ptr,
+				      Value* Size /* bytes (null if unknown)*/, 
                                       Instruction* insertPt) {
       /*
            if (!tracked_ptr && p == tracked_base)
@@ -1740,8 +1744,19 @@ namespace seahorn {
       Assume (m_B.CreateICmpEQ(nd_ptr, vtracked_base), F);
       
       /// assume (tracked_size == n);
-      Assume (m_B.CreateICmpEQ(vtracked_size,
-              m_B.CreateZExtOrTrunc (Size, abc::createIntTy (m_dl, ctx))), F);
+      if (Size == nullptr ){
+	// If Size is unknown we create a symbolic variable for it and
+	// assume its size is greater than zero.
+	CallInst* nd_sz = NonDet (F);
+	Assume (m_B.CreateICmpSGT(nd_sz, abc::createIntCst (m_IntPtrTy, 0)),F);	
+	Assume (m_B.CreateICmpEQ(vtracked_size,
+ 	        m_B.CreateZExtOrTrunc (nd_sz, abc::createIntTy (m_dl, ctx))), F);
+	
+      } else {
+	Assume (m_B.CreateICmpEQ(vtracked_size,
+	       m_B.CreateZExtOrTrunc (Size, abc::createIntTy (m_dl, ctx))), F);
+      }
+
                                             
       /// tracked_offset = 0
       abc::createStore (m_B, abc::createIntCst (m_IntPtrTy, 0), 
@@ -2260,26 +2275,51 @@ namespace seahorn {
     //   return true;
     // }
 
+
+    // --- Instrument allocation sites
+  
+    void ABC2::ABCInst::visit (IntToPtrInst *I) {
+      doAllocaSite (I, nullptr, abc::getNextInst (I));	      
+    }
+
+    void ABC2::ABCInst::visit (InsertValueInst *I) {
+      // TODO
+      if (m_dsa->getAllocSiteId (*I)  == TrackedAllocSite)      
+	errs () << "WARNING ABC: missing allocation site from " << *I << "\n";      
+      
+    }
+
+    void ABC2::ABCInst::visit (ExtractValueInst *I) {
+      // TODO
+      if (m_dsa->getAllocSiteId (*I)  == TrackedAllocSite)      
+	errs () << "WARNING ABC: missing allocation site from " << *I << "\n";      
+    }  
+  
     void ABC2::ABCInst::visit (AllocaInst *I) {
       SizeOffsetEvalType Data = m_eval.compute (I);
-      if (Value* size = Data.first) 
-        doAllocaSite (I, size, abc::getNextInst (I));
+      doAllocaSite (I, Data.first ? Data.first : nullptr, abc::getNextInst (I));
     }
 
     void ABC2::ABCInst::visit (CallInst *I) {
-
       // new, malloc, calloc, realloc, and strdup.
       if (isAllocationFn (I, m_tli, true)) { 
         SizeOffsetEvalType Data = m_eval.compute (I);
-        if (Value* size = Data.first) 
-          doAllocaSite (I, size, abc::getNextInst (I));
-        else
-          errs () << "WARNING ABC: missing allocation site " << *I << "\n";        
+	doAllocaSite (I, Data.first ? Data.first : nullptr, abc::getNextInst (I));	
         return;
       }
 
+      // External calls are also considered allocation sites
+      CallSite CS = CallSite (I);
+      if (const Function *callee = CS.getCalledFunction ()) {
+	if (callee->isDeclaration ())
+	  if (abc::isInterestingType(callee->getFunctionType ()->getReturnType ()))
+	    doAllocaSite (I, nullptr, abc::getNextInst (I));	    
+      } else {
+	errs () << "WARNING ABC: run devirt-functions to eliminate all indirect calls "
+		<< *I << "\n";
+      }
+      
       if (DerefAssumptions) {
-
         // Add extra assumption about the size of the returned value of
         // the call.
         Function* F = I->getParent()->getParent();
@@ -2289,7 +2329,7 @@ namespace seahorn {
         
         uint64_t n = I->getDereferenceableBytes (0);
         if (n == 0) return;
-        
+	  
         m_B.SetInsertPoint (abc::getNextInst (I));
         
         Value* vtracked_base = abc::createLoad(m_B, m_tracked_base, m_dl);
@@ -2491,7 +2531,10 @@ namespace seahorn {
           
           for (auto &i: BB)  {
             Instruction *I = &i;
-            
+
+	    //////
+	    // Instructions that should be instrumented
+	    //////
             if (GetElementPtrInst* GEP  = dyn_cast<GetElementPtrInst> (I)) {
               Value *ptr = GEP->getPointerOperand ();            
               if (abc::isInterestingType (ptr->getType()) && 
@@ -2499,42 +2542,60 @@ namespace seahorn {
                   abc::canEscape (GEP)) {
                 ToInstrument.push_back (I);
               }
-            } else if (Value *Addr = abc::isInterestingMemoryAccess(I, &IsWrite, &Aligment)) {
+            } // load/store instructions
+	    else if (Value *Addr = abc::isInterestingMemoryAccess(I, &IsWrite, &Aligment)) {
               // We've seen this temp in the current BB.
               if (!TempsToInstrument.insert(Addr).second) continue;  
-
               if (dsa->shouldBeTrackedPtr (*Addr, F, __LINE__)) {
                 ToInstrument.push_back (I);
               }
               else
                 untracked_dsa_checks++; 
-            } else if (MemTransferInst *MTI = dyn_cast<MemTransferInst>(I)) {
+            }
+	    else if (MemTransferInst *MTI = dyn_cast<MemTransferInst>(I)) {
               if (!InstrumentMemIntrinsics) continue;
               if (dsa->shouldBeTrackedPtr (*MTI->getDest (), F, __LINE__) || 
                   dsa->shouldBeTrackedPtr (*MTI->getSource (),F, __LINE__))
                 ToInstrument.push_back (I);
               else 
                 untracked_dsa_checks+=2; 
-            } else if (MemSetInst *MSI = dyn_cast<MemSetInst>(I)) {
+            }
+	    else if (MemSetInst *MSI = dyn_cast<MemSetInst>(I)) {
               if (!InstrumentMemIntrinsics) continue;
               Value* ptr = MSI->getDest ();
               if (dsa->shouldBeTrackedPtr (*ptr, F, __LINE__)) 
                 ToInstrument.push_back (I);
               else 
                 untracked_dsa_checks++; 
-            } else if (AllocaInst* AI = dyn_cast<AllocaInst>(I)) {
-              if (abc::isInterestingAlloca (dl, *AI) && 
+            }
+	    ///////
+	    // Instructions that can return allocation sites
+	    ///////
+	    else if (AllocaInst* AI = dyn_cast<AllocaInst>(I)) {
+	      /// XXX: isInterestingAlloca returns false if the size
+	      /// is not statically known so we would miss some cases
+              if (/*abc::isInterestingType (I->getType ())*/
+		  abc::isInterestingAlloca (dl, *AI) && 
                   dsa->shouldBeTrackedPtr (*I, F, __LINE__))
                 ToInstrument.push_back (I);
-            } else {
-              CallSite CS (I);
-              if (CS && dsa->shouldBeTrackedPtr (*I, F, __LINE__)) {
-                ToInstrument.push_back (I);
-                // XXX: do we really need to do this?
-                //if (CS.getCalledFunction ()) 
-                //  TempsToInstrument.clear();
-              }
             }
+	    else if (isa<IntToPtrInst> (I)) {
+	      if (abc::isInterestingType (I->getType ()) &&
+	    	  dsa->shouldBeTrackedPtr (*I, F, __LINE__))
+	    	ToInstrument.push_back (I);		
+	    }
+	    else if (isa<InsertValueInst> (I)) {
+	      //if (dsa->shouldBeTrackedPtr (*I, F, __LINE__))
+	      ToInstrument.push_back (I);		
+	    }
+	    else if (isa<ExtractValueInst> (I)) {
+	      //if (dsa->shouldBeTrackedPtr (*I, F, __LINE__))
+	      ToInstrument.push_back (I);		
+	    }
+	    else if (isa<CallInst> (I)){
+              if (dsa->shouldBeTrackedPtr (*I, F, __LINE__))
+                ToInstrument.push_back (I);
+	    }
           }
         }
       }
@@ -2561,6 +2622,12 @@ namespace seahorn {
           abc.visit (MSI);        
         } else if (AllocaInst *AI = dyn_cast<AllocaInst>(I)) {
           abc.visit (AI);
+        } else if (IntToPtrInst *IToPI = dyn_cast<IntToPtrInst>(I)) {
+          abc.visit (IToPI);
+	} else if (InsertValueInst *IVI = dyn_cast<InsertValueInst>(I)) {
+          abc.visit (IVI);
+	} else if (ExtractValueInst *EVI = dyn_cast<ExtractValueInst>(I)) {
+          abc.visit (EVI);
         } else if (CallInst *CI = dyn_cast<CallInst>(I)) {
           abc.visit (CI);
         }
@@ -2768,8 +2835,8 @@ namespace seahorn {
           abc::update_cg (cg, main, B.CreateCall2 (abc_alloc, baseAddr, allocSize));
         }
         else {// this should not happen unless global is external
-          errs () << "WARNING ABC: cannot infer statically the size of global " 
-                  << GV << "\n";
+          errs () << "WARNING ABC: missing allocation site from global " << GV
+		  << " because its size cannot be inferred statically.\n";
         }
       }
 
