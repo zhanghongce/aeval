@@ -648,7 +648,9 @@ namespace seahorn {
    }
 
    bool isInterestingType (Type* Ty) {
-     if (!Ty->isPointerTy ()) return false;
+     // XXX: do not enforce Ty is a pointer, otherwise allocation of
+     // arrays will be ignored.
+     //if (!Ty->isPointerTy ()) return false;
      
      if (InstrumentOnlyType.begin () == InstrumentOnlyType.end () &&
          InstrumentExceptType.begin () == InstrumentExceptType.end ()) {
@@ -2311,9 +2313,11 @@ namespace seahorn {
       // External calls are also considered allocation sites
       CallSite CS = CallSite (I);
       if (const Function *callee = CS.getCalledFunction ()) {
-	if (callee->isDeclaration ())
-	  if (abc::isInterestingType(callee->getFunctionType ()->getReturnType ()))
-	    doAllocaSite (I, nullptr, abc::getNextInst (I));	    
+	if (callee->isDeclaration ()) {
+	  Type * retTy = callee->getFunctionType ()->getReturnType ();
+	  if (retTy->isPointerTy () && abc::isInterestingType(retTy))
+	    doAllocaSite (I, nullptr, abc::getNextInst (I));
+	}
       } else {
 	errs () << "WARNING ABC: run devirt-functions to eliminate all indirect calls "
 		<< *I << "\n";
@@ -2577,7 +2581,7 @@ namespace seahorn {
               if (/*abc::isInterestingType (I->getType ())*/
 		  abc::isInterestingAlloca (dl, *AI) && 
                   dsa->shouldBeTrackedPtr (*I, F, __LINE__))
-                ToInstrument.push_back (I);
+                ToInstrument.push_back (I);		
             }
 	    else if (isa<IntToPtrInst> (I)) {
 	      if (abc::isInterestingType (I->getType ()) &&
