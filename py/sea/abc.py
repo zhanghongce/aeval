@@ -96,6 +96,8 @@ def add_abc_args(ap):
                      help='Verbosity level for Z3', metavar='N')
     ap.add_argument ('--oll', dest='asm_out_file', default=None,
                          help='LLVM assembly output file')
+    ap.add_argument ('--bmc', '-bmc', dest='bmc', type=int, default=-1,
+                     help='Bounded-model checking using horn solver with bound N', metavar='N')
     ap.add_argument ('--do-not-split-proof', dest='dont_split_proof',
                      help='Do not split the proof by allocation sites',
                      default=False, action='store_true')
@@ -226,8 +228,7 @@ def pp_opts (args):
             '--inline-allocators',                        
             ## XXX: this one seems buggy somehow:
             ##      it leaves the call graph in an inconsistent state.
-            '--inline-constructors', 
-            #'--promote-arrays', 
+            #'--inline-constructors', 
             '--unfold-loops-for-dsa',
             '--simplify-pointer-loops', 
             '--lower-invoke', 
@@ -262,7 +263,7 @@ def ms_opts(args):
 def opt_opts(args):
     opts = [#'--enable-indvar'
             #,'--enable-loop-idiom'
-            #,'--enable-nondet-init'
+            '--enable-nondet-init'
             #,'--llvm-inline-threshold=150'
             #,'--llvm-unroll-threshold=150'
             ]
@@ -270,20 +271,19 @@ def opt_opts(args):
 
 # options for `sea horn`
 def horn_opts(args):
-    opts = ['--track=mem',
-            '--step=large',
-            '--keep-shadows=true',
-            '--horn-answer',
-            '--horn-singleton-aliases=true',
-            '--horn-global-constraints=true',
-            '--horn-stats',
-            '--horn-skip-constraints=true',
-            '--horn-make-undef-warning-error=true',
-            '--horn-child-order=false',
-            '--horn-reduce-constraints',
-            '--horn-use-write',
-            '--horn-estimate-size-invars'
-            ]
+    opts =  ['--track=mem',
+             '--step=large',
+             '--keep-shadows=true',
+             '--horn-answer',
+             '--horn-singleton-aliases=true',
+             '--horn-global-constraints=true',
+             '--horn-stats',
+             '--horn-skip-constraints=true',
+             '--horn-make-undef-warning-error=false',
+             '--horn-child-order=false',
+             '--horn-reduce-constraints',
+             '--horn-use-write',
+             '--horn-estimate-size-invars']
     if args.add_cuts is not 'h0':
         opts = opts + ['--horn-extra-cps={0}'.format(args.add_cuts)]
 
@@ -291,10 +291,13 @@ def horn_opts(args):
         opts = opts + ['--horn-sea-dsa']
         if args.dsa == 'sea-ci':
             opts = opts + ['--horn-sea-dsa-cs-global=false']
+            opts = opts + ['--horn-sea-dsa-split=true']
         else:
             opts = opts + ['--horn-sea-dsa-cs-global=true']
             opts = opts + ['--horn-sea-dsa-local-mod=true']
             opts = opts + ['--horn-sea-dsa-split=true']
+    else:
+        opts = opts + ['--horn-dsa-split=true']
 
     if args.abstract_funcs is not None:
         opts.extend(['--horn-abstract={0}'.format(args.abstract_funcs)])
@@ -344,7 +347,10 @@ def prove_abc_cmmd (in_file, alloca_id, args, extra = []):
         asm_filename, asm_file_ext = os.path.splitext(args.asm_out_file)
         asm_filename = asm_filename + '.alloc.' + str(alloca_id) + asm_file_ext
         pf_cmd.extend(['--oll={0}'.format(asm_filename)])
-    pf_cmd = [get_sea(), 'pf'] + pf_cmd + extra + [in_file]
+    if args.bmc >=0 :
+        pf_cmd = [get_sea(),'bpf', '--bound={0}'.format(args.bmc)] + pf_cmd + extra + [in_file]
+    else:
+        pf_cmd = [get_sea(), 'pf'] + pf_cmd + extra + [in_file]        
     return pf_cmd
 
 # if alloca_id is None then it will try to prove all checks, 
@@ -358,11 +364,11 @@ def prove_abc (in_file, alloca_id, args, extra = []):
 
     pf_cmd = prove_abc_cmmd(in_file, alloca_id, args, extra)
 
-    #if verbose: print " ".join(pf_cmd)
+    if verbose: print " ".join(pf_cmd)
 
     p = sub.Popen(pf_cmd, shell=False, stdout=sub.PIPE, stderr=sub.STDOUT)
     results, _ = p.communicate()
-
+    print results
     checks, ans, time, blks, invars_size, exitcode, signalcode = get_results (results, p.returncode, args.cpu)
     if time == float(args.cpu):
         if "WARNING: found call to verifier.error()" in results:
@@ -533,10 +539,8 @@ def sea_abc(args, extra): # extra is unused
         if num_allocas == 0:
             print "--- No allocation sites found so do nothing"
             return
-        
         fmt = csv_results_keys()
         csv_results_header(args.csv_file, fmt)
-
         if args.sequential:  # for debugging purposes
             for alloca_id in allocas:
                 num_checks,ans,time,num_blks,invars_size,_,_ = prove_abc(in_file, alloca_id, args)
@@ -561,6 +565,8 @@ def sea_abc(args, extra): # extra is unused
                                '--zverbose={0}'.format(args.zverbose), 
                                '--add-extra-cutpoints={0}'.format(args.add_cuts),                               
                                '--csv={0}'.format(args.csv_file)]
+                if args.bmc >= 0 :
+                    sea_abc_cmd.extend(['--bmc={0}'.format(args.bmc)])
                 if args.extern_funcs is not None:
                     sea_abc_cmd.extend(['--externalize-functions={0}'.format(args.extern_funcs)])
                 if args.abstract_funcs is not None:
@@ -583,13 +589,19 @@ def sea_abc(args, extra): # extra is unused
                     sea_abc_cmd.extend(['--horn-sea-dsa'])
                     if args.dsa == 'sea-ci':
                         sea_abc_cmd.extend(['--horn-sea-dsa-cs-global=false'])
+                        # This option is added later by prove_abc
+                        #sea_abc_cmd.extend(['--horn-sea-dsa-split=true'])
                     else:
                         sea_abc_cmd.extend(['--horn-sea-dsa-cs-global=true'])
+                        # These options are added later by prove_abc
+                        #sea_abc_cmd.extend(['--horn-sea-dsa-local-mod=true'])
+                        #sea_abc_cmd.extend(['--horn-sea-dsa-split=true'])
+                else:
+                   sea_abc_cmd.extend(['--horn-dsa-split=true'])
                 xargs.append(' '.join(sea_abc_cmd))
-                
                 if njobs == maxjobs or acc_njobs == num_allocas:
                     if verbose: 
-                        print "--- Running GNU parallel with "  + str(njobs) + " jobs.\n"
+                        print "--- Running GNU parallel with "  + str(njobs) + " jobs."
                         for a in xargs:
                             print "\t" + str(a)
 
@@ -604,7 +616,7 @@ def sea_abc(args, extra): # extra is unused
                     if verbose or args.zverbose > 1: print str(result)
                     njobs = 0; xargs = []
 
-        assert (xargs == [])
+                #assert (xargs == [])
         print_results (args.csv_file, len(allocas), num_checks, not args.sequential)
 
 
