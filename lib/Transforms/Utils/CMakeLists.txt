@@ -1,4 +1,5 @@
 add_llvm_library(SeaTransformsUtils
+  AbstractMemory.cc
   DummyExitBlock.cc
   Local.cc
   MarkInternalInline.cc

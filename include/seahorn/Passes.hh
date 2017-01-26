@@ -37,7 +37,8 @@ namespace seahorn
   llvm::Pass* createExternalizeFunctionsPass ();
   llvm::Pass* createSliceFunctionsPass ();
   llvm::Pass* createDevirtualizeFunctionsPass ();
-  llvm::Pass* createPromoteMemoryToRegisterPass (); 
+  llvm::Pass* createPromoteMemoryToRegisterPass ();
+  llvm::Pass* createAbstractMemoryPass ();      
   llvm::Pass* createLoadCrabPass ();
   llvm::Pass* createShadowMemDsaPass (); // llvm dsa
   llvm::Pass* createShadowMemSeaDsaPass (); // seahorn dsa

@@ -216,6 +216,11 @@ RenameNondet ("rename-nondet",
          llvm::cl::desc ("Assign a unique name to each non-determinism per call."),
          llvm::cl::init (false));
 
+static llvm::cl::opt<bool>
+AbstractMemory ("abstract-memory",
+	llvm::cl::desc ("Abstract memory instructions"),
+	llvm::cl::init (false));
+
 // removes extension from filename if there is one
 std::string getFileName(const std::string &str) {
   std::string filename = str;
@@ -345,7 +350,9 @@ int main(int argc, char **argv) {
     pass_manager.add (llvm::createGlobalDCEPass ()); // kill unused internal global
   
     // -- global optimizations
-    //pass_manager.add (llvm::createGlobalOptimizerPass());
+    // FIXME: for inconsistency analysis this causes problems with
+    //        trivial examples.
+    // pass_manager.add (llvm::createGlobalOptimizerPass());
   
     // -- SSA
     pass_manager.add(llvm::createPromoteMemoryToRegisterPass());
@@ -387,9 +394,11 @@ int main(int argc, char **argv) {
     
     // lower arithmetic with overflow intrinsics
     pass_manager.add(seahorn::createLowerArithWithOverflowIntrinsicsPass ());
-    
     // lower libc++abi functions
     pass_manager.add(seahorn::createLowerLibCxxAbiFunctionsPass ());
+    // cleanup after lowering 
+    pass_manager.add (seahorn::createInstCombine ());
+    pass_manager.add (llvm::createCFGSimplificationPass ());
     
     if (InlineAll || InlineAllocFn || InlineConstructFn)
     {
@@ -433,6 +442,15 @@ int main(int argc, char **argv) {
       pass_manager.add (seahorn::createUnfoldLoopForDsaPass());
     }
 
+    if (AbstractMemory) {
+      // -- abstract memory load/stores pointer operands with
+      // -- non-deterministic values
+      pass_manager.add (seahorn::createAbstractMemoryPass ());
+      // -- abstract memory pass generates a lot of dead load/store
+      // -- instructions
+      pass_manager.add(llvm::createDeadInstEliminationPass());
+    }
+    
     if (ArrayBoundsChecks > 0)
     { 
       switch (ArrayBoundsChecks) {
@@ -510,7 +528,10 @@ int main(int argc, char **argv) {
     if (PromoteAssumptions)
       pass_manager.add (seahorn::createPromoteSeahornAssumePass ());
   }
-  
+
+  // --- verify if an undefined value can be read
+  pass_manager.add (seahorn::createCanReadUndefPass ());
+  // --- verify if bitcode is well-formed
   pass_manager.add (llvm::createVerifierPass());
   
   if (!OutputFilename.empty ()) 

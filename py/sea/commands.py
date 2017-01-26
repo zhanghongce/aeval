@@ -117,7 +117,7 @@ class Clang(sea.LimitedCmd):
                 argv1.append (in_file)
                 ret = self.clangCmd.run (args, argv1)
                 if ret <> 0: return ret
-
+        
         if len(out_files) > 1:
             # link
             cmd_name = which (['llvm-link-mp-3.6', 'llvm-link-3.6', 'llvm-link'])
@@ -130,7 +130,7 @@ class Clang(sea.LimitedCmd):
                 argv.extend (['-o', args.out_file])
             argv.extend (out_files)
             return self.linkCmd.run (args, argv)
-
+        
         return 0
 
     @property
@@ -242,12 +242,19 @@ class Seapp(sea.LimitedCmd):
         ap.add_argument ('--promote-arrays', dest='promote_arrays', 
                          help='Promote sized arrays to packed structs',
                          default=False, action='store_true')
+        ap.add_argument ('--no-promote-assumptions', dest='no_promote_assumptions', 
+                         help='Do not promote verifier.assume to llvm.assume',
+                         default=False, action='store_true')                
         ap.add_argument ('--simplify-pointer-loops', dest='simp_ptr_loops', 
                          help='Simplify loops that iterate over pointers',
                          default=False, action='store_true')
         ap.add_argument ('--unfold-loops-for-dsa', dest='unfold_loops_for_dsa', 
                          help='Unfold the first loop iteration if useful for DSA analysis',
                          default=False, action='store_true')
+        ap.add_argument ('--abstract-memory',
+                         help='Abstract memory instructions', dest='abs_mem_lvl',
+                         choices=['none','only-load','only-store','load-and-store'],
+                         default='none')        
         ap.add_argument ('--entry', dest='entry', help='Make entry point if main does not exist',
                          default=None, metavar='str')
         ap.add_argument ('--abc',
@@ -322,7 +329,7 @@ class Seapp(sea.LimitedCmd):
                          action='store_true')
         ap.add_argument ('--no-kill-vaarg', help='Do not delete variadic functions',
                          dest='kill_vaarg', default=True, action='store_false')
-        ap.add_argument ('--strip-extern', help='Replace external function calls ' +
+        ap.add_argument ('--strip-extern', help='Replace external function calls ' + 
                          'by non-determinism', default=False, action='store_true',
                          dest='strip_external')
         ap.add_argument ('--slice-functions', 
@@ -374,6 +381,13 @@ class Seapp(sea.LimitedCmd):
             if args.simp_ptr_loops:
                 argv.append('--simplify-pointer-loops')
 
+            if args.no_promote_assumptions:
+                argv.append ('--promote-assumptions=false')
+                
+            if args.abs_mem_lvl <> 'none':
+                argv.append ('--abstract-memory')
+                argv.append ('--abstract-memory-level={0}'.format(args.abs_mem_lvl))
+                
             if args.unfold_loops_for_dsa:
                 argv.append('--unfold-loops-for-dsa')
             
@@ -401,7 +415,7 @@ class Seapp(sea.LimitedCmd):
                         argv.append ('--sea-dsa-info')
                     else:
                         argv.append ('--dsa-info')
-
+                        
                 if args.dsa_info_to_file is not None: 
                     if enable_sea_dsa (extra):
                         argv.append ('--sea-dsa-info-to-file={n}'.format(n=args.dsa_info_to_file))
@@ -500,11 +514,13 @@ class MixedSem(sea.LimitedCmd):
         if args.out_file is not None: argv.extend (['-o', args.out_file])
         if not args.ms_skip: argv.append ('--horn-mixed-sem')
         if args.reduce_main: argv.append ('--ms-reduce-main')
-        if args.sym_bounds: argv.append ('--horn-symbolize-loops')
+        if args.sym_bounds:
+            argv.append ('--horn-symbolize-loops')
+            argv.append ('--promote-assumptions=false')            
         if args.ms_slice_funcs:
             for f in args.ms_slice_funcs.split(','):
                 argv.append ('--slice-function={0}'.format(f))
-
+            
         if args.llvm_asm: argv.append ('-S')
         argv.extend (args.in_files)
         return self.seappCmd.run (args, argv)
@@ -697,7 +713,7 @@ class Unroll(sea.LimitedCmd):
 
         # fake loops to be in the form suitable for loop-unroll
         argv.append ('-fake-latch-exit')
-
+        
         argv.append ('-loop-unroll')
         if args.enable_runtime:
             argv.append ('-unroll-runtime')
@@ -709,8 +725,8 @@ class Unroll(sea.LimitedCmd):
 
         argv.extend (args.in_files)
         if args.llvm_asm: argv.append ('-S')
-        return self.seaoptCmd.run (args, argv)
-
+        return self.seaoptCmd.run (args, argv)    
+    
 def _is_seahorn_opt (x):
     if x.startswith ('-'):
         y = x.strip ('-')
@@ -782,7 +798,7 @@ class Seahorn(sea.LimitedCmd):
 
         if args.solve or args.out_file is not None:
             argv.append ('--keep-shadows=true')
-
+            
         if args.solve:
             argv.append ('--horn-solve')
             # Cannot delete shadows since they are used by the solver
@@ -923,7 +939,7 @@ class LegacyFrontEnd (sea.LimitedCmd):
         argv.append ('-m{0}'.format (args.machine))
         if args.debug_info: argv.append ('--mark-lines')
         argv.extend (args.in_files)
-
+        
         return self.lfeCmd.run (args, argv)
 
 class Crab (sea.LimitedCmd):

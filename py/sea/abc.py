@@ -96,6 +96,8 @@ def add_abc_args(ap):
                      help='Verbosity level for Z3', metavar='N')
     ap.add_argument ('--oll', dest='asm_out_file', default=None,
                          help='LLVM assembly output file')
+    ap.add_argument ('--bmc', '-bmc', dest='bmc', type=int, default=-1,
+                     help='Bounded-model checking using horn solver with bound N', metavar='N')
     ap.add_argument ('--do-not-split-proof', dest='dont_split_proof',
                      help='Do not split the proof by allocation sites',
                      default=False, action='store_true')
@@ -120,6 +122,10 @@ def add_abc_args(ap):
                      help="Abstract all calls to these functions.\n"
                           "Similar effect as --externalize-functions but at the level of horn clauses\n",
                      dest='abstract_funcs', type=str, metavar='str,...')
+    ap.add_argument ('--abstract-memory',
+                     help='Abstract memory instructions', dest='abs_mem_lvl',
+                     choices = ['none','only-load','only-store','load-and-store'],
+                     default='none')
     ap.add_argument ('--dsa', 
                      help="Dsa analysis:\n"
                           "- llvm  : context-insensitive Llvm Dsa\n"
@@ -222,8 +228,7 @@ def pp_opts (args):
             '--inline-allocators',                        
             ## XXX: this one seems buggy somehow:
             ##      it leaves the call graph in an inconsistent state.
-            '--inline-constructors', 
-            #'--promote-arrays', 
+            #'--inline-constructors', 
             '--unfold-loops-for-dsa',
             '--simplify-pointer-loops', 
             '--lower-invoke', 
@@ -231,7 +236,9 @@ def pp_opts (args):
             '--externalize-addr-taken-funcs']
     if args.extern_funcs is not None:
         opts.extend(['--externalize-functions={0}'.format(args.extern_funcs)])
-        
+    if args.abs_mem_lvl <> 'none':
+        opts.extend (['--abstract-memory={0}'.format(args.abs_mem_lvl)])
+                      
     return opts
     
 # extra options for `sea pp` with array bounds checks
@@ -256,7 +263,7 @@ def ms_opts(args):
 def opt_opts(args):
     opts = [#'--enable-indvar'
             #,'--enable-loop-idiom'
-            #,'--enable-nondet-init'
+            '--enable-nondet-init'
             #,'--llvm-inline-threshold=150'
             #,'--llvm-unroll-threshold=150'
             ]
@@ -264,20 +271,19 @@ def opt_opts(args):
 
 # options for `sea horn`
 def horn_opts(args):
-    opts = ['--track=mem',
-            '--step=large',
-            '--keep-shadows=true',
-            '--horn-answer',
-            '--horn-singleton-aliases=true',
-            '--horn-global-constraints=true',
-            '--horn-stats',
-            '--horn-skip-constraints=true',
-            '--horn-make-undef-warning-error=true',
-            '--horn-child-order=false',
-            '--horn-reduce-constraints',
-            '--horn-use-write',
-            '--horn-estimate-size-invars'
-            ]
+    opts =  ['--track=mem',
+             '--step=large',
+             '--keep-shadows=true',
+             '--horn-answer',
+             '--horn-singleton-aliases=true',
+             '--horn-global-constraints=true',
+             '--horn-stats',
+             '--horn-skip-constraints=true',
+             '--horn-make-undef-warning-error=false',
+             '--horn-child-order=false',
+             '--horn-reduce-constraints',
+             '--horn-use-write',
+             '--horn-estimate-size-invars']
     if args.add_cuts is not 'h0':
         opts = opts + ['--horn-extra-cps={0}'.format(args.add_cuts)]
 
@@ -285,10 +291,13 @@ def horn_opts(args):
         opts = opts + ['--horn-sea-dsa']
         if args.dsa == 'sea-ci':
             opts = opts + ['--horn-sea-dsa-cs-global=false']
+            opts = opts + ['--horn-sea-dsa-split=true']
         else:
             opts = opts + ['--horn-sea-dsa-cs-global=true']
             opts = opts + ['--horn-sea-dsa-local-mod=true']
             opts = opts + ['--horn-sea-dsa-split=true']
+    else:
+        opts = opts + ['--horn-dsa-split=true']
 
     if args.abstract_funcs is not None:
         opts.extend(['--horn-abstract={0}'.format(args.abstract_funcs)])
@@ -338,7 +347,10 @@ def prove_abc_cmmd (in_file, alloca_id, args, extra = []):
         asm_filename, asm_file_ext = os.path.splitext(args.asm_out_file)
         asm_filename = asm_filename + '.alloc.' + str(alloca_id) + asm_file_ext
         pf_cmd.extend(['--oll={0}'.format(asm_filename)])
-    pf_cmd = [get_sea(), 'pf'] + pf_cmd + extra + [in_file]
+    if args.bmc >=0 :
+        pf_cmd = [get_sea(),'bpf', '--bound={0}'.format(args.bmc)] + pf_cmd + extra + [in_file]
+    else:
+        pf_cmd = [get_sea(), 'pf'] + pf_cmd + extra + [in_file]        
     return pf_cmd
 
 # if alloca_id is None then it will try to prove all checks, 
@@ -352,11 +364,11 @@ def prove_abc (in_file, alloca_id, args, extra = []):
 
     pf_cmd = prove_abc_cmmd(in_file, alloca_id, args, extra)
 
-    #if verbose: print " ".join(pf_cmd)
+    if verbose: print " ".join(pf_cmd)
 
     p = sub.Popen(pf_cmd, shell=False, stdout=sub.PIPE, stderr=sub.STDOUT)
     results, _ = p.communicate()
-
+    print results
     checks, ans, time, blks, invars_size, exitcode, signalcode = get_results (results, p.returncode, args.cpu)
     if time == float(args.cpu):
         if "WARNING: found call to verifier.error()" in results:
@@ -520,16 +532,15 @@ def sea_abc(args, extra): # extra is unused
         return
     else:
         (allocas, num_checks) = get_alloc_sites (in_file, work_dir, args)
+        num_allocas = len(allocas)
         #if verbose: print "Allocation sites = " + str(allocas)
-        print "--- Found " + str(len(allocas)) + " allocation sites"
+        print "--- Found " + str(num_allocas) + " allocation sites"
 
-        if len(allocas) == 0:
+        if num_allocas == 0:
             print "--- No allocation sites found so do nothing"
             return
-        
         fmt = csv_results_keys()
         csv_results_header(args.csv_file, fmt)
-
         if args.sequential:  # for debugging purposes
             for alloca_id in allocas:
                 num_checks,ans,time,num_blks,invars_size,_,_ = prove_abc(in_file, alloca_id, args)
@@ -540,7 +551,13 @@ def sea_abc(args, extra): # extra is unused
                 csv_results_line (args.csv_file, fmt, results)    
         else:
             xargs = []
+            njobs = 0; acc_njobs = 0; maxjobs= 150 # this is tuneable!
+            ## XXX: In principle, we could pass one single xargs to Popen first argument. 
+            ## However, the maximum number of characters in Popen args is 131072.
+            ## As a workaround split xargs into multiple ones.            
             for alloca_id in allocas:
+                njobs = njobs + 1
+                acc_njobs = acc_njobs + 1
                 sea_abc_cmd = ['sea_abc', '--alloc-site={0}'.format(alloca_id), in_file, 
                                '--cpu={0}'.format(args.cpu), '--mem={0}'.format(args.mem),
                                '-O{0}'.format(args.opt_level), 
@@ -548,10 +565,15 @@ def sea_abc(args, extra): # extra is unused
                                '--zverbose={0}'.format(args.zverbose), 
                                '--add-extra-cutpoints={0}'.format(args.add_cuts),                               
                                '--csv={0}'.format(args.csv_file)]
+                if args.bmc >= 0 :
+                    sea_abc_cmd.extend(['--bmc={0}'.format(args.bmc)])
                 if args.extern_funcs is not None:
                     sea_abc_cmd.extend(['--externalize-functions={0}'.format(args.extern_funcs)])
                 if args.abstract_funcs is not None:
                     sea_abc_cmd.extend(['--abstract-functions={0}'.format(args.abstract_funcs)])
+                if args.abs_mem_lvl <> 'none':
+                    sea_abc_cmd.extend (['--abstract-memory={0}'.format(args.abs_mem_lvl)])
+                                         
                 if args.abc_no_under: sea_abc_cmd.extend(['--abc-disable-underflow'])
                 if args.abc_no_reads: sea_abc_cmd.extend(['--abc-disable-reads'])
                 if args.abc_no_writes: sea_abc_cmd.extend(['--abc-disable-writes'])
@@ -567,29 +589,34 @@ def sea_abc(args, extra): # extra is unused
                     sea_abc_cmd.extend(['--horn-sea-dsa'])
                     if args.dsa == 'sea-ci':
                         sea_abc_cmd.extend(['--horn-sea-dsa-cs-global=false'])
+                        # This option is added later by prove_abc
+                        #sea_abc_cmd.extend(['--horn-sea-dsa-split=true'])
                     else:
                         sea_abc_cmd.extend(['--horn-sea-dsa-cs-global=true'])
-                        
-
+                        # These options are added later by prove_abc
+                        #sea_abc_cmd.extend(['--horn-sea-dsa-local-mod=true'])
+                        #sea_abc_cmd.extend(['--horn-sea-dsa-split=true'])
+                else:
+                   sea_abc_cmd.extend(['--horn-dsa-split=true'])
                 xargs.append(' '.join(sea_abc_cmd))
+                if njobs == maxjobs or acc_njobs == num_allocas:
+                    if verbose: 
+                        print "--- Running GNU parallel with "  + str(njobs) + " jobs."
+                        for a in xargs:
+                            print "\t" + str(a)
 
-            if verbose: 
-                print "--- Running GNU parallel:" 
-                for a in xargs:
-                    print "\t" + str(a)
+                    gnupar_opts = []
+                    #if verbose: gnupar_opts = gnupar_opts + ["--progress", "--eta"]
+                    xargs = [get_gnu_parallel()] + gnupar_opts + [":::"] + xargs
+                    #p = sub.Popen(xargs, shell=False, stdout=sub.PIPE, stderr=sub.STDOUT)
+                    p = sub.Popen(xargs, shell=False)
+                    result, _ = p.communicate()
+                    if p.returncode <> 0:  ## gnu parallel should not fail
+                        report_fatal_error('\n\n%s\n' % (result), p.returncode)
+                    if verbose or args.zverbose > 1: print str(result)
+                    njobs = 0; xargs = []
 
-            gnupar_opts = []
-            #if verbose:
-            #    gnupar_opts = gnupar_opts + ["--progress", "--eta"]
-            xargs = [get_gnu_parallel()] + gnupar_opts + [":::"] + xargs
-                
-            #p = sub.Popen(xargs, shell=False, stdout=sub.PIPE, stderr=sub.STDOUT)
-            p = sub.Popen(xargs, shell=False)
-            result, _ = p.communicate()
-            if p.returncode <> 0:  ## gnu parallel should not fail
-                report_fatal_error('\n\n%s\n' % (result), p.returncode)
-            if verbose or args.zverbose > 1: print str(result)
-
+                #assert (xargs == [])
         print_results (args.csv_file, len(allocas), num_checks, not args.sequential)
 
 
