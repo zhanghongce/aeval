@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 2.8.11)
 
 project (SeaHorn)
 set (SeaHorn_VERSION_MAJOR 0)
-set (SeaHorn_VERSION_MINOR 1)
+set (SeaHorn_VERSION_MINOR 2)
 set (SeaHorn_VERSION_PATCH 0)
 set (SeaHorn_VERSION_TWEAK "rc3")
 
@@ -120,7 +120,7 @@ else()
 endif()
 
 ExternalProject_Add (llvm
-  SVN_REPOSITORY http://llvm.org/svn/llvm-project/llvm/tags/RELEASE_360/final/
+  SVN_REPOSITORY http://llvm.org/svn/llvm-project/llvm/tags/RELEASE_391/final/
   SOURCE_DIR ${CMAKE_SOURCE_DIR}/ext/llvm
   INSTALL_DIR ${CMAKE_BINARY_DIR}/run
   CMAKE_ARGS
@@ -136,7 +136,7 @@ ExternalProject_Add (llvm
   LOG_BUILD 1
   LOG_INSTALL 1)
 
-find_package (LLVM 3.6.0 CONFIG NO_DEFAULT_PATH)
+find_package (LLVM 3.9.1 CONFIG NO_DEFAULT_PATH)
 if (NOT LLVM_FOUND)
   ExternalProject_Get_Property (llvm INSTALL_DIR)
   set (LLVM_ROOT ${INSTALL_DIR})
