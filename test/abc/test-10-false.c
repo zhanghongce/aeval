@@ -1,4 +1,4 @@
-// RUN: %sea pf -O0 --abc=2 %dsa "%s" 2>&1 | OutputCheck %s
+// RUN: %sea pf -O0 --abc=2 %dsa "%s" %abc3_definitions 2>&1 | OutputCheck %s
 // CHECK: ^sat$
 
 #include <stdio.h>
