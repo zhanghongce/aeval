@@ -115,6 +115,8 @@ namespace seahorn
                                                           M.global_end ()))
     {
       if (!gv.hasInitializer ()) continue;
+      // XXX: skip global variables used by seahorn for instrumentation
+      if (gv.getName ().startswith ("sea_")) continue;      
       PointerType *ty = dyn_cast<PointerType> (gv.getType ());
       if (!ty) continue;
       Type *ety = ty->getElementType ();
