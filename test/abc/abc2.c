@@ -31,6 +31,8 @@ extern "C" {
   __attribute__((used)) void sea_abc_assert_valid_ptr (int8_t *base, sea_ptrdiff_t offset);
   __attribute__((used)) void sea_abc_assert_valid_offset (sea_ptrdiff_t offset, sea_size_t size);
   __attribute__((used)) void sea_abc_log_ptr (int8_t *base, sea_ptrdiff_t offset);
+  __attribute__((used)) void sea_abc_log_load_ptr (int8_t *lhs, int8_t *ptr);
+  __attribute__((used)) void sea_abc_log_store_ptr (int8_t *value, int8_t *ptr);    
   __attribute__((used)) void sea_abc_alloc (int8_t *base, sea_size_t size);
   __attribute__((used)) void sea_abc_init(void);
   
@@ -53,7 +55,7 @@ void sea_abc_assert_valid_ptr (int8_t *base, sea_ptrdiff_t offset)
   {
 #ifndef DISABLE_UNDERFLOW
    assert (offset >= 0 );
-#endif 
+#endif
    assert (offset <= sea_size);
   }
 #ifndef SEA_BASE_ONLY
@@ -62,7 +64,7 @@ void sea_abc_assert_valid_ptr (int8_t *base, sea_ptrdiff_t offset)
     assume (sea_ptr > sea_base);
 #ifndef DISABLE_UNDERFLOW
     assert (sea_offset + offset >= 0);
-#endif 
+#endif
     assert (sea_offset + offset <= sea_size);
   }
 #endif
@@ -101,6 +103,23 @@ void sea_abc_log_ptr (int8_t *base, sea_ptrdiff_t offset)
   }
 #endif
 }
+
+/**
+ * insert extra assumptions when a pointer is read from memory.
+ * lhs := mem[ptr], where lhs is a pointer
+ * ptr - pointer operand of the load
+ * lhs - lhs of the load
+ **/
+void sea_abc_log_load_ptr (int8_t *lhs, int8_t *ptr /*unused*/) {}
+
+/**
+ * insert extra assertions when a pointer is written into memory.
+ * mem[ptr] := value, where value is a pointer
+ * ptr - pointer operand of the store 
+ * value - pointer value of the store
+ **/
+void sea_abc_log_store_ptr (int8_t *value, int8_t *ptr /*unused*/) {}
+
 
 /**
  * insert after every allocation instruction

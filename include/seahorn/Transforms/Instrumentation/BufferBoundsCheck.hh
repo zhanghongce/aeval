@@ -3,6 +3,19 @@
 
 /*
   Encodings to instrument a program for Array Bounds Check (ABC).
+
+  ABC1 corresponds to a "local" encoding where each pointer is
+       intrumentation
+
+  ABC2 corresponds to a "global" encoding where we keep track of a
+       global pointer that switches non-deterministically.
+
+  ABC3 implements several variants to the global encoding.
+        
+  Unlike ABC1 and ABC2, ABC3 only inserts special functions which can
+  be defined at the C-level. This is very useful to try different
+  variants.
+
  */ 
 
 #include "llvm/Pass.h"
@@ -328,6 +341,8 @@ namespace seahorn
      - void sea_abc_init(void);
      - void sea_abc_alloc (uint64_t *base, uint64_t size);
      - void sea_abc_log_ptr (uint8_t *base, uint64_t offset);
+     - void sea_abc_log_load_ptr (uint8_t *base);
+     - void sea_abc_log_store_ptr (uint8_t *base);
      - void sea_abc_assert_valid_ptr (uint8_t *base, uint64_t offset);
      - void sea_abc_assert_valid_offset (uint64_t offset, uint64_t size);
 

@@ -34,6 +34,8 @@ extern "C" {
   __attribute__((used)) void sea_abc_assert_valid_ptr (int8_t *base, sea_ptrdiff_t offset);
   __attribute__((used)) void sea_abc_assert_valid_offset (sea_ptrdiff_t offset, sea_size_t size);
   __attribute__((used)) void sea_abc_log_ptr (int8_t *base, sea_ptrdiff_t offset);
+  __attribute__((used)) void sea_abc_log_load_ptr (int8_t *lhs, int8_t *ptr);
+  __attribute__((used)) void sea_abc_log_store_ptr (int8_t *value, int8_t *ptr);    
   __attribute__((used)) void sea_abc_alloc (int8_t *base, sea_size_t size);
   __attribute__((used)) void sea_abc_init(void);
   
@@ -101,6 +103,35 @@ void sea_abc_log_ptr (int8_t *base, sea_ptrdiff_t offset)
   }
 #endif
 }
+
+/**
+ * insert extra assumptions when a pointer is read from memory.
+ * lhs := mem[ptr], where lhs is a pointer
+ * ptr - pointer operand of the load
+ * lhs - lhs of the load
+ **/
+void sea_abc_log_load_ptr (int8_t *lhs, int8_t *ptr /*unused*/) {
+  if (!sea_active) return;
+  
+  sea_ptrdiff_t offset = lhs - sea_base;
+  int is_valid_ptr = (0 <= offset && offset < sea_size);
+  assume (!is_valid_ptr || (lhs == sea_base));
+}
+
+/**
+ * insert extra assertions when a pointer is written into memory.
+ * mem[ptr] := value, where value is a pointer
+ * ptr - pointer operand of the store 
+ * value - pointer value of the store
+ **/
+void sea_abc_log_store_ptr (int8_t *value, int8_t *ptr /*unused*/) {
+  if (!sea_active) return;
+
+  sea_ptrdiff_t offset = value - sea_base;
+  int is_valid_ptr = (0 <= offset && offset < sea_size);
+  assert (!is_valid_ptr || (value == sea_base));
+}
+
 
 /**
  * insert after every allocation instruction
