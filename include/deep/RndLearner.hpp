@@ -447,14 +447,24 @@ namespace ufo
             break;
           }
 
-          if (isTautology(cand) || !u.isSat(cand))  // keep searching
+          if (isTautology(cand))  // keep searching
           {
             LAdisj& disj = lf.samples.back();
-            lf.assignPrioritiesForGarbage(disj);
-            gotGarbage(j, disj);
+            lf.assignPrioritiesForLearnt(disj);
+            learnedLemma(disj);
             skip = true;
             break;
           }
+
+          if (lf.nonlinVars.size() > 0 && !u.isSat(cand))  // keep searching
+          {
+            LAdisj& disj = lf.samples.back();
+            lf.assignPrioritiesForFailed(disj);
+            gotFailure(disj);
+            skip = true;
+            break;
+          }
+
           curCandidates[j] = cand;
         }
 
