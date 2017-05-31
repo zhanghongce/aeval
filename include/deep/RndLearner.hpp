@@ -451,7 +451,7 @@ namespace ufo
           {
             LAdisj& disj = lf.samples.back();
             lf.assignPrioritiesForLearnt(disj);
-            learnedLemma(disj);
+            learnedLemma(j, disj);
             skip = true;
             break;
           }
@@ -460,7 +460,7 @@ namespace ufo
           {
             LAdisj& disj = lf.samples.back();
             lf.assignPrioritiesForFailed(disj);
-            gotFailure(disj);
+            gotFailure(j, disj);
             skip = true;
             break;
           }
