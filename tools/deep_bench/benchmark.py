@@ -29,7 +29,7 @@ def run_deephorn(example_path, proc_cnt, aggprune, logs_dir_path):
     aggprune_arg = "0"
     if aggprune:
         aggprune_arg = "1"
-    cmd = "/usr/bin/mpirun"
+    cmd = os.getenv("BENCH_MPIRUN", "/usr/bin/mpirun")
     proc = subprocess32.Popen(
         [cmd, "-mca", "btl", "^openib", "-n", str(proc_cnt),
             "-output-filename", os.path.join(logs_dir_path, "log"),
