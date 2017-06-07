@@ -16,6 +16,7 @@
 
 *.tfstate
 *.tfstate.backup
+.clang_complete
 
 # ctags
 .tags

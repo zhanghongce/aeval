@@ -13,14 +13,6 @@ using namespace std;
 using namespace boost;
 namespace ufo
 {
-
-  struct SynthResult {
-    const bool foundInvariants;
-    const bool cancelled;
-    SynthResult(const bool fi, const bool c) :
-      foundInvariants(fi), cancelled(c) {}
-  };
-
   class RndLearner
   {
   private:
@@ -42,7 +34,15 @@ namespace ufo
     const bool shrink;              // consider only a small subset of int constants and samples from the code
     const bool aggressivepruning;   // aggressive pruning of the search space based on SAT/UNSAT (WARNING: may miss some invariants)
 
-    inline int invNumber() { return decls.size(); }
+    void reportLemma(boost::mpi::communicator world, unsigned declIdx, LAdisj& disj) {
+      WorkerResult result { WorkerResultKindLemma, declIdx, unique_ptr<LAdisj>(new LAdisj(disj)) };
+      world.send(0, MSG_TAG_NORMAL, result);
+    }
+
+    void reportFailure(boost::mpi::communicator world, unsigned declIdx, LAdisj& disj) {
+      WorkerResult result { WorkerResultKindFailure, declIdx, unique_ptr<LAdisj>(new LAdisj(disj)) };
+      world.send(0, MSG_TAG_NORMAL, result);
+    }
 
   public:
 
@@ -50,6 +50,23 @@ namespace ufo
       m_efac(efac), m_z3(z3), ruleManager(r), m_smt_solver (z3),
       m_smt_safety_solver(z3), u(efac), numOfSMTChecks(0), densecode(b1),
       shrink(b2), aggressivepruning(b3) {}
+
+    inline int invNumber() { return decls.size(); }
+
+    inline LAfactory& getLAFactory(unsigned inv) { return lfs[inv]; }
+
+    inline bool isSMTSat(Expr a) { return u.isSat(a); }
+
+    void printCandidates() {
+      for (size_t i = 0; i < invNumber(); i++) {
+        outs() << "candidate for " << *(decls[i]) << ": "
+               << *(curCandidates[i]) << "\n";
+      }
+    }
+
+    Expr convertDisjToExpr(int dIdx, LAdisj& disj) {
+      return lfs[dIdx].toExpr(disj);
+    }
 
     bool isTautology (Expr a)     // adjusted for big disjunctions
     {
@@ -81,8 +98,7 @@ namespace ufo
       return res;
     }
 
-    bool checkCandidates(function<void(unsigned, LAdisj&)> learnedLemma,
-      function<void(unsigned, LAdisj&)> gotFailure)
+    bool checkCandidates(boost::mpi::communicator world)
     {
       map<int, int> localNum = incomNum; // for local status
       map<int, bool> candsFailed;        // -||-
@@ -147,9 +163,9 @@ namespace ufo
         if (res)    // SAT   == candidate failed
         {
           outs () << "   => bad candidate for " << *hr.dstRelation << "\n";
+          assert(!lf2.samples.empty());
           LAdisj& failedDisj = lf2.samples.back();
-          if (aggressivepruning) lf2.assignPrioritiesForFailed(failedDisj);
-          gotFailure(ind2, failedDisj);
+          if (aggressivepruning) reportFailure(world, ind2, failedDisj);
           candsTried--;
           candsFailed[ind2] = true;
           if (candsTried == 0) return false;
@@ -160,12 +176,12 @@ namespace ufo
           if (!res && localNum[ind2] == 0) // something inductive found
           {
             outs () << "   => learnt lemma for " << *hr.dstRelation << "\n";
+            assert(!lf2.samples.empty());
             LAdisj& learntDisj = lf2.samples.back();
-            lf2.assignPrioritiesForLearnt(learntDisj);
             lf2.learntExprs.insert(curCandidates[ind2]);
             lf2.learntLemmas.push_back(lf2.samples.size() - 1);
             candsTried--;
-            learnedLemma(ind2, learntDisj);
+            reportLemma(world, ind2, learntDisj);
           }
         }
       }
@@ -378,164 +394,95 @@ namespace ufo
       }
     }
 
-    SynthResult synthesize(int maxAttempts, function<bool()> shouldStop,
-      function<vector<PeerResult>()> accumulatePeerResults,
-      function<void(unsigned, LAdisj&)> learnedLemma,
-      function<void(unsigned, LAdisj&)> gotFailure,
-      function<void(unsigned, LAdisj&)> gotGarbage)
-    {
-      bool success = false;
-      int iter = 1;
+    void integrateWorkerResult(WorkerResult& d) {
+      LAfactory& laf = lfs[d.declIdx];
+      laf.samples.push_back(*(d.disj));
+      LAdisj& disj = laf.samples.back();
+      disj.normalizePlus();  // should be normalized already, but: safety
+      switch (d.kind) {
+      case WorkerResultKindLemma:
+        laf.assignPrioritiesForLearnt(disj);
+        laf.learntExprs.insert(laf.toExpr(disj));
+        laf.learntLemmas.push_back(laf.samples.size() - 1);
+        break;
+      case WorkerResultKindFailure:
+        laf.assignPrioritiesForFailed(disj);
+        break;
+      case WorkerResultKindGarbage:
+        laf.assignPrioritiesForGarbage(disj);
+        break;
+      default:
+        break;
+      }
+    }
 
-      std::srand(std::time(0));
+    std::pair<unsigned, vector<LAdisj>> recvWorkerJob(boost::mpi::communicator world) {
+      // Receive either a job start or stop message
+      StartIterMsg startMsg;
+      world.recv(0, MSG_TAG_NORMAL, startMsg);
+      if (startMsg.shouldStop)
+        return make_pair(startMsg.globalIter, vector<LAdisj>());
 
-      auto start = std::chrono::steady_clock::now();
-      for (int i = 0; i < maxAttempts; i++)
-      {
-        // bail if we've been cancelled
-        if (shouldStop()) {
-          return SynthResult(false, true);
+      // Recv candidates, filling curCandidates÷
+      vector<LAdisj> newCurCandsDisjs;
+      for (size_t i = 0; i < invNumber(); i++) {
+        newCurCandsDisjs.emplace_back();
+        LAdisj& disj = newCurCandsDisjs.back();
+        world.recv(0, MSG_TAG_NORMAL, disj);
+      }
+      return make_pair(startMsg.globalIter, newCurCandsDisjs);
+    }
+
+    void workerMain(boost::mpi::communicator world) {
+      while (1) {
+        std::pair<unsigned, vector<LAdisj>> job = recvWorkerJob(world);
+        unsigned globalIter = job.first;
+        vector<LAdisj>& jobDisjs = job.second;
+        if (jobDisjs.empty()) {
+          // empty vector means stop
+          break;
         }
 
-        bool receivedLemma = false;
-        // Opportunity to integrate external results
-        for (PeerResult& d : accumulatePeerResults()) {
-          LAfactory& laf = lfs[d.declIdx];
-          laf.samples.push_back(d.disj);
-          LAdisj& disj = laf.samples.back();
-          disj.normalizePlus();  // should be normalized already, but: safety
-          switch (d.kind) {
-          case PeerResultKindLemma:
-            laf.assignPrioritiesForLearnt(disj);
-            laf.learntExprs.insert(laf.toExpr(disj));
-            laf.learntLemmas.push_back(laf.samples.size() - 1);
-            curCandidates[d.declIdx] = laf.toExpr(disj);
-            receivedLemma = true;
-            break;
-          case PeerResultKindFailure:
-            if (aggressivepruning) laf.assignPrioritiesForFailed(disj);
-            break;
-          case PeerResultKindGarbage:
-            laf.assignPrioritiesForGarbage(disj);
-            break;
-          }
-        }
+        // TODO: Is adding samples to LAfactory's needed too?
 
-        if (receivedLemma)
-        {                          // each time we receive a lemma,
-          if (checkSafety())       // there is a need to push it to m_smt_safety_solver
-          {                        // and to re-check safety
-            success = true;
-            break;
-          }
-          else
-          {
-            for (int j = 0; j < invNumber(); j++) curCandidates[j] = NULL; // keep guessing
-          }
-        }
-
-        // first, guess candidates for each inv.declaration
-        bool skip = false;
-        for (int j = 0; j < invNumber(); j++)
-        {
-          if (curCandidates[j] != NULL) continue;   // if the current candidate is good enough
+        // Check for tautologies etc. while converting to Expr and adding to
+        // curCandidates
+        bool skipIter = false;
+        for (size_t j = 0; j < jobDisjs.size(); j++) {
           LAfactory& lf = lfs[j];
-          Expr cand = lf.getFreshCandidate();
-          if (cand == NULL)
-          {
-            skip = true;
+          Expr cand = lf.toExpr(jobDisjs[j]);
+
+          if (isTautology(cand)) {  // keep searching
+            reportLemma(world, j, jobDisjs[j]);
+            skipIter = true;
             break;
           }
 
-          if (isTautology(cand))  // keep searching
-          {
-            LAdisj& disj = lf.samples.back();
-            lf.assignPrioritiesForLearnt(disj);
-            learnedLemma(j, disj);
-            skip = true;
+          if (lf.nonlinVars.size() > 0 && !u.isSat(cand)) { // keep searching
+            reportFailure(world, j, jobDisjs[j]);
+            skipIter = true;
             break;
           }
 
-          if (lf.nonlinVars.size() > 0 && !u.isSat(cand))  // keep searching
-          {
-            LAdisj& disj = lf.samples.back();
-            lf.assignPrioritiesForFailed(disj);
-            gotFailure(j, disj);
-            skip = true;
-            break;
-          }
-
+          lf.samples.push_back(jobDisjs[j]);
           curCandidates[j] = cand;
         }
 
-        if (skip) continue;
-
-        outs() << "\n  ---- new iteration " << iter++ <<  " ----\n";
-        for (int j = 0; j < invNumber(); j++) outs () << "candidate for " << *decls[j] << ": " << *curCandidates[j] << "\n";
-
-        // check all the candidates at once for all CHCs :
-        if (checkCandidates(learnedLemma, gotFailure))
-        {
-          if (checkSafety())       // query is checked here
-          {
-            success = true;
+        if (!skipIter) {
+          outs() << "\n  ---- new iteration " << globalIter <<  " ----\n";
+          printCandidates();
+          if (checkCandidates(world) && checkSafety()) {
+            WorkerResult succMsg { WorkerResultKindFoundInvariants, 0, nullptr };
+            world.send(0, MSG_TAG_NORMAL, succMsg);
             break;
           }
         }
 
-        for (int j = 0; j < invNumber(); j++)  curCandidates[j] = NULL; // preparing for the next iteration
-      }
-
-      if (success) {
-        auto end = std::chrono::steady_clock::now();
-        auto elapsed = std::chrono::duration<double, std::milli>(end - start);
-        stringstream elapsedStream;
-        elapsedStream << fixed << setprecision(2) << elapsed.count()/1000.0;
-        outs () << "\n -----> Success after " << --iter << " iterations, \n";
-        outs () << "        total number of SMT checks: " << numOfSMTChecks << ",\n";
-        outs () << "        elapsed: " << elapsedStream.str() << "s\n";
-        return SynthResult(true, false);
-      } else {
-        outs () << "\nNo success after " << maxAttempts << " iterations\n";
-        outs () << "        total number of SMT checks: " << numOfSMTChecks << "\n";
-        return SynthResult(false, false);
+        WorkerResult iterDoneMsg { WorkerResultKindDone, 0, nullptr };
+        world.send(0, MSG_TAG_NORMAL, iterDoneMsg);
       }
     }
   };
-
-
-  inline SynthResult learnInvariants(string smt, int maxAttempts, bool b1=true,
-    bool b2=true, bool b3=true, function<bool()> shouldStop=nullptr,
-    function<vector<PeerResult>()> accumulateNewLemmas=nullptr,
-    function<void(unsigned, LAdisj&)> learnedLemma=nullptr,
-    function<void(unsigned, LAdisj&)> gotFailure=nullptr,
-    function<void(unsigned, LAdisj&)> gotGarbage=nullptr)
-  {
-    ExprFactory m_efac;
-    EZ3 z3(m_efac);
-
-    CHCs ruleManager(m_efac, z3);
-    ruleManager.parse(smt);
-//    ruleManager.print();
-
-    RndLearner ds(m_efac, z3, ruleManager, b1, b2, b3);
-
-    ds.setupSafetySolver();
-
-    if (ruleManager.decls.size() > 1)
-    {
-      outs() << "WARNING: learning multiple invariants is currently unstable\n"
-             << "         it is suggested to disable \'aggressivepruning\'\n";
-    }
-
-    for (auto& dcl: ruleManager.decls)
-    {
-      ds.initializeDecl(dcl);
-    }
-
-    return ds.synthesize(maxAttempts, shouldStop, accumulateNewLemmas,
-      learnedLemma, gotFailure, gotGarbage);
-  }
 }
 
 #endif

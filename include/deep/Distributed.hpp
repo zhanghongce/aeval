@@ -1,29 +1,43 @@
 #ifndef DISTRIBUTED_HPP__
 #define DISTRIBUTED_HPP__
 
+#include <boost/serialization/unique_ptr.hpp>
 #include <boost/mpi.hpp>
 #include "LinCom.hpp"
 
 using namespace ufo;
 using namespace std;
 
-#define MSG_TAG_COMPLETE 1
-#define MSG_RESULT 2
+#define MSG_TAG_NORMAL 1
 
-enum PeerResultKind: int {
-  PeerResultKindGarbage,
-  PeerResultKindFailure,
-  PeerResultKindLemma
+enum WorkerResultKind: int {
+  WorkerResultKindGarbage,
+  WorkerResultKindFailure,
+  WorkerResultKindLemma,
+  WorkerResultKindDone,
+  WorkerResultKindFoundInvariants
 };
 
-struct PeerResult {
-  PeerResultKind kind;
+struct StartIterMsg {
+  bool shouldStop;
+  unsigned globalIter;
+};
+
+struct WorkerResult {
+  WorkerResultKind kind;
   unsigned declIdx;  // index of `disj` home LAfactory
-  LAdisj disj;
+  unique_ptr<LAdisj> disj;
 };
 
 template<class Archive>
-void serialize(Archive& ar, PeerResult& pr, const unsigned int version)
+void serialize(Archive& ar, StartIterMsg& sj, const unsigned int version)
+{
+  ar & sj.shouldStop;
+  ar & sj.globalIter;
+}
+
+template<class Archive>
+void serialize(Archive& ar, WorkerResult& pr, const unsigned int version)
 {
   ar & pr.kind;
   ar & pr.declIdx;

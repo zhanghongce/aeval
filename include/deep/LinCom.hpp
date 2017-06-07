@@ -5,8 +5,10 @@
 #define PRIORNOVISIT 0
 #define PRIORSTEP 15
 
+#include <boost/optional.hpp>
 #include <boost/serialization/vector.hpp>
 #include "Distribution.hpp"
+#include "ufo/Expr.hpp"
 #include "ae/ExprSimpl.hpp"
 
 using namespace std;
@@ -83,7 +85,6 @@ namespace ufo
     lincoms id;  // lazily constructed nested vector of dstate[i].vcs's
 
     public:
-
     int arity = 0;
     vector<LAterm> dstate;    // i.e., disjunctive-state
 
@@ -713,14 +714,19 @@ namespace ufo
       return true;
     }
 
-    Expr getFreshCandidate()
-    {
+    Expr getFreshCandidate() {
+      if (boost::optional<LAdisj&> r = getFreshCandidateDisj())
+        return toExpr(*r);
+      return NULL;
+    }
+
+    boost::optional<LAdisj&> getFreshCandidateDisj() {
       samples.push_back(LAdisj());
       LAdisj& curTerm = samples.back();
-      if (!guessTerm(curTerm)) return NULL;
-
+      if (!guessTerm(curTerm))
+        return boost::none;
       curTerm.normalizePlus();
-      return toExpr(curTerm);
+      return curTerm;
     }
 
     bool guessTerm (LAdisj& curTerm)
@@ -914,7 +920,7 @@ namespace ufo
       for (int i = 0; i < failed.arity; i++)
       {
         LAterm& s = failed.dstate[i];
-        
+
         int lim = s.intconst * 2 + (getIndexGT() == s.cmpop ? 1 : 0);
         for (int j = 0; j < prVarsDistrRange ; j++)
         {
