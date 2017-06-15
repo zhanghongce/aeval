@@ -16,7 +16,7 @@ private:
   const unsigned invCnt;
   vector<vector<LAdisj>> candidates;
 
-  void fillCandidateVector(vector<LAdisj>& v) {
+  void fillCandidateVector(vector<LAdisj>& v, unsigned wIdx) {
 
     assert(v.empty());
 
@@ -38,12 +38,27 @@ private:
           continue;  // retry
         }
 
+        if (candidateInWorkerRange(*candDisj, 0, wIdx))
+          continue;
+
         v.push_back(*candDisj);
         break;
       }
     }
 
     assert(v.size() == invCnt);
+  }
+
+  bool candidateInWorkerRange(LAdisj& cand, unsigned a, unsigned e) {
+    // This is a naive implementation, but, in practice, very little time is
+    // spent in this method.
+    for (unsigned i = a; i < e; i++) {
+      for (unsigned j = 0; j < invCnt; j++) {
+        if (candidates[i][j] == cand)
+          return true;
+      }
+    }
+    return false;
   }
 
 public:
@@ -63,7 +78,7 @@ public:
   int fillCandidatesForEmptyWorker() {
     for (size_t i = 0; i < candidates.size(); i++) {
       if (candidates[i].empty()) {
-        fillCandidateVector(candidates[i]);
+        fillCandidateVector(candidates[i], i);
         return i;
       }
     }

@@ -70,6 +70,10 @@ namespace ufo
     return true;
   }
 
+  inline bool operator!= (LAterm& a, LAterm& b) {
+    return !(a == b);
+  }
+
   template<class Archive>
   void serialize(Archive& ar, LAterm& term, const unsigned int version)
   {
@@ -152,8 +156,25 @@ namespace ufo
       dstate.clear();
       id.clear();
     }
-
   };
+
+  inline bool operator== (LAdisj& a, LAdisj& b)
+  {
+    // TODO: we probably want to compare normalized copies instead
+    if (a.arity != b.arity) return false;
+
+    const unsigned aSize = a.dstate.size();
+    if (aSize != b.dstate.size()) return false;
+    for (size_t i = 0; i < aSize; i++) {
+      if (a.dstate[i] != b.dstate[i])
+        return false;
+    }
+    return true;
+  }
+
+  inline bool operator!= (LAdisj& a, LAdisj& b) {
+    return !(a == b);
+  }
 
   template<class Archive>
   void serialize(Archive& ar, LAdisj& disj, const unsigned int version)

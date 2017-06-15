@@ -434,8 +434,13 @@ namespace ufo
     }
 
     void workerMain(boost::mpi::communicator world) {
+      std::chrono::duration<double, std::milli> waitElapsed;
+
       while (1) {
+        const auto start = std::chrono::steady_clock::now();
         std::pair<unsigned, vector<LAdisj>> job = recvWorkerJob(world);
+        waitElapsed += (std::chrono::steady_clock::now() - start);
+
         unsigned globalIter = job.first;
         vector<LAdisj>& jobDisjs = job.second;
         if (jobDisjs.empty()) {
@@ -481,6 +486,10 @@ namespace ufo
         WorkerResult iterDoneMsg { WorkerResultKindDone, 0, nullptr };
         world.send(0, MSG_TAG_NORMAL, iterDoneMsg);
       }
+
+      stringstream waitStream;
+      waitStream << fixed << setprecision(2) << waitElapsed.count()/1000.0;
+      outs() << "time spent waiting: " << waitStream.str() << "s\n";
     }
   };
 }
