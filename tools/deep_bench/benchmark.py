@@ -14,7 +14,7 @@ from itertools import product, izip
 
 SUCCESS_ITERS_RE = re.compile(r'\s*\-+>\s+Success after (.*) iterations\s*')
 ELAPSED_RE = re.compile(r'\s*elapsed: (.*)s\s*')
-PROCS_TO_TRY = [1, 4]
+PROCS_TO_TRY = [2, 5]
 
 
 class NoSuccessException(Exception):
