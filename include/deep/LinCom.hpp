@@ -85,10 +85,18 @@ namespace ufo
 
   class LAdisj
   {
-    private:
+  private:
+    friend class boost::serialization::access;
     lincoms id;  // lazily constructed nested vector of dstate[i].vcs's
 
-    public:
+    template<class Archive>
+    void serialize(Archive & ar, const unsigned int version)
+    {
+        ar & arity;
+        ar & dstate;
+    }
+
+  public:
     int arity = 0;
     vector<LAterm> dstate;    // i.e., disjunctive-state
 
@@ -174,13 +182,6 @@ namespace ufo
 
   inline bool operator!= (LAdisj& a, LAdisj& b) {
     return !(a == b);
-  }
-
-  template<class Archive>
-  void serialize(Archive& ar, LAdisj& disj, const unsigned int version)
-  {
-    ar & disj.arity;
-    ar & disj.dstate;
   }
 
   inline void clone(LAterm& s, LAterm& t)

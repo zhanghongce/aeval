@@ -54,7 +54,7 @@ private:
     // spent in this method.
     for (unsigned i = a; i < e; i++) {
       for (unsigned j = 0; j < invCnt; j++) {
-        if (candidates[i][j] == cand)
+        if (candidates[i][j].getId() == cand.getId())
           return true;
       }
     }
@@ -72,9 +72,11 @@ public:
       inner.reserve(invCnt);
     }
   }
+
   void clearCandidatesForWorker(unsigned wIdx) {
     candidates[wIdx].clear();
   }
+
   int fillCandidatesForEmptyWorker() {
     for (size_t i = 0; i < candidates.size(); i++) {
       if (candidates[i].empty()) {
@@ -84,6 +86,7 @@ public:
     }
     return -1;
   }
+
   vector<LAdisj>& operator[](const int idx) {
     return candidates[idx];
   }
