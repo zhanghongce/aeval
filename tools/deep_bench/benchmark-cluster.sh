@@ -39,7 +39,7 @@ find ../../bench_horn/*.smt2 -exec basename {} .smt2 \; | BENCH_MPIRUN=/usr/bin/
   "./benchmark.py -v -i 10 --logdir /home/ubuntu/out/benchlogs -o /home/ubuntu/out/ --hyper {2} /home/ubuntu/aeval/bench_horn/{1}.smt2 &> /home/ubuntu/out/std.log ; " \
   "cd /home/ubuntu ; " \
   "tar -zcf out-{1}-{2}.tar.gz out/ ;" \
-  ::: 1,agg_on 1,agg_off 4,agg_on 4,agg_off
+  ::: 2,agg_on 2,agg_off 5,agg_on 5,agg_off
 
 # Remove the disabling of StrictHostKeyChecking
 mv ~/.ssh/config.backup ~/.ssh/config
