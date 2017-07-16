@@ -1,6 +1,7 @@
 #include <boost/mpi/environment.hpp>
 #include <boost/mpi/communicator.hpp>
 #include <boost/serialization/vector.hpp>
+#include <boost/serialization/shared_ptr.hpp>
 #include "deep/RndLearner.hpp"
 #include "deep/Distributed.hpp"
 #include <chrono>
@@ -139,6 +140,7 @@ int main (int argc, char **argv)
     // Master node
     //
     OpenCandidateSet openCandidates(ds, world.size() - 1, ds.invNumber());
+    vector<vector<std::shared_ptr<WorkerResult>>> forwardResultOutbox(world.size() - 1);
     const auto start = std::chrono::steady_clock::now();
 
     bool success = false;
@@ -146,30 +148,58 @@ int main (int argc, char **argv)
     while (!success && attI < maxAttempts) {
       // TODO: this can actually exceed maxAttempts; fix
       while (1) {
+        // vector<boost::mpi::request> sends;
+
+        // Any workers not doing anything at the moment? Generate some cands.
         auto fillResult = openCandidates.fillCandidatesForEmptyWorker();
         if (fillResult < 0) break;
         unsigned workerIdx = (unsigned)fillResult;
-        StartIterMsg startMsg { false, attI };
+
+        // Send header msg.
+        auto& workerOutbox = forwardResultOutbox[workerIdx];
+        StartIterMsg startMsg { false, attI, workerOutbox.size() };
+        // sends.push_back(world.isend(workerIdx + 1, MSG_TAG_NORMAL, startMsg));
         world.send(workerIdx + 1, MSG_TAG_NORMAL, startMsg);
-        for (size_t j = 0; j < invCnt; j++)
-          world.send(workerIdx + 1, MSG_TAG_NORMAL, openCandidates[workerIdx][j]);
+
+        // Send any outstanding lemmas (async)
+        for (auto it = workerOutbox.begin(); it != workerOutbox.end(); it++) {
+          world.send(workerIdx + 1, MSG_TAG_NORMAL, *it);
+          // sends.push_back(world.isend(workerIdx + 1, MSG_TAG_NORMAL, *it));
+        }
+        workerOutbox.clear();
+
+        // Send the just-generated candidates (async)
+        for (size_t j = 0; j < invCnt; j++) {
+          auto c = openCandidates[workerIdx][j];
+          world.send(workerIdx + 1, MSG_TAG_NORMAL, c);
+          // sends.push_back(world.isend(workerIdx + 1, MSG_TAG_NORMAL, c));
+        }
         attI++;
+
+        // Join sends
+        // boost::mpi::wait_all(sends.begin(), sends.end());
       }
 
       // Respond to results
-      WorkerResult result;
+      std::shared_ptr<WorkerResult> result;
       auto rMsgS = world.recv(boost::mpi::any_source, MSG_TAG_NORMAL, result);
-      if (result.kind == WorkerResultKindDone) {
+      if (result->kind == WorkerResultKindDone) {
         openCandidates.clearCandidatesForWorker(rMsgS.source() - 1);
-      } else if (result.kind == WorkerResultKindFoundInvariants) {
+      } else if (result->kind == WorkerResultKindFoundInvariants) {
         success = true;
       } else {
-        ds.integrateWorkerResult(result);
-        // if (result.kind == WorkerResultKindLemma)
-        //   assert(ds.checkSafety());
+        ds.integrateWorkerResult(*result);
+        if (result->kind == WorkerResultKindLemma) {
+          // assert(ds.checkSafety());
+          for (size_t i = 0; i < world.size() - 1; i++) {
+            if (i == rMsgS.source() - 1)
+              continue;
+            forwardResultOutbox[i].push_back(result);
+          }
+        }
       }
     }
-    sendToOthers(world, MSG_TAG_NORMAL, (StartIterMsg){ true, attI });
+    sendToOthers(world, MSG_TAG_NORMAL, (StartIterMsg){ true, attI, 0 });
 
     // Print results
     if (success) {

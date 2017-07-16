@@ -36,12 +36,12 @@ namespace ufo
 
     void reportLemma(boost::mpi::communicator world, unsigned declIdx, LAdisj& disj) {
       WorkerResult result { WorkerResultKindLemma, declIdx, unique_ptr<LAdisj>(new LAdisj(disj)) };
-      world.send(0, MSG_TAG_NORMAL, result);
+      world.send(0, MSG_TAG_NORMAL, std::shared_ptr<WorkerResult>(&result, [](WorkerResult*){}));
     }
 
     void reportFailure(boost::mpi::communicator world, unsigned declIdx, LAdisj& disj) {
       WorkerResult result { WorkerResultKindFailure, declIdx, unique_ptr<LAdisj>(new LAdisj(disj)) };
-      world.send(0, MSG_TAG_NORMAL, result);
+      world.send(0, MSG_TAG_NORMAL, std::shared_ptr<WorkerResult>(&result, [](WorkerResult*){}));
     }
 
   public:
@@ -416,39 +416,34 @@ namespace ufo
       }
     }
 
-    std::pair<unsigned, vector<LAdisj>> recvWorkerJob(boost::mpi::communicator world) {
-      // Receive either a job start or stop message
-      StartIterMsg startMsg;
-      world.recv(0, MSG_TAG_NORMAL, startMsg);
-      if (startMsg.shouldStop)
-        return make_pair(startMsg.globalIter, vector<LAdisj>());
-
-      // Recv candidates, filling curCandidates÷
-      vector<LAdisj> newCurCandsDisjs;
-      for (size_t i = 0; i < invNumber(); i++) {
-        newCurCandsDisjs.emplace_back();
-        LAdisj& disj = newCurCandsDisjs.back();
-        world.recv(0, MSG_TAG_NORMAL, disj);
-      }
-      return make_pair(startMsg.globalIter, newCurCandsDisjs);
-    }
-
     void workerMain(boost::mpi::communicator world) {
       std::chrono::duration<double, std::milli> waitElapsed;
 
       while (1) {
         const auto start = std::chrono::steady_clock::now();
-        std::pair<unsigned, vector<LAdisj>> job = recvWorkerJob(world);
+        ReceivedWorkerJob job = recvWorkerJob(world, invNumber());
         waitElapsed += (std::chrono::steady_clock::now() - start);
 
-        unsigned globalIter = job.first;
-        vector<LAdisj>& jobDisjs = job.second;
-        if (jobDisjs.empty()) {
-          // empty vector means stop
+        unsigned globalIter = job.globalIter;
+        vector<LAdisj>& jobDisjs = job.curCandDisjs;
+        if (job.shouldStop())
           break;
-        }
 
         // TODO: Is adding samples to LAfactory's needed too?
+
+        // Integrate new lemmas
+        for (auto it = job.newLemmas.cbegin();
+             it != job.newLemmas.cend(); it++)
+        {
+          const std::pair<unsigned, LAdisj>& d = *it;
+          LAfactory& laf = lfs[d.first];
+          laf.samples.push_back(d.second);
+          LAdisj& disj = laf.samples.back();
+          disj.normalizePlus();  // should be normalized already, but: safety
+          laf.assignPrioritiesForLearnt(disj);
+          laf.learntExprs.insert(laf.toExpr(disj));
+          laf.learntLemmas.push_back(laf.samples.size() - 1);
+        }
 
         // Check for tautologies etc. while converting to Expr and adding to
         // curCandidates
@@ -478,18 +473,18 @@ namespace ufo
           printCandidates();
           if (checkCandidates(world) && checkSafety()) {
             WorkerResult succMsg { WorkerResultKindFoundInvariants, 0, nullptr };
-            world.send(0, MSG_TAG_NORMAL, succMsg);
+            world.send(0, MSG_TAG_NORMAL, std::shared_ptr<WorkerResult>(&succMsg, [](WorkerResult*){}));
             break;
           }
         }
 
         WorkerResult iterDoneMsg { WorkerResultKindDone, 0, nullptr };
-        world.send(0, MSG_TAG_NORMAL, iterDoneMsg);
+        world.send(0, MSG_TAG_NORMAL, std::shared_ptr<WorkerResult>(&iterDoneMsg, [](WorkerResult*){}));
       }
 
       stringstream waitStream;
       waitStream << fixed << setprecision(2) << waitElapsed.count()/1000.0;
-      outs() << "time spent waiting: " << waitStream.str() << "s\n";
+      outs() << "time spent waiting for jobs: " << waitStream.str() << "s\n";
     }
   };
 }
