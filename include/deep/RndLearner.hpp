@@ -165,7 +165,7 @@ namespace ufo
           outs () << "   => bad candidate for " << *hr.dstRelation << "\n";
           assert(!lf2.samples.empty());
           LAdisj& failedDisj = lf2.samples.back();
-          if (aggressivepruning) reportFailure(world, ind2, failedDisj);
+          reportFailure(world, ind2, failedDisj);
           candsTried--;
           candsFailed[ind2] = true;
           if (candsTried == 0) return false;
@@ -424,8 +424,6 @@ namespace ufo
         ReceivedWorkerJob job = recvWorkerJob(world, invNumber());
         waitElapsed += (std::chrono::steady_clock::now() - start);
 
-        unsigned globalIter = job.globalIter;
-        vector<LAdisj>& jobDisjs = job.curCandDisjs;
         if (job.shouldStop())
           break;
 
@@ -441,35 +439,44 @@ namespace ufo
           LAdisj& disj = laf.samples.back();
           disj.normalizePlus();  // should be normalized already, but: safety
           laf.assignPrioritiesForLearnt(disj);
-          laf.learntExprs.insert(laf.toExpr(disj));
+          Expr lafExpr = laf.toExpr(disj);
+          laf.learntExprs.insert(lafExpr);
           laf.learntLemmas.push_back(laf.samples.size() - 1);
+
+          Expr invApp = lafExpr;
+          for (auto& hr : ruleManager.chcs) {
+            for (int i = 0; i < hr.srcVars.size(); i++)
+              invApp = replaceAll(invApp, laf.getVarE(i), hr.srcVars[i]);
+          }
+          m_smt_safety_solver.assertExpr(invApp);
         }
 
         // Check for tautologies etc. while converting to Expr and adding to
         // curCandidates
         bool skipIter = false;
-        for (size_t j = 0; j < jobDisjs.size(); j++) {
+        for (size_t j = 0; j < job.curCandDisjs.size(); j++) {
           LAfactory& lf = lfs[j];
-          Expr cand = lf.toExpr(jobDisjs[j]);
+          auto& jo = job.curCandDisjs[j];
+          Expr cand = lf.toExpr(jo);
 
           if (isTautology(cand)) {  // keep searching
-            reportLemma(world, j, jobDisjs[j]);
+            reportLemma(world, j, jo);
             skipIter = true;
             break;
           }
 
           if (lf.nonlinVars.size() > 0 && !u.isSat(cand)) { // keep searching
-            reportFailure(world, j, jobDisjs[j]);
+            reportFailure(world, j, jo);
             skipIter = true;
             break;
           }
 
-          lf.samples.push_back(jobDisjs[j]);
+          lf.samples.push_back(jo);
           curCandidates[j] = cand;
         }
 
         if (!skipIter) {
-          outs() << "\n  ---- new iteration " << globalIter <<  " ----\n";
+          outs() << "\n  ---- new iteration " << job.globalIter <<  " ----\n";
           printCandidates();
           if (checkCandidates(world) && checkSafety()) {
             WorkerResult succMsg { WorkerResultKindFoundInvariants, 0, nullptr };
