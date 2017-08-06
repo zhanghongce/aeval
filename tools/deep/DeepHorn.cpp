@@ -114,8 +114,7 @@ int main (int argc, char **argv)
   }
   const int maxAttempts = argc > 2 ? atoi(argv[1]) : 2000000;
   const bool densecode = argc > 3 ? atoi(argv[2]) : true;
-  const bool shrink = argc > 4 ? atoi(argv[3]) : true;
-  const bool aggressivepruning = argc > 5 ? atoi(argv[4]) : true;
+  const bool aggressivepruning = argc > 4 ? atoi(argv[3]) : true;
 
   // Initialize all the heavy machinery, incl. parsing theinput file
   ExprFactory m_efac;
@@ -124,7 +123,7 @@ int main (int argc, char **argv)
   CHCs ruleManager(m_efac, z3);
   ruleManager.parse(string(argv[argc-1]));
 
-  RndLearner ds(m_efac, z3, ruleManager, densecode, shrink, aggressivepruning);
+  RndLearner ds(m_efac, z3, ruleManager, densecode, aggressivepruning);
   ds.setupSafetySolver();
 
   const int invCnt = ruleManager.decls.size();

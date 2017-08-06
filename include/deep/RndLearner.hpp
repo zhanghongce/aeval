@@ -32,7 +32,6 @@ namespace ufo
     int numOfSMTChecks;
 
     const bool densecode;           // catch various statistics about the code (mostly, frequences) and setup the prob.distribution based on them
-    const bool shrink;              // consider only a small subset of int constants and samples from the code
     const bool aggressivepruning;   // aggressive pruning of the search space based on SAT/UNSAT (WARNING: may miss some invariants)
 
     void reportLemma(boost::mpi::communicator world, unsigned declIdx, LAdisj& disj) {
@@ -47,10 +46,9 @@ namespace ufo
 
   public:
 
-    RndLearner (ExprFactory &efac, EZ3 &z3, CHCs& r, bool b1, bool b2, bool b3) :
+    RndLearner (ExprFactory &efac, EZ3 &z3, CHCs& r, bool b1, bool b3) :
       m_efac(efac), m_z3(z3), ruleManager(r), m_smt_solver (z3),
-      u(efac), densecode(b1), shrink(b2),
-      aggressivepruning(b3) {}
+      u(efac), densecode(b1), aggressivepruning(b3) {}
 
     inline int invNumber() { return decls.size(); }
 
@@ -262,7 +260,7 @@ namespace ufo
         if (hr.dstRelation != decls.back() && hr.srcRelation != decls.back()) continue;
 
         css.push_back(CodeSampler(hr, invDecl, lf.getVars(), lf.nonlinVars));
-        css.back().analyzeCode(densecode, shrink);
+        css.back().analyzeCode(densecode);
 
         // convert intConsts to progConsts and add additive inverses (if applicable):
         for (auto &a : css.back().intConsts)
