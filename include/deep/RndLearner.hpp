@@ -453,15 +453,12 @@ namespace ufo
           unsigned ssIdx = 0;
           for (auto &hr: ruleManager.chcs) {
             if (hr.isQuery) {
-              if (d.first == getVarIndex(hr.srcRelation, decls))
-                break;
+              if (d.first == getVarIndex(hr.srcRelation, decls)) {
+                m_smt_safety_solvers[ssIdx].assertExpr(invApp);
+              }
               ssIdx++;
             }
           }
-          if (ssIdx < m_smt_safety_solvers.size())
-            m_smt_safety_solvers[ssIdx].assertExpr(invApp);
-          else
-            outs() << "not pushing recv'd lemma to safety: " << *invApp << "\n";
         }
 
         // Check for tautologies etc. while converting to Expr and adding to
