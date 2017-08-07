@@ -21,7 +21,8 @@ namespace ufo
     EZ3 &m_z3;
     SMTUtils u;
     ufo::ZSolver<ufo::EZ3> m_smt_solver;
-    ufo::ZSolver<ufo::EZ3> m_smt_safety_solver;
+    vector<ufo::ZSolver<ufo::EZ3>> m_smt_safety_solvers;
+    map<int, bool> safety_progress;
 
     CHCs& ruleManager;
     vector<Expr> decls;          //  container only mutated by `initializeDecl`
@@ -48,8 +49,8 @@ namespace ufo
 
     RndLearner (ExprFactory &efac, EZ3 &z3, CHCs& r, bool b1, bool b2, bool b3) :
       m_efac(efac), m_z3(z3), ruleManager(r), m_smt_solver (z3),
-      m_smt_safety_solver(z3), u(efac), numOfSMTChecks(0), densecode(b1),
-      shrink(b2), aggressivepruning(b3) {}
+      u(efac), densecode(b1), shrink(b2),
+      aggressivepruning(b3) {}
 
     inline int invNumber() { return decls.size(); }
 
@@ -100,10 +101,6 @@ namespace ufo
 
     bool checkCandidates(boost::mpi::communicator world)
     {
-      map<int, int> localNum = incomNum; // for local status
-      map<int, bool> candsFailed;        // -||-
-      int candsTried = invNumber();        // -||-
-
       for (auto &hr: ruleManager.chcs)
       {
         if (hr.isQuery) continue;
@@ -112,8 +109,6 @@ namespace ufo
 
         int ind1;  // to be identified later
         int ind2 = getVarIndex(hr.dstRelation, decls);
-
-        if (candsFailed[ind2]) continue;  // exit if cand2 is already a failure
 
         // pushing body
         m_smt_solver.assertExpr (hr.body);
@@ -128,15 +123,12 @@ namespace ufo
           ind1 = getVarIndex(hr.srcRelation, decls);
           LAfactory& lf1 = lfs[ind1];
 
-          if (localNum[ind1] > 0)
+          cand1 = curCandidates[ind1];
+          for (int i = 0; i < hr.srcVars.size(); i++)
           {
-            cand1 = curCandidates[ind1];
-            for (int i = 0; i < hr.srcVars.size(); i++)
-            {
-              cand1 = replaceAll(cand1, lf1.getVarE(i), hr.srcVars[i]);
-            }
-            m_smt_solver.assertExpr(cand1);
+            cand1 = replaceAll(cand1, lf1.getVarE(i), hr.srcVars[i]);
           }
+          m_smt_solver.assertExpr(cand1);
 
           lmApp = conjoin(lf1.learntExprs, m_efac);
           for (int i = 0; i < hr.srcVars.size(); i++)
@@ -158,45 +150,53 @@ namespace ufo
         auto neggedInvApp2 = mk<NEG>(cand2);
         m_smt_solver.assertExpr(neggedInvApp2);
 
-        numOfSMTChecks++;
         boost::tribool res = m_smt_solver.solve ();
         if (res)    // SAT   == candidate failed
         {
-          outs () << "   => bad candidate for " << *hr.dstRelation << "\n";
-          assert(!lf2.samples.empty());
-          LAdisj& failedDisj = lf2.samples.back();
-          reportFailure(world, ind2, failedDisj);
-          candsTried--;
-          candsFailed[ind2] = true;
-          if (candsTried == 0) return false;
-        }
-        else        // UNSAT == candadate is OK for now; keep checking
-        {
-          localNum[ind2]--;
-          if (!res && localNum[ind2] == 0) // something inductive found
-          {
-            outs () << "   => learnt lemma for " << *hr.dstRelation << "\n";
-            assert(!lf2.samples.empty());
-            LAdisj& learntDisj = lf2.samples.back();
-            lf2.learntExprs.insert(curCandidates[ind2]);
-            lf2.learntLemmas.push_back(lf2.samples.size() - 1);
-            candsTried--;
-            reportLemma(world, ind2, learntDisj);
-          }
+          curCandidates[ind2] = mk<TRUE>(m_efac);
+          return checkCandidates(world);
         }
       }
-      return true;
+
+      bool res = false;
+      for (int ind2 = 0; ind2 < curCandidates.size(); ind2++)
+      {
+        Expr cand2 = curCandidates[ind2];
+        LAfactory& lf2 = lfs[ind2];
+        if (isOpX<TRUE>(cand2))
+        {
+          outs () << "    => bad candidate for " << *decls[ind2] << "\n";
+          if (aggressivepruning) {
+            LAdisj& failedDisj = lf2.samples.back();
+            reportFailure(world, ind2, failedDisj);
+            lf2.assignPrioritiesForFailed(failedDisj);
+          }
+        }
+        else
+        {
+          outs () << "    => learnt lemma for " << *decls[ind2] << "\n";
+          res = true;
+          LAdisj& learntDisj = lf2.samples.back();
+          lf2.assignPrioritiesForLearnt(learntDisj);
+          lf2.learntExprs.insert(cand2);
+          lf2.learntLemmas.push_back(lf2.samples.size() - 1);
+          reportLemma(world, ind2, learntDisj);
+        }
+      }
+      return res;
     }
 
     bool checkSafety()
     {
+      int num = 0;
       for (auto &hr: ruleManager.chcs)
       {
         if (!hr.isQuery) continue;
+        num++;
 
         int ind = getVarIndex(hr.srcRelation, decls);
         Expr invApp = curCandidates[ind];
-        if (invApp == NULL) continue;
+        if (safety_progress[num-1] == true) continue;
 
         LAfactory& lf = lfs[ind];
         for (int i = 0; i < hr.srcVars.size(); i++)
@@ -204,13 +204,12 @@ namespace ufo
           invApp = replaceAll(invApp, lf.getVarE(i), hr.srcVars[i]);
         }
 
-        m_smt_safety_solver.assertExpr(invApp);
-
-        numOfSMTChecks++;
-        boost::tribool res = m_smt_safety_solver.solve ();
-        if (!res) return true;
+        m_smt_safety_solvers[num-1].assertExpr(invApp);
+        safety_progress[num-1] = !m_smt_safety_solvers[num-1].solve ();
       }
-      return false;
+
+      for (auto a : safety_progress) if (a.second == false) return false;
+      return true;
     }
 
     void setupSafetySolver()
@@ -220,8 +219,9 @@ namespace ufo
       {
         if (hr.isQuery)
         {
-          m_smt_safety_solver.assertExpr (hr.body);
-          break;
+          m_smt_safety_solvers.push_back(ufo::ZSolver<ufo::EZ3>(m_z3));
+          m_smt_safety_solvers.back().assertExpr (hr.body);
+          safety_progress[safety_progress.size()] = false;
         }
       }
     }
@@ -448,7 +448,20 @@ namespace ufo
             for (int i = 0; i < hr.srcVars.size(); i++)
               invApp = replaceAll(invApp, laf.getVarE(i), hr.srcVars[i]);
           }
-          m_smt_safety_solver.assertExpr(invApp);
+
+          // Determine safety solver from declIdx (d.first) and add lemma
+          unsigned ssIdx = 0;
+          for (auto &hr: ruleManager.chcs) {
+            if (hr.isQuery) {
+              if (d.first == getVarIndex(hr.srcRelation, decls))
+                break;
+              ssIdx++;
+            }
+          }
+          if (ssIdx < m_smt_safety_solvers.size())
+            m_smt_safety_solvers[ssIdx].assertExpr(invApp);
+          else
+            outs() << "not pushing recv'd lemma to safety: " << *invApp << "\n";
         }
 
         // Check for tautologies etc. while converting to Expr and adding to
