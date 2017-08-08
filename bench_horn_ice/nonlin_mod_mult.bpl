@@ -1,7 +1,7 @@
 // SMACK-PRELUDE-BEGIN
 procedure boogie_si_record_int(i: int);
 
-function {:existential true} b0(a:int, b:int, c:int, d:int, e:int): bool;
+function {:existential true} b0(i:int, j:int, k:int, l:int): bool;
 
 // Integer arithmetic
 function $add(p1:int, p2:int) returns (int) {p1 + p2}
@@ -153,34 +153,36 @@ axiom (__VERIFIER_assert == -2048);
 procedure main()
   modifies alloc, $CurrAddr;
 {
-  var $a: int;
-  var $b: int;
-  var $c1: int;
-  var $c2: int;
-  var $d1: int;
-  var $d2: int;
-  var $e1: int;
-  var $e2: int;
+  var $i: int;
+  var $j: int;
+  var $k: int;
+  var $l: int;
+  var $i1: int;
+  var $j1: int;
+  var $k1: int;
+  var $l1: int;
+  var $m: int;
 $bb0:
-  assume $a > 0;
-  assume $b > 0;
-  $c1 := 0;
-  $d1 := 0;
-  $e1 := 0;
+  assume $j > 0;
+  assume $k > 0;
+  $l := 0;
+  $i := 0;
   goto $bb1;
 $bb1:
-  assert b0($a, $b, $c1, $d1, $e2);
+  assert b0($i, $j, $k, $l);
   goto $bb2, $bb3;
 $bb2:
-  $c2 := $add($c1, 1);
-  $d2 := $add($d1, $a);
-  $e2 := $add($e1, $b);
-  $c1 := $c2;
-  $d1 := $d2;
-  $e1 := $e2;
+  $i1 := ($i + 1);
+  $m := $mod($j, $k);
+  $j1 := $j + $m;
+  $l1 := ($l + $m);
+
+  $i := $i1;
+  $j := $j1;
+  $l1 := $l;
   goto $bb1;
 $bb3:
-  assert ($mul($b, $c1) >= $mul($a, $c1));
+  assert $l <= ($k * $i);
   return;
 }
 

@@ -1,7 +1,7 @@
 // SMACK-PRELUDE-BEGIN
 procedure boogie_si_record_int(i: int);
 
-function {:existential true} b0(i:int, j:int, n:int): bool;
+function {:existential true} b0(a:int, b:int, i:int): bool;
 
 // Integer arithmetic
 function $add(p1:int, p2:int) returns (int) {p1 + p2}
@@ -155,25 +155,21 @@ procedure main()
 {
   var $a: int;
   var $b: int;
-  var $n: int;
-  var $n2: int;
-  var $a2: int;
+  var $i: int;
 $bb0:
-  assume $a > 0;
-  assume $b > 0;
-  $n := $mul($a, $b);
+  assume $a < 0;
+  $b := $a;
+  $i := -1;
   goto $bb1;
 $bb1:
-  assert b0($a, $b, $n);
+  assert b0($a, $b, $i);
   goto $bb2, $bb3;
 $bb2:
-  $a2 := $sub($a, 1);
-  $n2 := $sub($n, $b);
-  $a := $a2;
-  $n := $n2;
+  $b := $a * $b;
+  $i := -1 * $i;
   goto $bb1;
 $bb3:
-  assert ($n != 0) || ($a == 0);
+  assert ($b * $i) > 0;
   return;
 }
 

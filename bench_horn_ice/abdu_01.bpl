@@ -1,7 +1,7 @@
 // SMACK-PRELUDE-BEGIN
 procedure boogie_si_record_int(i: int);
 
-function {:existential true} b0(a:int, b:int, c:int, d:int, e:int): bool;
+function {:existential true} b0(i:int, j:int, len:int): bool;
 
 // Integer arithmetic
 function $add(p1:int, p2:int) returns (int) {p1 + p2}
@@ -149,38 +149,35 @@ axiom (main == -1024);
 const unique __VERIFIER_assert: int;
 axiom (__VERIFIER_assert == -2048);
 
-
 procedure main()
   modifies alloc, $CurrAddr;
 {
-  var $a: int;
-  var $b: int;
-  var $c1: int;
-  var $c2: int;
-  var $d1: int;
-  var $d2: int;
-  var $e1: int;
-  var $e2: int;
+  var $x: int;
+  var $x1: int;
+  var $y: int;
+  var $y1: int;
+  var $len: int;
 $bb0:
-  assume $a > 0;
-  assume $b > 0;
-  $c1 := 0;
-  $d1 := 0;
-  $e1 := 0;
+  $x := 0;
+  $y := 0;
+  assert $len >= 0;
   goto $bb1;
 $bb1:
-  assert b0($a, $b, $c1, $d1, $e2);
-  goto $bb2, $bb3;
+  assert b0($x, $y, $len);
+  //$b := $sge($p, $p1);
+  if $x < $len {
+    goto $bb2, $bb3;
+  } else {
+    goto $bb3;
+  }
 $bb2:
-  $c2 := $add($c1, 1);
-  $d2 := $add($d1, $a);
-  $e2 := $add($e1, $b);
-  $c1 := $c2;
-  $d1 := $d2;
-  $e1 := $e2;
+  $x1 := $add($x, 1);
+  $y1 := $add($y, 1);
+  $x := $x1;
+  $y := $y1;
   goto $bb1;
 $bb3:
-  assert ($mul($b, $c1) >= $mul($a, $c1));
+  assert $y == (2 * $x);
   return;
 }
 
