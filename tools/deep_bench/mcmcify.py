@@ -24,7 +24,8 @@ TOK_MAP = {
     '-': 'MINUS',
     '*': 'MUL',
     'mod': 'MOD',
-    'div': 'DIV'
+    'div': 'DIV',
+    '/': 'DIV'
 }
 
 
