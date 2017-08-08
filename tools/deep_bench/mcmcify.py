@@ -23,7 +23,8 @@ TOK_MAP = {
     '+': 'PLUS',
     '-': 'MINUS',
     '*': 'MUL',
-    'mod': 'MOD'
+    'mod': 'MOD',
+    'div': 'DIV'
 }
 
 
