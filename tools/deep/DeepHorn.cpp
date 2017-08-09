@@ -16,6 +16,7 @@ private:
   RndLearner& rndLearner;
   const unsigned invCnt;
   vector<vector<LAdisj>> candidates;
+  const bool aggressivepruning;
 
   void fillCandidateVector(vector<LAdisj>& v, unsigned wIdx) {
 
@@ -39,7 +40,7 @@ private:
           continue;  // retry
         }
 
-        if (candidateInWorkerRange(*candDisj, 0, wIdx))
+        if (aggressivepruning && candidateInWorkerRange(*candDisj, 0, wIdx))
           continue;
 
         v.push_back(*candDisj);
@@ -63,8 +64,8 @@ private:
   }
 
 public:
-  OpenCandidateSet(RndLearner& rl, unsigned wCnt, unsigned iCnt) :
-    rndLearner(rl), invCnt(iCnt), candidates()
+  OpenCandidateSet(RndLearner& rl, unsigned wCnt, unsigned iCnt, bool a) :
+    rndLearner(rl), invCnt(iCnt), candidates(), aggressivepruning(a)
   {
     // Prealloc memory
     candidates.reserve(wCnt);
@@ -139,7 +140,7 @@ int main (int argc, char **argv)
     //
     // Master node
     //
-    OpenCandidateSet openCandidates(ds, world.size() - 1, ds.invNumber());
+    OpenCandidateSet openCandidates(ds, world.size() - 1, ds.invNumber(), aggressivepruning);
     vector<vector<std::shared_ptr<WorkerResult>>> forwardResultOutbox(world.size() - 1);
     const auto start = std::chrono::steady_clock::now();
 
