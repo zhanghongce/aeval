@@ -26,14 +26,14 @@ def name_only(path):
 
 
 def run_deephorn(example_path, proc_cnt, aggprune, logs_dir_path):
-    aggprune_arg = "0"
+    aggprune_arg = ""
     if aggprune:
-        aggprune_arg = "1"
+        aggprune_arg = "--aggp"
     cmd = os.getenv("BENCH_MPIRUN", "/usr/bin/mpirun")
     proc = subprocess32.Popen(
         [cmd, "-mca", "btl", "^openib", "-n", str(proc_cnt),
             "-output-filename", os.path.join(logs_dir_path, "log"),
-            "../../build/tools/deep/deephorn", "2000000", "1", "1",
+            "../../build/tools/deep/deephorn", "--attempts", "2000000", "--eps", "--freqs",
             aggprune_arg, example_path],
         env={"TMPDIR": "/tmp", "PATH": os.getenv("PATH")})
     try:

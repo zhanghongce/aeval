@@ -3,7 +3,9 @@
 
 #define DEFAULTARITY 2
 #define PRIORNOVISIT 0
-#define PRIORSTEP 15
+#define PRIORSTEP 30
+#define FREQCOEF 15
+#define EPSILONFRACTION 5
 
 #include <boost/optional.hpp>
 #include <boost/serialization/vector.hpp>
@@ -263,11 +265,10 @@ namespace ufo
     ExprSet learntExprs;   // lemmas from learntLemmas
     map<lincoms, vector<weights>> ineqPriors;
     map<lincoms, set<int>> visited;
-    bool densecode;
     bool aggressivepruning;
 
-    LAfactory(ExprFactory &_efac, bool _densecode=true, bool _aggressivepruning=true) :
-          m_efac(_efac), densecode(_densecode), aggressivepruning(_aggressivepruning)
+    LAfactory(ExprFactory &_efac, bool _aggressivepruning=true) :
+          m_efac(_efac), aggressivepruning(_aggressivepruning)
     {};
 
     void addVar(Expr var)
@@ -840,7 +841,7 @@ namespace ufo
         reInitialize(id, disj);
       }
 
-      if (densecode && isDefault(distrs[disj]))       // if it's the first time we look at this lin.combination,
+      if (isDefault(distrs[disj]))       // if it's the first time we look at this lin.combination,
       {                                               // we might want to guess a candidate based on the code
         curLAterm.intconst = chooseByWeight(intConstDensity[ar]);
         curLAterm.cmpop = chooseByWeight(cmpOpDensity[ar]);
@@ -994,11 +995,11 @@ namespace ufo
 
     void assignPrioritiesForLearnt(LAdisj& learnt)
     {
+      if (!aggressivepruning) return;
+
       vector<LAdisj> eqs;
       getEquivalentFormulas(learnt, eqs);
       for (auto &a : eqs) prioritiesLearnt (a);
-
-      if (!aggressivepruning) return;
 
       if (learnt.arity == 1)
       {
@@ -1073,26 +1074,26 @@ namespace ufo
 
     void initDensities(int ar)
     {
-      orAritiesDensity[ar] = 1;
+      orAritiesDensity[ar] = 0;
 
       for (int i = 1; i < vars.size() + 1; i++)
       {
-        plusAritiesDensity[ar][i] = 1;
+        plusAritiesDensity[ar][i] = 0;
 
         for (int j = 0; j < intCoefs.size(); j++)
         {
-          coefDensity[ar][i-1][j] = 1;
+          coefDensity[ar][i-1][j] = 0;
         }
       }
 
       for (int i = 0; i < intConsts.size(); i++)
       {
-        intConstDensity[ar][i] = 1;
+        intConstDensity[ar][i] = 0;
       }
 
       for (int i = 0; i < cmpOps.size(); i++)
       {
-        cmpOpDensity[ar][i] = 1;
+        cmpOpDensity[ar][i] = 0;
       }
 
       // preparing var densities;
@@ -1108,7 +1109,139 @@ namespace ufo
 
         for (int j = 0; j < varCombinations[ar].back().size(); j++)
         {
-          varDensity[ar].back()[j] = 1;
+          varDensity[ar].back()[j] = 0;
+        }
+      }
+    }
+
+    int getEpsilon(int min_freq, int num_zeros)
+    {
+      if (num_zeros == 0) return 1;
+
+      // somewhat naive function; could be made dependent on other parameters,
+      // not only on the minimum frequency and number of zero-frequencies...
+      return 1 +
+      ((min_freq == INT_MAX) ? 0 :
+       guessUniformly(min_freq) / num_zeros / EPSILONFRACTION);
+    }
+
+    void stabilizeDensities(set<int>& arities, bool addEpsilon)
+    {
+      int min_freq = INT_MAX;
+      int num_zeros, eps = 0;
+
+      for (auto & ar : orAritiesDensity)
+      {
+        if (ar.second == 0) num_zeros++;
+        else
+        {
+          ar.second *= FREQCOEF;
+          min_freq = min(min_freq, ar.second);
+        }
+      }
+
+      if (addEpsilon) eps = getEpsilon(min_freq, num_zeros);
+      for (auto & ar : orAritiesDensity)
+      {
+        if (ar.second == 0) ar.second = eps;
+      }
+
+      for (auto & ar : arities)
+      {
+        min_freq = INT_MAX;
+        num_zeros = 0;
+        for (auto & pl : plusAritiesDensity[ar])
+        {
+          if (pl.second == 0) num_zeros++;
+          else
+          {
+            pl.second *= FREQCOEF;
+            min_freq = min(min_freq, pl.second);
+          }
+        }
+
+        if (addEpsilon) eps = getEpsilon(min_freq, num_zeros);
+        for (auto & pl : plusAritiesDensity[ar])
+        {
+          if (pl.second == 0) pl.second = eps;
+        }
+
+        for (int i = 0; i < vars.size(); i++)
+        {
+          min_freq = INT_MAX;
+          num_zeros = 0;
+          for (auto & c : coefDensity[ar][i])
+          {
+            if (c.second == 0) num_zeros++;
+            else
+            {
+              c.second *= FREQCOEF;
+              min_freq = min(min_freq, c.second);
+            }
+          }
+
+          if (addEpsilon) eps = getEpsilon(min_freq, num_zeros);
+          for (auto & c : coefDensity[ar][i])
+          {
+            if (c.second == 0) c.second = eps;
+          }
+        }
+
+        min_freq = INT_MAX;
+        num_zeros = 0;
+        for (auto & c : intConstDensity[ar])
+        {
+          if (c.second == 0) num_zeros++;
+          else
+          {
+            c.second *= FREQCOEF;
+            min_freq = min(min_freq, c.second);
+          }
+        }
+
+        if (addEpsilon) eps = getEpsilon(min_freq, num_zeros);
+        for (auto & c : intConstDensity[ar])
+        {
+          if (c.second == 0) c.second = eps;
+        }
+
+        min_freq = INT_MAX;
+        num_zeros = 0;
+        for (auto & c : cmpOpDensity[ar])
+        {
+          if (c.second == 0) num_zeros++;
+          else
+          {
+            c.second *= FREQCOEF;
+            min_freq = min(min_freq, c.second);
+          }
+        }
+
+        if (addEpsilon) eps = getEpsilon(min_freq, num_zeros);
+        for (auto & c : cmpOpDensity[ar])
+        {
+          if (c.second == 0) c.second = eps;
+        }
+
+        for (int i = 0; i < varDensity[ar].size(); i++)
+        {
+          min_freq = INT_MAX;
+          num_zeros = 0;
+          for (auto &b : varDensity[ar][i])
+          {
+            if (b.second == 0) num_zeros++;
+            else
+            {
+              b.second *= FREQCOEF;
+              min_freq = min(min_freq, b.second);
+            }
+          }
+
+          if (addEpsilon) eps = getEpsilon(min_freq, num_zeros);
+          for (auto &b : varDensity[ar][i])
+          {
+            if (b.second == 0) b.second = eps;
+          }
         }
       }
     }

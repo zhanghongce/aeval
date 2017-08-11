@@ -32,6 +32,7 @@ namespace ufo
     int numOfSMTChecks;
 
     const bool densecode;           // catch various statistics about the code (mostly, frequences) and setup the prob.distribution based on them
+    bool addepsilon;          // add some small probability to features that never happen in the code
     const bool aggressivepruning;   // aggressive pruning of the search space based on SAT/UNSAT (WARNING: may miss some invariants)
 
     void reportLemma(boost::mpi::communicator world, unsigned declIdx, LAdisj& disj) {
@@ -46,9 +47,9 @@ namespace ufo
 
   public:
 
-    RndLearner (ExprFactory &efac, EZ3 &z3, CHCs& r, bool b1, bool b3) :
+    RndLearner (ExprFactory &efac, EZ3 &z3, CHCs& r, bool b1, bool b2, bool b3) :
       m_efac(efac), m_z3(z3), ruleManager(r), m_smt_solver (z3),
-      u(efac), densecode(b1), aggressivepruning(b3) {}
+      u(efac), densecode(b1), addepsilon(b2), aggressivepruning(b3) {}
 
     inline int invNumber() { return decls.size(); }
 
@@ -224,12 +225,12 @@ namespace ufo
       }
     }
 
-    void initializeDecl(Expr invDecl)
+    void initializeDecl(Expr invDecl, bool print=true)
     {
       assert (invDecl->arity() > 2);
 
       decls.push_back(invDecl->arg(0));
-      lfs.push_back(LAfactory(m_efac, densecode, aggressivepruning));  // indeces at decls, lfs, and curCandidates should be the same
+      lfs.push_back(LAfactory(m_efac, aggressivepruning));  // indeces at decls, lfs, and curCandidates should be the same
       curCandidates.push_back(NULL);
 
       LAfactory& lf = lfs.back();
@@ -260,7 +261,7 @@ namespace ufo
         if (hr.dstRelation != decls.back() && hr.srcRelation != decls.back()) continue;
 
         css.push_back(CodeSampler(hr, invDecl, lf.getVars(), lf.nonlinVars));
-        css.back().analyzeCode(densecode);
+        css.back().analyzeCode();
 
         // convert intConsts to progConsts and add additive inverses (if applicable):
         for (auto &a : css.back().intConsts)
@@ -277,11 +278,14 @@ namespace ufo
         }
       }
 
-      outs() << "Multed vars: ";
-      for (auto &a : lf.nonlinVars)
+      if (print && lf.nonlinVars.size() > 0)
       {
-        outs() << *a.first << " = " << *a.second << "\n";
-        lf.addVar(a.second);
+        outs() << "Multed vars: ";
+        for (auto &a : lf.nonlinVars)
+        {
+          outs() << *a.first << " = " << *a.second << "\n";
+          lf.addVar(a.second);
+        }
       }
 
       for (auto &a : intCoefs) if (a != 0) lf.addIntCoef(a);
@@ -340,32 +344,26 @@ namespace ufo
 
       if (densecode)
       {
-        int multip = PRIORSTEP;                 // will add +PRIORSTEP to every occurrence
+        // collect number of occurrences....
 
-        // or, alternatively multip can depend on the type of CHC:
-        //        if (cs.hr.isFact) multip = 1;
-        //        else if (cs.hr.isQuery) multip = 2 * PRIORSTEP;
-        //        else multip = PRIORSTEP;
         for (auto &lcs : lcss)
         {
           int ar = lcs.arity;
-          // specify weights for OR arity
-          lf.orAritiesDensity[ar] += multip;
 
-          for (int i = 0; i < ar; i++)
+          // of arities of application of OR
+          lf.orAritiesDensity[ar] ++;
+
+          for (auto & lc : lcs.dstate)
           {
-            LAterm& lc = lcs.dstate[i];
+            // of arities of application of PLUS
+            lf.plusAritiesDensity[ar][lc.arity] ++;
 
-            // specify weights for PLUS arity
-            lf.plusAritiesDensity[ar][lc.arity] += multip;
+            // of constants
+            lf.intConstDensity[ar][lc.intconst] ++;
 
-            // specify weights for const
-            lf.intConstDensity[ar][lc.intconst] += multip;
+            // of comparison operations
+            lf.cmpOpDensity[ar][lc.cmpop] ++;
 
-            // specify weights for comparison operation
-            lf.cmpOpDensity[ar][lc.cmpop] += multip;
-
-            // specify weights for var combinations
             set<int> vars;
             int vars_id = -1;
             for (int j = 0; j < lc.vcs.size(); j = j+2) vars.insert(lc.vcs[j]);
@@ -378,15 +376,67 @@ namespace ufo
               }
             }
             assert(vars_id >= 0);
-            lf.varDensity[ar][lc.arity][vars_id] += multip;
 
+            // of variable combinations
+            lf.varDensity[ar][lc.arity][vars_id] ++;
+
+            // of variable coefficients
             for (int j = 1; j < lc.vcs.size(); j = j+2)
             {
-              lf.coefDensity[ ar ][ lc.vcs [j-1] ] [lc.vcs [j] ] += multip;
+              lf.coefDensity[ ar ][ lc.vcs [j-1] ] [lc.vcs [j] ] ++;
             }
           }
         }
+      }
+      else
+      {
+        // same thing as in above; but instead of precise frequencies, we gather a rough presence
+        for (auto &lcs : lcss)
+        {
+          int ar = lcs.arity;
 
+          // of arities of application of OR
+          lf.orAritiesDensity[ar] = 1;
+
+          for (auto & lc : lcs.dstate)
+          {
+            // of arities of application of PLUS
+            lf.plusAritiesDensity[ar][lc.arity] = 1;
+
+            // of constants
+            lf.intConstDensity[ar][lc.intconst] = 1;
+
+            // of comparison operations
+            lf.cmpOpDensity[ar][lc.cmpop] = 1;
+
+            set<int> vars;
+            int vars_id = -1;
+            for (int j = 0; j < lc.vcs.size(); j = j+2) vars.insert(lc.vcs[j]);
+            for (int j = 0; j < lf.varCombinations[ar][lc.arity].size(); j++)
+            {
+              if (lf.varCombinations[ar][lc.arity][j] == vars)
+              {
+                vars_id = j;
+                break;
+              }
+            }
+            assert(vars_id >= 0);
+
+            // of variable combinations
+            lf.varDensity[ar][lc.arity][vars_id] = 1;
+
+            // of variable coefficients
+            for (int j = 1; j < lc.vcs.size(); j = j+2)
+            {
+              lf.coefDensity[ ar ][ lc.vcs [j-1] ] [lc.vcs [j] ] = 1;
+            }
+          }
+        }
+      }
+
+      lf.stabilizeDensities(orArities, addepsilon);
+      if (print)
+      {
         outs() << "\nStatistics for " << *decls.back() << ":\n";
         lf.printCodeStatistics(orArities);
       }
@@ -459,38 +509,21 @@ namespace ufo
           }
         }
 
-        // Check for tautologies etc. while converting to Expr and adding to
-        // curCandidates
-        bool skipIter = false;
+        // convert to Expr and add to curCandidates
         for (size_t j = 0; j < job.curCandDisjs.size(); j++) {
           LAfactory& lf = lfs[j];
           auto& jo = job.curCandDisjs[j];
           Expr cand = lf.toExpr(jo);
-
-          if (isTautology(cand)) {  // keep searching
-            reportLemma(world, j, jo);
-            skipIter = true;
-            break;
-          }
-
-          if (lf.nonlinVars.size() > 0 && !u.isSat(cand)) { // keep searching
-            reportFailure(world, j, jo);
-            skipIter = true;
-            break;
-          }
-
           lf.samples.push_back(jo);
           curCandidates[j] = cand;
         }
 
-        if (!skipIter) {
-          outs() << "\n  ---- new iteration " << job.globalIter <<  " ----\n";
-          printCandidates();
-          if (checkCandidates(world) && checkSafety()) {
-            WorkerResult succMsg { WorkerResultKindFoundInvariants, 0, nullptr };
-            world.send(0, MSG_TAG_NORMAL, std::shared_ptr<WorkerResult>(&succMsg, [](WorkerResult*){}));
-            break;
-          }
+        outs() << "\n  ---- new iteration " << job.globalIter <<  " ----\n";
+        printCandidates();
+        if (checkCandidates(world) && checkSafety()) {
+          WorkerResult succMsg { WorkerResultKindFoundInvariants, 0, nullptr };
+          world.send(0, MSG_TAG_NORMAL, std::shared_ptr<WorkerResult>(&succMsg, [](WorkerResult*){}));
+          break;
         }
 
         WorkerResult iterDoneMsg { WorkerResultKindDone, 0, nullptr };
