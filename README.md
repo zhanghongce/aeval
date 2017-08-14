@@ -1,13 +1,28 @@
-#About#
+FreqHorn
+========
 
-Skolemizer for AE-formulas in LIA/LRA based on the <a href="http://seahorn.github.io/">SeaHorn</a> verification framework and the <a href="https://github.com/Z3Prover/z3">Z3</a> SMT solver. This is the main computational engine used in the Incremental Model Checking (<a href="http://www.inf.usi.ch/phd/fedyukovich/simabs_paper.pdf">LPAR'15</a>, <a href="http://www.inf.usi.ch/phd/fedyukovich/pde_paper.pdf">CAV'16</a>) and in the Program Synthesis from Assume-Guarantee contracts (<a href="https://arxiv.org/abs/1610.05867">preprint</a>).
+Parallel satisfiability solver for constrained Horn clauses (CHC) based on the Expression library of <a href="http://seahorn.github.io/">SeaHorn</a> and the <a href="https://github.com/Z3Prover/z3">Z3</a> SMT solver. It combines probabilistic and syntax-guided methods to sample candidate invariants and checks their inductiveness / safety. Find more details at <a href="https://homes.cs.washington.edu/~grigory/freqhorn_preprint.pdf">FMCAD'17</a>.
 
-#Installation#
+Installation
+============
+
+Assumes preinstalled MPI, Gmp and Boost (system, mpi, and serialization) packages.
 
 * `cd aeval ; mkdir build ; cd build`
 * `cmake ../`
 * `make` to build dependencies (Z3 and LLVM)
-* `make` to build AE-VAL
+* `make deephorn` to build FreqHorn
 
-The binary of AE-VAL can be found in `build/tools/aeval/`
+The binary of FreqHorn can be found at `build/tools/deep/`.
+Run `./tools/deep/deephorn --help` for the usage info.
+
+Benchmarks
+==========
+
+Collection of the SMT-LIB2 translations of the satisfiable CHC system can be found at `bench_horn`. FreqHorn is expected to eventually discover solutions for the systems.
+
+Sequential Solver
+=================
+
+Original version of FreqHorn (compiled without MPI) can be found at the <a href="https://github.com/grigoryfedyukovich/aeval/tree/rnd">rnd</a> branch.
 
