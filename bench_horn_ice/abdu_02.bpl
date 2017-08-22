@@ -160,19 +160,18 @@ procedure main()
 $bb0:
   $x := 0;
   $y := 0;
-  assert $len >= 0;
+  assume $len >= 0;
   goto $bb1;
 $bb1:
   assert b0($x, $y, $len);
-  //$b := $sge($p, $p1);
-  if $x < $len {
+  if ($x < $len) {
     goto $bb2, $bb3;
   } else {
     goto $bb3;
   }
 $bb2:
   $x1 := $add($x, 1);
-  $y1 := $add($y, 1);
+  $y1 := $add($y, 2);
   $x := $x1;
   $y := $y1;
   goto $bb1;

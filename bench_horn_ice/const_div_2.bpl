@@ -166,7 +166,7 @@ $bb2:
   $j := $add($j, 1);
   goto $bb1;
 $bb3:
-  assert $j == ($i / 7610);
+  assert $j == $sdiv($i, 7610);
   return;
 }
 

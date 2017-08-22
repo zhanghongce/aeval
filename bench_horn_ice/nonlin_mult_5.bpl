@@ -175,7 +175,7 @@ $bb2:
   $d1 := $d2;
   goto $bb1;
 $bb3:
-  assert ($c1 != a) || ($d1 == ($a * $b));
+  assert ($c1 != $a) || ($d1 == ($a * $b));
   return;
 }
 

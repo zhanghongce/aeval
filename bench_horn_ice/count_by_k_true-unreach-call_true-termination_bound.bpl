@@ -157,14 +157,14 @@ procedure main()
   var $LRG: int;
 $bb0:
   $i := 0;
-  assert $LRG >= 0;
-  assert 0 <= $k;
+  assume $LRG >= 0;
+  assume 0 <= $k;
   goto $bb1;
 $bb1:
   assert b0($i, $k, $LRG);
   //$b := $sge($p, $p1);
-  if $i < $mul($LRG, $k) {
-    goto $bb2, $bb3;
+  if ($i < $mul($LRG, $k)) {
+    goto $bb2;
   } else {
     goto $bb3;
   }
