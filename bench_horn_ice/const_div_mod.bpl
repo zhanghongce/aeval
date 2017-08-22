@@ -159,16 +159,16 @@ $bb0:
   goto $bb1;
 $bb1:
   assert b0($i, $j);
-  if ($i > 0) && (($i % 2) == 0) {
-    goto $bb2, $bb3;
+  if (($i > 0) && ($mul($sdiv($i, 2), 2) == 0)) {
+    goto $bb2;
   } else {
     goto $bb3;
   }
 $bb2:
-  $i := ($i / 2);
+  $i := $sdiv($i, 2);
   goto $bb1;
 $bb3:
-  assert ($i != 0) || (($j % 2) == 0);
+  assert ($i != 0) || ($mul($sdiv($j, 2), 2) == 0);
   return;
 }
 

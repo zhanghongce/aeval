@@ -164,8 +164,8 @@ $bb0:
   goto $bb1;
 $bb1:
   assert b0($i, $n, $sum);
-  if $i < $n {
-    goto $bb2, $bb3;
+  if ($i < $n) {
+    goto $bb2;
   } else {
     goto $bb3;
   }
@@ -174,7 +174,7 @@ $bb2:
   $i := $i + 1;
   goto $bb1;
 $bb3:
-  assert ($i != $n) || (((2 * $n) + (2 * $sum)) == ($n * ($n + 1)));
+  assert (((2 * $n) + (2 * $sum)) == ($n * ($n + 1)));
   return;
 }
 

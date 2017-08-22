@@ -173,7 +173,7 @@ $bb1:
   goto $bb2, $bb3;
 $bb2:
   $i1 := ($i + 1);
-  $m := $mod($j, $k);
+  $m := $mul($sdiv($j, $k), $k);
   $j1 := $j + $m;
   $l1 := ($l + $m);
 
@@ -182,7 +182,7 @@ $bb2:
   $l1 := $l;
   goto $bb1;
 $bb3:
-  assert $l <= ($k * $i);
+  assert $l <= $mul($k, $i);
   return;
 }
 

@@ -162,7 +162,7 @@ $bb0:
   goto $bb1;
 $bb1:
   assert b0($a, $b);
-  if $a > $b {
+  if ($a > $b) {
     goto $bb2, $bb3;
   } else {
     goto $bb3;
