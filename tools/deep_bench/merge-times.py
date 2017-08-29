@@ -38,10 +38,11 @@ def clever_load(path):
                     assert tarinfo.isfile()
                     times_ti = tarinfo
             return json.load(tar.extractfile(times_ti))
+    except tarfile.ReadError:
+        pass
     except Exception:
         import traceback
         traceback.print_exc()
-        pass
 
     with open(path, 'r') as f:
         return json.load(f)
