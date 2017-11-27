@@ -159,6 +159,16 @@ namespace ufo
       }
     }
 
+    Expr getFreshLinCom()
+    {
+      samples.push_back(Sampl());
+      Sampl& curCand = samples.back();
+
+      if (!lf.guessTerm(curCand.l_part, 1)) return NULL;
+      curCand.l_part.normalizePlus();
+      return lf.toExpr(curCand.l_part);
+    }
+
     Expr getFreshCandidate()
     {
       int arity = chooseByWeight(orAritiesDensity);

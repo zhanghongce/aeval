@@ -52,6 +52,27 @@ namespace ufo
       densecode(b1), addepsilon(b2), aggressivepruning(b3),
       printLog(false){}
 
+    // these things are needed for TermCheck.hpp
+    // could be moved there at some point
+    Expr getFreshCand(int num = 0)
+    {
+      SamplFactory& sf = sfs[num].back();
+      Expr f;
+      while (f == NULL) f = sf.getFreshLinCom();
+      return f;
+    }
+
+    vector<int>& getAllConsts (int num = 0)
+    {
+      return sfs[num].back().lf.getConsts();
+    }
+
+    void blockCand(int num = 0)
+    {
+      SamplFactory& sf = sfs[num].back();
+      sf.assignPrioritiesForBlocked();
+    }
+
     bool isTautology (Expr a)     // adjusted for big disjunctions
     {
       if (isOpX<TRUE>(a)) return true;

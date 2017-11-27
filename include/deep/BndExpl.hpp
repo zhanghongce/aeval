@@ -32,7 +32,7 @@ namespace ufo
       m_efac(r.m_efac), ruleManager(r), u(m_efac) {}
 
     BndExpl (CHCs& r, Expr lms) :
-    m_efac(r.m_efac), ruleManager(r), u(m_efac), extraLemmas(lms) {}
+      m_efac(r.m_efac), ruleManager(r), u(m_efac), extraLemmas(lms) {}
 
     void guessRandomTrace(vector<int>& trace)
     {
@@ -165,17 +165,17 @@ namespace ufo
       return unsat;
     }
 
+    bool kIndIterBase(int bnd1, int bnd2)
+    {
+      assert (bnd1 <= bnd2);
+      assert (bnd2 > 1);
+      return exploreTraces(bnd1, bnd2);
+    }
+
     bool kIndIter(int bnd1, int bnd2)
     {
       assert (bnd1 <= bnd2);
       assert (bnd2 > 1);
-      bool init = exploreTraces(bnd1, bnd2);
-      if (!init)
-      {
-        outs() << "Base check failed at step " << bnd2 << "\n";
-        exit(0);
-      }
-
       k_ind = ruleManager.chcs.size(); // == 3
 
       for (int i = 0; i < k_ind; i++)
@@ -300,6 +300,11 @@ namespace ufo
     int i;
     for (i = 2; i < bnd; i++)
     {
+      if (!ds.kIndIterBase(i, i))
+      {
+        outs() << "Base check failed at step " << i << "\n";
+        break;
+      }
       if (ds.kIndIter(i, i))
       {
         success = true;

@@ -264,6 +264,115 @@ namespace ufo
       }
     }
 
+    void addRule (HornRuleExt* r)
+    {
+      chcs.push_back(*r);
+      Expr srcRel = r->srcRelation;
+      if (!isOpX<TRUE>(srcRel))
+      {
+        if (invVars[srcRel].size() == 0)
+        {
+          addDecl(srcRel, r->srcVars);
+        }
+      }
+      outgs[srcRel].push_back(chcs.size()-1);
+    }
+
+    void addDecl(Expr rel, ExprVector& args)
+    {
+      ExprVector types;
+      for (auto &var: args) {
+        types.push_back (bind::typeOf (var));
+      }
+      types.push_back (mk<BOOL_TY> (m_efac));
+
+      decls.insert(bind::fdecl (rel, types));
+      for (auto & v : args)
+      {
+        invVars[rel].push_back(v);
+      }
+    }
+
+    void addFailDecl(Expr decl)
+    {
+      failDecl = decl;
+    }
+
+    bool checkWithSpacer()
+    {
+      bool success = false;
+
+      // fixed-point object
+      ZFixedPoint<EZ3> fp (m_z3);
+      ZParams<EZ3> params (m_z3);
+      params.set (":engine", "spacer");
+      params.set (":xform.slice", false);
+      params.set (":xform.inline-linear", false);
+      params.set (":xform.inline-eager", false);
+      params.set (":xform.inline-eager", false);
+
+      fp.set (params);
+
+      fp.registerRelation (bind::boolConstDecl(failDecl));
+
+      for (auto & dcl : decls) fp.registerRelation (dcl);
+      Expr errApp;
+
+      for (auto & r : chcs)
+      {
+        ExprSet allVars;
+        allVars.insert(r.srcVars.begin(), r.srcVars.end());
+        allVars.insert(r.dstVars.begin(), r.dstVars.end());
+        allVars.insert(r.locVars.begin(), r.locVars.end());
+
+        if (!r.isQuery)
+        {
+          for (auto & dcl : decls)
+          {
+            if (dcl->left() == r.dstRelation)
+            {
+              r.head = bind::fapp (dcl, r.dstVars);
+              break;
+            }
+          }
+        }
+        else
+        {
+          r.head = bind::fapp(bind::boolConstDecl(failDecl));
+          errApp = r.head;
+        }
+
+        Expr pre;
+        if (!r.isFact)
+        {
+          for (auto & dcl : decls)
+          {
+            if (dcl->left() == r.srcRelation)
+            {
+              pre = bind::fapp (dcl, r.srcVars);
+              break;
+            }
+          }
+        }
+        else
+        {
+          pre = mk<TRUE>(m_efac);
+        }
+
+        fp.addRule(allVars, boolop::limp (mk<AND>(pre, r.body), r.head));
+      }
+
+      try {
+        success = !fp.query(errApp);
+      } catch (z3::exception &e){
+        char str[3000];
+        strncpy(str, e.msg(), 300);
+        outs() << "Z3 ex: " << str << "...\n";
+        exit(55);
+      }
+      return success;
+    }
+
     void print()
     {
       outs() << "CHCs:\n";
