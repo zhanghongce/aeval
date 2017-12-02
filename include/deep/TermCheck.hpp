@@ -88,9 +88,9 @@ namespace ufo
         exit(0);
       }
 
-      if (r.chcs.size() != 3)
+      if (r.chcs.size() < 2 || r.chcs.size() > 3)
       {
-        outs() << "Please provide a file with exactly three rules\n";
+        outs() << "Please provide a file with two or three rules\n";
         exit(0);
       }
 
@@ -116,15 +116,32 @@ namespace ufo
         exit(0);
       }
 
+      loopGuard = r.getPrecondition(*r.decls.begin());
       if (qr == NULL)
       {
-        outs() << "BAD is missing\n";
-        exit(0);
+        qr = new HornRuleExt();
+        qr->srcRelation = invDecl;
+        qr->srcVars = invVars;
+        qr->body = loopGuard;
+        qr->dstRelation = mkTerm<string> ("err", efac);
+        qr->head = bind::boolConstDecl(qr->dstRelation);
+        qr->isQuery = true;
+
+        r.addFailDecl(qr->dstRelation);
+        r.addRule(qr);
+
+        for (auto & a : r.chcs)       // r.chcs changed by r.addRule, so pointers to its elements are broken
+          if (a.isInductive) tr = &a;
+          else if (a.isFact) fc = &a;
+      }
+      else
+      {
+        // requirement in the old input format
+        assert(u.isEquiv(qr->body, loopGuard));
       }
 
-      /* Preps for syntax-guided synthesis of ranking funcations and program refinements */
+      /* Preps for syntax-guided synthesis of ranking functions and program refinements */
 
-      loopGuard = qr->body;
       exprsmpl = new RndLearnerV2(efac, z3, r, false, true);
 
       for (auto& dcl: r.decls)

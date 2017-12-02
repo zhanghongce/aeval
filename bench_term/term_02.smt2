@@ -5,8 +5,6 @@
 (declare-var y1 Int)
 (declare-var z Int)
 
-(declare-rel fail ())
-
 (rule (inv x y))
 
 (rule (=> 
@@ -19,7 +17,3 @@
     (inv x1 y1)
   )
 )
-
-(rule (=> (and (inv x y) (> x y)) fail))
-
-(query fail :print-certificate true)

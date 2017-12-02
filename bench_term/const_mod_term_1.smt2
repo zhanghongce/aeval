@@ -4,8 +4,6 @@
 (declare-var d Int)
 (declare-var d1 Int)
 
-(declare-rel fail ())
-
 (rule (inv 0 d))
 
 (rule (=> 
@@ -18,7 +16,3 @@
     (inv j1 d1)
   )
 )
-
-(rule (=> (and (inv j d) (< d 49)) fail))
-
-(query fail :print-certificate true)
