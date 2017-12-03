@@ -126,8 +126,18 @@ namespace ufo
       {
         if (containsOp<AND>(term))
         {
-          Expr term2 = convertToGEandGT(rewriteOrAnd(term));
-          obtainSeeds(term2);
+          if (term->arity() <= 2) // for scalability
+          {
+            Expr term2 = convertToGEandGT(rewriteOrAnd(term));
+            obtainSeeds(term2);
+          }
+          else
+          {
+            for (auto it = term->args_begin(), end = term->args_end(); it != end; ++it)
+            {
+              obtainSeeds(*it);
+            }
+          }
         }
         else
         {

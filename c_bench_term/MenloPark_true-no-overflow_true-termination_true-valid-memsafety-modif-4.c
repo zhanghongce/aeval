@@ -6,14 +6,13 @@ int main()
   x = __VERIFIER_nondet_int();
   y = __VERIFIER_nondet_int();
   if (y <= 1) return 0;
-  if (y % 2 != 0) return 0;
-  
-  z = 1;
+  z = 0;
   while (x > 0) {
     x = x - y;
     y = y - z;
-    z = -z;
+    if (z == 0) z = 10;
+      else if (z == 10) z = -20;
+        else z = 0;
   }
   return 0;
 }
-

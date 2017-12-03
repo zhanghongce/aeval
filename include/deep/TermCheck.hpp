@@ -59,7 +59,7 @@ namespace ufo
     public:
 
     TermCheck (ExprFactory& _efac, EZ3& _z3, solver _slv, int _n) :
-      efac(_efac), z3(_z3), u(efac), slv(_slv), nontlevel(_n)
+      efac(_efac), z3(_z3), u(efac), slv(_slv), nontlevel(_n), tr(NULL), fc(NULL), qr(NULL)
     {
       for (int i = 0; i < 2; i++)
       {
@@ -584,10 +584,12 @@ namespace ufo
       for (int i = 0; i < invVarsSz; i++)
         renamedLoopGuard = replaceAll(renamedLoopGuard, invVars[i], invVarsPr[i]);
 
+      // try a simple quantifer-free check first
+      if (u.implies(mk<AND>(refinedGuard, trBody), renamedLoopGuard)) return false;
+
       // for some cases with MOD, DIV, and nonlinear arithmetic
       // we do not have a support in AE-VAL
-      // so try a simple quantifer-free check
-      if (u.implies(mk<AND>(refinedGuard, trBody), renamedLoopGuard)) return false;
+      if (findNonlin(refinedGuard) || findNonlin(trBody)) return true;
 
       ExprSet quantified;
       quantified.insert(tr->locVars.begin(), tr->locVars.end());
@@ -599,7 +601,7 @@ namespace ufo
     }
   };
 
-  inline void terminationAnalysis(string chcfile, int nonterm, int rank, solver slv)
+  inline void terminationAnalysis(string chcfile, int nonterm, int rank, int mrg, solver slv)
   {
     std::srand(std::time(0));
 
@@ -607,6 +609,12 @@ namespace ufo
     EZ3 z3(efac);
     CHCs ruleManager(efac, z3);
     ruleManager.parse(chcfile);
+    if (mrg > 1)
+    {
+      outs() << "Transforming program such that each new iteration "
+             << "corresponds to " << mrg << " original iterations\n";
+      ruleManager.mergeIterations(*ruleManager.decls.begin(), mrg);
+    }
     TermCheck a(efac, z3, slv, nonterm);
     a.checkPrerequisites(ruleManager);
 

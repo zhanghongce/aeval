@@ -313,6 +313,66 @@ namespace ufo
       return conjoin(newCnjs, m_efac);
     }
 
+    // Transformations
+
+    void mergeIterations(Expr decl, int num)
+    {
+      HornRuleExt* hr;
+      for (auto &a : chcs) if (a.srcRelation == decl->left() && a.dstRelation == decl->left()) hr = &a;
+      Expr pre = getPrecondition(decl);
+      ExprSet newCnjs;
+      newCnjs.insert(mk<NEG>(pre));
+      for (int i = 0; i < hr->srcVars.size(); i++)
+      {
+        newCnjs.insert(mk<EQ>(hr->dstVars[i], hr->srcVars[i]));
+      }
+      Expr body2 = conjoin(newCnjs, m_efac);
+
+      // adaping the code from BndExpl.hpp
+      ExprVector ssa;
+      ExprVector bindVars1;
+      ExprVector bindVars2;
+      ExprVector newLocals;
+      int bindVar_index = 0;
+      int locVar_index = 0;
+
+      for (int c = 0; c < num; c++)
+      {
+        Expr body = hr->body;
+        bindVars2.clear();
+        if (c != 0)
+        {
+          body = mk<OR>(body, body2);
+          for (int i = 0; i < hr->srcVars.size(); i++)
+          {
+            body = replaceAll(body, hr->srcVars[i], bindVars1[i]);
+          }
+          for (int i = 0; i < hr->locVars.size(); i++)
+          {
+            Expr new_name = mkTerm<string> ("__loc_var_" + to_string(locVar_index++), m_efac);
+            Expr var = cloneVar(hr->locVars[i], new_name);
+            body = replaceAll(body, hr->locVars[i], var);
+            newLocals.push_back(var);
+          }
+        }
+
+        if (c != num-1)
+        {
+          for (int i = 0; i < hr->dstVars.size(); i++)
+          {
+            Expr new_name = mkTerm<string> ("__bnd_var_" + to_string(bindVar_index++), m_efac);
+            bindVars2.push_back(cloneVar(hr->dstVars[i], new_name));
+            body = replaceAll(body, hr->dstVars[i], bindVars2[i]);
+            newLocals.push_back(bindVars2[i]);
+          }
+        }
+        ssa.push_back(body);
+        bindVars1 = bindVars2;
+      }
+      hr->body = conjoin(ssa, m_efac);
+      hr->locVars.insert(hr->locVars.end(), newLocals.begin(), newLocals.end());
+    }
+
     bool checkWithSpacer()
     {
       bool success = false;

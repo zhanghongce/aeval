@@ -2,7 +2,7 @@
 (declare-var a Int)
 (declare-var a1 Int)
 
-; spacer stucks
+(declare-rel fail ())
 
 (rule (inv a))
 
@@ -10,8 +10,12 @@
     (and 
         (inv a)
         (> a 1)
-        (= a1 (ite (= (mod a 10) 0) (div a 10) (- a 1)))
+        (= a1 (ite (= (mod a 3) 0) (div a 3) (+ a 2)))
     )
     (inv a1)
   )
 )
+
+(rule (=> (and (inv a) (> a 1)) fail))
+
+(query fail :print-certificate true)
