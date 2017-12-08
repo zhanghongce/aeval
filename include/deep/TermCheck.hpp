@@ -9,7 +9,6 @@ using namespace std;
 using namespace boost;
 namespace ufo
 {
-  
   typedef enum {kind, freqhorn, spacer} solver;
 
   class TermCheck
@@ -19,6 +18,7 @@ namespace ufo
     ExprFactory& efac;
     EZ3& z3;
     SMTUtils u;
+    CHCs& r;
     solver slv;
 
     HornRuleExt* tr;
@@ -29,7 +29,6 @@ namespace ufo
     Expr invDecl;
     ExprVector invVars;
     ExprVector invVarsPr;
-    Expr maxInt;
     int invVarsSz;
 
     string ghostVar_pref = "gh_";
@@ -55,11 +54,13 @@ namespace ufo
     RndLearnerV2* exprsmpl;       // for samples used in various pieces of termination analysis
 
     int nontlevel;
+    bool lightweight;
 
     public:
 
-    TermCheck (ExprFactory& _efac, EZ3& _z3, solver _slv, int _n) :
-      efac(_efac), z3(_z3), u(efac), slv(_slv), nontlevel(_n), tr(NULL), fc(NULL), qr(NULL)
+    TermCheck (ExprFactory& _efac, EZ3& _z3, CHCs& _r, solver _slv, int _n, bool _l) :
+      efac(_efac), z3(_z3), u(efac), r(_r), slv(_slv), nontlevel(_n), lightweight(_l),
+      tr(NULL), fc(NULL), qr(NULL)
     {
       for (int i = 0; i < 2; i++)
       {
@@ -80,7 +81,7 @@ namespace ufo
       ghostGuard = mk<GT>(ghostVars[1], mkTerm (mpz_class (0), efac)); // for lexicographic only
     }
 
-    void checkPrerequisites (CHCs& r)
+    void checkPrerequisites ()
     {
       if (r.decls.size() > 1)
       {
@@ -117,6 +118,7 @@ namespace ufo
       }
 
       loopGuard = r.getPrecondition(*r.decls.begin());
+
       if (qr == NULL)
       {
         qr = new HornRuleExt();
@@ -139,11 +141,13 @@ namespace ufo
         // requirement in the old input format
         assert(u.isEquiv(qr->body, loopGuard));
       }
+      for (auto & v : invVars) if (bind::isIntConst(v)) elements.insert(v);
+    }
 
-      /* Preps for syntax-guided synthesis of ranking functions and program refinements */
-
-      exprsmpl = new RndLearnerV2(efac, z3, r, false, true);
-
+    /* Preps for syntax-guided synthesis of ranking functions and program refinements */
+    void getSampleExprs()
+    {
+      exprsmpl = new RndLearnerV2(efac, z3, r, false, true, lightweight);
       for (auto& dcl: r.decls)
       {
         // actually, should be one iter here
@@ -158,10 +162,8 @@ namespace ufo
 
       vector<int> consts = exprsmpl->getAllConsts();
       auto rit = consts.rbegin();
-      maxInt = mkTerm (mpz_class (*rit + 1), efac); // GF: hacked (+1)
-
-      elements.insert(maxInt);      // in some cases, it helps, in some other cases it hurts...
-      for (auto & v : invVars) elements.insert(mult(v));
+      elements.insert(mkTerm (mpz_class (*rit + 1), efac)); // GF: hacked (+1)
+              // in some cases, it helps, in some other cases it hurts...
 
       for (auto s : seeds)
       {
@@ -201,9 +203,8 @@ namespace ufo
 
     Expr convertToTerm(Expr e)
     {
-      if (isOpX<OR>(e)) return NULL;
+      if (!isOp<ComparissonOp>(e)) return NULL;
 
-      assert(isOp<ComparissonOp>(e));
       int cnst = lexical_cast<int>(e->right());
       if (cnst < 0) return NULL;
       else if (cnst == 0) return e->left();
@@ -431,7 +432,7 @@ namespace ufo
       else
       {
         outs () << "  keep proving.. ";
-        RndLearnerV2 ds(efac, z3, *cand, true, true);
+        RndLearnerV2 ds(efac, z3, *cand, true, true, false);
         ds.categorizeCHCs();
 
         for (auto& dcl: cand->decls) ds.initializeDecl(dcl);
@@ -466,6 +467,8 @@ namespace ufo
     {
       bool res = false;
 
+      getSampleExprs();
+
       // check all elements first:
       // TODO: could be done one-by-one
       outs() << "element #" << candConds.size() << ": " << *conjoin(elements, efac);
@@ -494,6 +497,7 @@ namespace ufo
 
     bool synthesizeLexRankingFunction()
     {
+      if (lemmas2add == NULL) getSampleExprs();
       bool res;
 
       // gradual brute force.. needs more optimizations
@@ -510,23 +514,24 @@ namespace ufo
 
     bool checkNonterm()
     {
+      // Initially, check if the given restrictions in init are enough for non-terminating
+      if (!resolveTrNondeterminism(loopGuard)) return false;
+
+      // Then, get some invariants and repeat
+      if (lemmas2add == NULL) getSampleExprs();
+
       Expr loopGuardEnhanced = mk<AND>(lemmas2add, loopGuard);
       Expr renamedLoopGuard = loopGuardEnhanced;
       for (int i = 0; i < invVarsSz; i++)
         renamedLoopGuard = replaceAll(renamedLoopGuard, invVars[i], invVarsPr[i]);
 
       Expr trBody = mk<AND>(tr->body, lemmas2add);
-
-      // Initially, check if the given restrictions in init are enough for non-terminating
-
       if (!resolveTrNondeterminism(loopGuardEnhanced)) return false;
 
       // Otherwise, try to resolve nondeterminism in init
-
       bool nondeterministicIn = false;
 
       // check if there is a nondeterminism in init
-
       for (int i = 0; i < invVarsSz; i++)
       {
         Expr v = invVarsPr[i];
@@ -579,7 +584,9 @@ namespace ufo
 
     bool resolveTrNondeterminism(Expr refinedGuard)
     {
-      Expr trBody = mk<AND>(tr->body, lemmas2add);
+      Expr trBody = tr->body;
+      if (lemmas2add != NULL) trBody = mk<AND>(trBody, lemmas2add);
+
       Expr renamedLoopGuard = refinedGuard;
       for (int i = 0; i < invVarsSz; i++)
         renamedLoopGuard = replaceAll(renamedLoopGuard, invVars[i], invVarsPr[i]);
@@ -601,7 +608,7 @@ namespace ufo
     }
   };
 
-  inline void terminationAnalysis(string chcfile, int nonterm, int rank, int mrg, solver slv)
+  inline void terminationAnalysis(string chcfile, int nonterm, int rank, int mrg, solver slv, bool lw)
   {
     std::srand(std::time(0));
 
@@ -615,8 +622,8 @@ namespace ufo
              << "corresponds to " << mrg << " original iterations\n";
       ruleManager.mergeIterations(*ruleManager.decls.begin(), mrg);
     }
-    TermCheck a(efac, z3, slv, nonterm);
-    a.checkPrerequisites(ruleManager);
+    TermCheck a(efac, z3, ruleManager, slv, nonterm, lw);
+    a.checkPrerequisites();
 
     //    outs () << "Sketch encoding:\n";
     //    ruleManager.print();

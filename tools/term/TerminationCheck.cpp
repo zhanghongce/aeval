@@ -40,7 +40,8 @@ int main (int argc, char ** argv)
     " --rank <0|1|2|3>                     level of search for ranking functions:\n" <<
     "                                      0 - none, 1 - counter, 2 - lexicographic, 3 - both\n" <<
     " --solver <spacer|freqhorn|kind>      solver to confirm ranking function\n" <<
-    " --transform <NUM>                    pre-transform the inductive rule by grouping `NUM` bodies\n";
+    " --transform <NUM>                    pre-transform the inductive rule by grouping `NUM` bodies\n" <<
+    " --lightweight                        sacrifice deep preprocessing (for big programs)\n";
 
     return 0;
   }
@@ -48,6 +49,7 @@ int main (int argc, char ** argv)
   int nonterm = getIntValue("--nonterm", 3, argc, argv);
   int rank = getIntValue("--rank", 3, argc, argv);
   int mrg = getIntValue("--transform", 0, argc, argv);
+  int lw = getBoolValue("--lightweight", false, argc, argv);
 
   int sp = getBoolValue("spacer", false, argc, argv);
   int fr = getBoolValue("freqhorn", false, argc, argv);
@@ -72,7 +74,7 @@ int main (int argc, char ** argv)
     return 0;
   }
 
-  terminationAnalysis(string(argv[argc-1]), nonterm, rank, mrg, slv);
+  terminationAnalysis(string(argv[argc-1]), nonterm, rank, mrg, slv, lw);
 
   return 0;
 }

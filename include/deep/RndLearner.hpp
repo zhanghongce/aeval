@@ -24,6 +24,7 @@ namespace ufo
     ufo::ZSolver<ufo::EZ3> m_smt_solver;
     vector<ufo::ZSolver<ufo::EZ3>> m_smt_safety_solvers;
     map<int, bool> safety_progress;
+    bool lightweight;
 
     CHCs& ruleManager;
     vector<Expr> decls;
@@ -46,10 +47,10 @@ namespace ufo
 
     public:
 
-    RndLearner (ExprFactory &efac, EZ3 &z3, CHCs& r, bool k, bool b1, bool b2, bool b3) :
+    RndLearner (ExprFactory &efac, EZ3 &z3, CHCs& r, bool k, bool b1, bool b2, bool b3, bool l) :
       m_efac(efac), m_z3(z3), ruleManager(r), m_smt_solver (z3), u(efac),
       invNumber(0), numOfSMTChecks(0), oneInductiveProof(true), kind_succeeded (!k),
-      densecode(b1), addepsilon(b2), aggressivepruning(b3),
+      densecode(b1), addepsilon(b2), aggressivepruning(b3), lightweight (l),
       printLog(false){}
 
     // these things are needed for TermCheck.hpp
@@ -500,7 +501,7 @@ namespace ufo
       {
         if (hr.dstRelation != invRel && hr.srcRelation != invRel) continue;
 
-        css.push_back(SeedMiner(hr, invRel, invarVars[ind], sf.lf.nonlinVars));
+        css.push_back(SeedMiner(hr, invRel, invarVars[ind], sf.lf.nonlinVars, !lightweight));
         css.back().analyzeCode();
 
         if (hr.isInductive) css.back().analyzeExtras(cands);
@@ -710,7 +711,7 @@ namespace ufo
 
     CHCs ruleManager(m_efac, z3);
     ruleManager.parse(smt);
-    RndLearner ds(m_efac, z3, ruleManager, kind, b1, b2, b3);
+    RndLearner ds(m_efac, z3, ruleManager, kind, b1, b2, b3, false);
 
     ds.setupSafetySolver();
     std::srand(std::time(0));
@@ -749,7 +750,7 @@ namespace ufo
 
     CHCs ruleManager(m_efac, z3);
     ruleManager.parse(string(chcfile));
-    RndLearner ds(m_efac, z3, ruleManager, false, false, false, false);
+    RndLearner ds(m_efac, z3, ruleManager, false, false, false, false, false);
     ds.setupSafetySolver();
 
     vector<string> invNames;

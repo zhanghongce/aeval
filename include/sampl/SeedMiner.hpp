@@ -11,6 +11,9 @@ namespace ufo
 {
   class SeedMiner
   {
+    private:
+    bool deeperStat;
+
     public:
 
     ExprSet candidates;
@@ -25,8 +28,8 @@ namespace ufo
 
     ExprFactory &m_efac;
 
-    SeedMiner(HornRuleExt& r, Expr& d, map<int, Expr>& v, ExprMap& e) :
-      hr(r), invRel(d), invVars(v), extraVars(e), m_efac(d->getFactory()) {};
+    SeedMiner(HornRuleExt& r, Expr& d, map<int, Expr>& v, ExprMap& e, bool s) :
+      hr(r), invRel(d), invVars(v), extraVars(e), m_efac(d->getFactory()), deeperStat(s) {};
 
     void addSeedHlp(Expr tmpl, ExprVector& vars, ExprSet& actualVars)
     {
@@ -126,7 +129,7 @@ namespace ufo
       {
         if (containsOp<AND>(term))
         {
-          if (term->arity() <= 2) // for scalability
+          if (term->arity() <= 2 && deeperStat) // for scalability
           {
             Expr term2 = convertToGEandGT(rewriteOrAnd(term));
             obtainSeeds(term2);
@@ -145,7 +148,7 @@ namespace ufo
           if (isOpX<TRUE>(simplified))
           {
             for (auto it = term->args_begin(), end = term->args_end(); it != end; ++it)
-              addSeed(*it);
+              obtainSeeds(*it);
           }
           else
           {
@@ -224,7 +227,7 @@ namespace ufo
         for (int i = 0; i < hr.dstVars.size(); i++)
           if (invVars[i] == NULL) quantified.insert(hr.dstVars[i]);
 
-      if (quantified.size() > 0)
+      if (quantified.size() > 0 && deeperStat)
       {
         AeValSolver ae(mk<TRUE>(m_efac), hr.body, quantified);
         if (ae.solve())
