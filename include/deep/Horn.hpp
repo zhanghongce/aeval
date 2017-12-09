@@ -202,15 +202,16 @@ namespace ufo
 
           ExprVector actual_vars;
           expr::filter (rule, bind::IsVar(), std::inserter (actual_vars, actual_vars.begin ()));
-
           assert(actual_vars.size() == args.size());
 
+          ExprVector repl_vars;
           for (int i = 0; i < actual_vars.size(); i++)
           {
             string a1 = lexical_cast<string>(bind::name(actual_vars[i]));
             int ind = args.size() - 1 - atoi(a1.substr(1).c_str());
-            rule = replaceAll(rule, actual_vars[i], args[ind]);
+            repl_vars.push_back(args[ind]);
           }
+          rule = replaceAll(rule, actual_vars, repl_vars);
         }
 
         if (!isOpX<IMPL>(rule)) rule = mk<IMPL>(mk<TRUE>(m_efac), rule);
@@ -223,8 +224,8 @@ namespace ufo
 
         ExprVector origSrcSymbs;
         ExprVector lin;
-        preprocess(body, origSrcSymbs, fp.m_rels, hr.srcRelation, lin);
 
+        preprocess(body, origSrcSymbs, fp.m_rels, hr.srcRelation, lin);
         hr.isFact = isOpX<TRUE>(hr.srcRelation);
         hr.isQuery = (hr.dstRelation == failDecl);
         hr.isInductive = (hr.srcRelation == hr.dstRelation);
@@ -342,11 +343,7 @@ namespace ufo
         bindVars2.clear();
         if (c != 0)
         {
-          body = mk<OR>(body, body2);
-          for (int i = 0; i < hr->srcVars.size(); i++)
-          {
-            body = replaceAll(body, hr->srcVars[i], bindVars1[i]);
-          }
+          body = replaceAll(mk<OR>(body, body2), hr->srcVars, bindVars1);
           for (int i = 0; i < hr->locVars.size(); i++)
           {
             Expr new_name = mkTerm<string> ("__loc_var_" + to_string(locVar_index++), m_efac);

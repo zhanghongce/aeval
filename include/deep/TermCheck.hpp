@@ -218,7 +218,7 @@ namespace ufo
 
       for (auto e : initConds)
       {
-        for (int i = 0; i < invVarsSz; i++) e = replaceAll(e, invVars[i], invVarsPr[i]);
+        e = replaceAll(e, invVars, invVarsPr);
         Expr newGeq = mk<GEQ>(ghostVarsPr[0], e);
         if (!u.implies(conjoin(candConds, efac), newGeq))
         {
@@ -305,17 +305,17 @@ namespace ufo
 
       for (auto e : initConds0)
       {
-        for (int i = 0; i < invVarsSz; i++) e = replaceAll(e, invVars[i], invVarsPr[i]);
+        e = replaceAll(e, invVars, invVarsPr);
         candConds.insert(mk<GEQ>(ghostVarsPr[0], e));
       }
       for (auto e : initConds1)
       {
-        for (int i = 0; i < invVarsSz; i++) e = replaceAll(e, invVars[i], invVarsPr[i]);
+        e = replaceAll(e, invVars, invVarsPr);
         candConds.insert(mk<GEQ>(ghostVarsPr[1], e));
       }
       for (auto e : iteConds)
       {
-        for (int i = 0; i < invVarsSz; i++) e = replaceAll(e, invVars[i], invVarsPr[i]);
+        e = replaceAll(e, invVars, invVarsPr);
         jumpConds.insert(mk<GEQ>(ghostVarsPr[1], e));
       }
 
@@ -521,9 +521,7 @@ namespace ufo
       if (lemmas2add == NULL) getSampleExprs();
 
       Expr loopGuardEnhanced = mk<AND>(lemmas2add, loopGuard);
-      Expr renamedLoopGuard = loopGuardEnhanced;
-      for (int i = 0; i < invVarsSz; i++)
-        renamedLoopGuard = replaceAll(renamedLoopGuard, invVars[i], invVarsPr[i]);
+      Expr renamedLoopGuard = replaceAll(loopGuardEnhanced, invVars, invVarsPr);
 
       Expr trBody = mk<AND>(tr->body, lemmas2add);
       if (!resolveTrNondeterminism(loopGuardEnhanced)) return false;
@@ -555,15 +553,10 @@ namespace ufo
         if (u.implies(loopGuardEnhanced, refinee)) continue;
 
         Expr loopGuardEnhancedTry = mk<AND>(refinee, loopGuardEnhanced);
-        Expr loopGuardEnhancedTryPr = loopGuardEnhancedTry;
 
         if (!u.isSat(loopGuardEnhancedTry)) continue;
-        Expr refineePr = refinee;
-        for (int j = 0; j < invVarsSz; j++)
-        {
-          refineePr = replaceAll(refineePr, invVars[j], invVarsPr[j]);
-          loopGuardEnhancedTryPr = replaceAll(loopGuardEnhancedTryPr, invVars[j], invVarsPr[j]);
-        }
+        Expr refineePr = replaceAll(refinee, invVars, invVarsPr);
+        Expr loopGuardEnhancedTryPr = replaceAll(loopGuardEnhancedTry, invVars, invVarsPr);
 
         if (!u.isSat (loopGuardEnhancedTryPr, fc->body)) continue;
 
@@ -587,9 +580,7 @@ namespace ufo
       Expr trBody = tr->body;
       if (lemmas2add != NULL) trBody = mk<AND>(trBody, lemmas2add);
 
-      Expr renamedLoopGuard = refinedGuard;
-      for (int i = 0; i < invVarsSz; i++)
-        renamedLoopGuard = replaceAll(renamedLoopGuard, invVars[i], invVarsPr[i]);
+      Expr renamedLoopGuard = replaceAll(refinedGuard, invVars, invVarsPr);
 
       // try a simple quantifer-free check first
       if (u.implies(mk<AND>(refinedGuard, trBody), renamedLoopGuard)) return false;
