@@ -11,7 +11,7 @@
     (and 
         (inv j d)
         (< j 100)
-        (= j1 (ite (<= j 0) 1 (* j d)))
+        (= j1 (ite (< j 0) 1 (* j d)))
     )
     (inv j1 d)
   )

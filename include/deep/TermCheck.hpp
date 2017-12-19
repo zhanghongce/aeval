@@ -49,6 +49,8 @@ namespace ufo
     ExprSet mutantsPrepped;
     Expr loopGuard;
 
+    std::map<Expr, ExprSet> trNondets;
+
     ExprSet candConds;
     ExprSet jumpConds;
     RndLearnerV2* exprsmpl;       // for samples used in various pieces of termination analysis
@@ -118,6 +120,9 @@ namespace ufo
       }
 
       loopGuard = r.getPrecondition(*r.decls.begin());
+      outs () << "loopGuard = " << *loopGuard << "\n";
+      ExprSet lg_vars;
+      expr::filter (loopGuard, bind::IsConst(), std::inserter (lg_vars, lg_vars.begin ()));
 
       if (qr == NULL)
       {
@@ -157,8 +162,15 @@ namespace ufo
 
       exprsmpl->calculateStatistics();
       exprsmpl->categorizeCHCs();
-      exprsmpl->houdini(seeds, true, false);
-      lemmas2add = conjoin(exprsmpl->getlearnedLemmas(0), efac);
+      if (lightweight)
+      {
+        lemmas2add = mk<TRUE>(efac);
+      }
+      else
+      {
+        exprsmpl->houdini(seeds, true, false);
+        lemmas2add = conjoin(exprsmpl->getlearnedLemmas(0), efac);
+      }
 
       vector<int> consts = exprsmpl->getAllConsts();
       auto rit = consts.rbegin();
@@ -514,7 +526,17 @@ namespace ufo
 
     bool checkNonterm()
     {
-      // Initially, check if the given restrictions in init are enough for non-terminating
+      // Initially, check if we can enter the loop from the initial state
+      Expr initCheck = mk<AND>(loopGuard, fc->body);
+      initCheck = replaceAll(initCheck, invVarsPr, invVars);
+      if (!u.isSat(initCheck))
+      {
+        outs() << "\nLoop body is unreachable\nTerminates!\n";
+        exit(0);
+      }
+
+      // Then, check if starting from a state satisfying the loop guard
+      // we can reach state also satisfying the loop guard
       if (!resolveTrNondeterminism(loopGuard)) return false;
 
       // Then, get some invariants and repeat
@@ -522,6 +544,8 @@ namespace ufo
 
       Expr loopGuardEnhanced = mk<AND>(lemmas2add, loopGuard);
       Expr renamedLoopGuard = replaceAll(loopGuardEnhanced, invVars, invVarsPr);
+
+      getNondets(tr->body, trNondets);
 
       Expr trBody = mk<AND>(tr->body, lemmas2add);
       if (!resolveTrNondeterminism(loopGuardEnhanced)) return false;
@@ -550,6 +574,11 @@ namespace ufo
 
       for (auto & refinee : refineCands)     // TODO: optimize
       {
+        Expr initCheck = mk<AND>(refinee, fc->body);
+        initCheck = replaceAll(initCheck, invVarsPr, invVars);
+
+        if (!u.isSat(initCheck)) continue;
+
         if (u.implies(loopGuardEnhanced, refinee)) continue;
 
         Expr loopGuardEnhancedTry = mk<AND>(refinee, loopGuardEnhanced);
@@ -580,22 +609,65 @@ namespace ufo
       Expr trBody = tr->body;
       if (lemmas2add != NULL) trBody = mk<AND>(trBody, lemmas2add);
 
+      Expr updTrBody = mk<AND>(refinedGuard, trBody);
       Expr renamedLoopGuard = replaceAll(refinedGuard, invVars, invVarsPr);
 
-      // try a simple quantifer-free check first
-      if (u.implies(mk<AND>(refinedGuard, trBody), renamedLoopGuard)) return false;
+      // try to prove universal non-termination
+      if (slv == spacer)
+      {
+        CHCs r1 = r;
+        for (auto & a : r1.chcs)
+          if (a.isFact) a.body = mk<AND>(renamedLoopGuard, a.body);
+          else if (a.isInductive) a.body = updTrBody;
+          else if (a.isQuery) a.body = mk<NEG>(refinedGuard);
 
-      // for some cases with MOD, DIV, and nonlinear arithmetic
-      // we do not have a support in AE-VAL
-      if (findNonlin(refinedGuard) || findNonlin(trBody)) return true;
+        bool res = r1.checkWithSpacer();
+        if (res && refinedGuard == loopGuard) outs () << "Trully universal\n";
 
-      ExprSet quantified;
-      quantified.insert(tr->locVars.begin(), tr->locVars.end());
-      quantified.insert(invVarsPr.begin(), invVarsPr.end());
+        if (res)
+        {
+          outs () << "refined with " << *refinedGuard << "\n";
+          return false;
+        }
 
-      Expr refinedTrBody = mk<AND>(trBody, renamedLoopGuard);
-      AeValSolver ae(refinedGuard, refinedTrBody, quantified);
-      return ae.solve();
+        // very naive method to eliminate nondeterminism in Tr witout expensive AE-solving
+        for (auto & a : trNondets)
+        {
+          for (auto & b : a.second)
+          {
+            if (!u.isSat(updTrBody, b)) continue;
+            for (auto & r : r1.chcs) if (r.isInductive) r.body = mk<AND>(updTrBody, b);
+            bool res = r1.checkWithSpacer();
+            if (res)
+            {
+              outs () << "refined with " << *refinedGuard << " and " << *b << "\n";
+              return false;
+            }
+          }
+        }
+
+        return true;
+      }
+      else
+      {
+        bool res = u.implies(updTrBody, renamedLoopGuard);
+        if (res && refinedGuard == loopGuard) outs () << "Trully universal\n";
+        if (res) return false;
+
+        // for some cases with MOD, DIV, and nonlinear arithmetic
+        // we do not have a support in AE-VAL
+        if (findNonlin(refinedGuard) || findNonlin(trBody)) return true;
+
+        ExprSet quantified;
+        quantified.insert(tr->locVars.begin(), tr->locVars.end());
+        quantified.insert(invVarsPr.begin(), invVarsPr.end());
+
+        Expr refinedTrBody = mk<AND>(trBody, renamedLoopGuard);
+
+        // finally, try to prove existential non-termination
+        AeValSolver ae(refinedGuard, refinedTrBody, quantified);
+        return ae.solve();
+      }
     }
   };
 

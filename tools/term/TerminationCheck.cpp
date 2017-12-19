@@ -35,11 +35,12 @@ int main (int argc, char ** argv)
     " term <chc.smt2>                      prove (non-)termination, where\n" <<
     "                                      `chc.smt2` - system of CHCs\n\n" <<
     "Options:\n" <<
-    " --nonterm <0|1|2|3>                  level of search for nonterminating refinements:\n" <<
+    " --nonterm <NUM>                      level of search for nonterminating refinements:\n" <<
     "                                      the higher level, the deeper search\n" <<
     " --rank <0|1|2|3>                     level of search for ranking functions:\n" <<
     "                                      0 - none, 1 - counter, 2 - lexicographic, 3 - both\n" <<
-    " --solver <spacer|freqhorn|kind>      solver to confirm ranking function\n" <<
+    " --solver <spacer|freqhorn>           solver to confirm ranking function\n" <<  // GF: kind is disabled for now
+    "                                      or universal nontermination\n" <<
     " --transform <NUM>                    pre-transform the inductive rule by grouping `NUM` bodies\n" <<
     " --lightweight                        sacrifice deep preprocessing (for big programs)\n";
 

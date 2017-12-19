@@ -9,7 +9,7 @@ int main()
   
   while (j < 100)
   {
-    if (j <= 0) j = 1;
+    if (j < 0) j = 1;
     else j = j*b;
   }
 }
