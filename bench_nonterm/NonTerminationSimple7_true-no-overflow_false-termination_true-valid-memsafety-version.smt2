@@ -3,7 +3,7 @@
 (declare-var x1 Int)
 (declare-var d Int)
 
-(rule (inv x 0))
+(rule (=> (>= d 0) (inv x d)))
 
 (rule (=> 
     (and 
