@@ -186,6 +186,10 @@ namespace ufo
         return mk<MULT>(c, e->right());
       }
     }
+    else if (bind::isIntConst(e))
+      return mk<MULT>(mkTerm (mpz_class (-1), e->getFactory()), e);
+
+    // otherwise could be buggy...
     return mk<MULT>(mkTerm (mpq_class (-1), e->getFactory()), e);
   }
   

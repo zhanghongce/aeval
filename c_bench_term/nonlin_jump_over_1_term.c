@@ -7,7 +7,7 @@ int main() {
   if (x <= 2*y) return 0;
   
   while (x != 2*y) {
-    if (x % 5 == 1) x++;
+    if (x % y == 1) x++;
       else x = x - 2;
   }
   return 0;

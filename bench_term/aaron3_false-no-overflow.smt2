@@ -8,8 +8,6 @@
 (declare-var tx Int)
 (declare-var tx1 Int)
 
-(declare-rel fail ())
-
 (rule (inv x y z tx))
 (rule 
     (=>

@@ -3,9 +3,7 @@
 (declare-var x1 Int)
 (declare-var y Int)
 
-(declare-rel fail ())
-
-(rule (=> (>= x (* 2 y)) (inv x y)))
+(rule (=> (> x (* 2 y)) (inv x y)))
 
 (rule (=> 
     (and 
@@ -16,7 +14,3 @@
     (inv x1 y)
   )
 )
-
-(rule (=> (and (inv x y) (not (= x (* 2 y)))) fail))
-
-(query fail :print-certificate true)

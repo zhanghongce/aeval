@@ -146,7 +146,11 @@ namespace ufo
         // requirement in the old input format
         assert(u.isEquiv(qr->body, loopGuard));
       }
-      for (auto & v : invVars) if (bind::isIntConst(v)) elements.insert(v);
+      for (auto & v : invVars) if (bind::isIntConst(v))
+      {
+        elements.insert(v);
+        elements.insert(additiveInverse(v));
+      }
     }
 
     /* Preps for syntax-guided synthesis of ranking functions and program refinements */
@@ -172,11 +176,6 @@ namespace ufo
         lemmas2add = conjoin(exprsmpl->getlearnedLemmas(0), efac);
       }
 
-      vector<int> consts = exprsmpl->getAllConsts();
-      auto rit = consts.rbegin();
-      elements.insert(mkTerm (mpz_class (*rit + 1), efac)); // GF: hacked (+1)
-              // in some cases, it helps, in some other cases it hurts...
-
       for (auto s : seeds)
       {
         s = convertToTerm(s);
@@ -201,7 +200,7 @@ namespace ufo
       ExprSet mutantsPreppedTmp;
       for (auto a : mutantsPrepped)
       {
-        mutantsPreppedTmp.insert(mk<GEQ>(ghostVars[0], a));
+        mutantsPreppedTmp.insert(mk<GT>(ghostVars[0], a));
       }
 
       u.removeRedundantConjuncts(mutantsPreppedTmp);
@@ -231,7 +230,7 @@ namespace ufo
       for (auto e : initConds)
       {
         e = replaceAll(e, invVars, invVarsPr);
-        Expr newGeq = mk<GEQ>(ghostVarsPr[0], e);
+        Expr newGeq = mk<GT>(ghostVarsPr[0], e);
         if (!u.implies(conjoin(candConds, efac), newGeq))
         {
           cnt++;
@@ -279,68 +278,83 @@ namespace ufo
       cand->addRule(&qr_new);
 
       cand->addFailDecl(qr->dstRelation);
-
       return true;
     }
 
     bool tryLexRankingFunctionCandidates(ExprSet& initConds0, ExprSet& initConds1, ExprSet& iteConds)
     {
-      // TODO: any of these loops could be removed, and sets of candidates could be checked at once
-      for (auto & a : initConds0)
-        for (auto & b : initConds1)
-          for (auto & c : iteConds)
-          {
-            ExprSet a1;
-            ExprSet b1;
-            ExprSet c1;
-            a1.insert(a);
-            b1.insert(b);
-            c1.insert(c);
-            //  a1 = initConds0;
-            //  b1 = initConds1;
-            //  c1 = iteConds;
-            assembleLexCand(a1, b1, c1);
-            outs () << "< " << *conjoin(a1, efac) << "; "
-                            << *conjoin(b1, efac) << "; "
-                            << *conjoin(c1, efac) << " >";
-            if (checkCand()) return true;
-          }
+      if (lightweight)
+      {
+        for (auto & a : initConds0)
+          for (auto & b : initConds1)
+            for (auto & c : iteConds)
+            {
+              ExprSet a1; a1.insert(a);
+              ExprSet b1; b1.insert(b);
+              ExprSet c1; c1.insert(c);
+
+              if (!assembleLexCand(a1, b1, c1)) continue;
+              if (checkCand()) return true;
+            }
+      }
+      else
+      {
+        assembleLexCand(initConds0, initConds1, iteConds);
+        if (checkCand()) return true;
+      }
       return false;
     }
 
-    void assembleLexCand(ExprSet& initConds0, ExprSet& initConds1, ExprSet& iteConds)
+    bool assembleLexCand(ExprSet& initConds0, ExprSet& initConds1, ExprSet& iteConds)
     {
-      candConds.clear();     // ideally, it should work w/o clearing,..
-      jumpConds.clear();     // but in reality the CHC systems become too complex for solving
+      outs () << "< " << *conjoin(initConds0, efac) << "; "
+                      << *conjoin(initConds1, efac) << "; "
+                      << *conjoin(iteConds, efac)   << " >";
 
       // assemble an initCond-part for the base rule
-
+      int cnt = 0;
       for (auto e : initConds0)
       {
         e = replaceAll(e, invVars, invVarsPr);
-        candConds.insert(mk<GEQ>(ghostVarsPr[0], e));
+        Expr newGeq = mk<GT>(ghostVarsPr[0], e);
+        if (!u.implies(conjoin(candConds, efac), newGeq))
+        {
+          cnt++;
+          candConds.insert(newGeq);
+        }
       }
       for (auto e : initConds1)
       {
         e = replaceAll(e, invVars, invVarsPr);
-        candConds.insert(mk<GEQ>(ghostVarsPr[1], e));
+        Expr newGeq = mk<GT>(ghostVarsPr[1], e);
+        if (!u.implies(conjoin(candConds, efac), newGeq))
+        {
+          cnt++;
+          candConds.insert(newGeq);
+        }
       }
       for (auto e : iteConds)
       {
         e = replaceAll(e, invVars, invVarsPr);
-        jumpConds.insert(mk<GEQ>(ghostVarsPr[1], e));
+        Expr newGeq = mk<GT>(ghostVarsPr[1], e);
+        if (!u.implies(conjoin(jumpConds, efac), newGeq))
+        {
+          cnt++;
+          jumpConds.insert(newGeq);
+        }
       }
+      if (cnt == 0) return false;
 
       // then, assemble decrements for the tr rule
 
       ExprSet e1;
       e1.insert(ghostGuard);
       e1.insert(mk<EQ>(ghostVarsPr[0], ghostVars[0]));
-      e1.insert(mk<EQ>(ghostVarsPr[1], ghost1Minus1));
+      e1.insert(decGhost1);
 
       ExprSet e2;
       e2.insert(mkNeg(ghostGuard));
-      e2.insert(mk<EQ>(ghostVarsPr[0], ghost0Minus1));
+      e2.insert(decGhost0);
       e2.insert(jumpConds.begin(), jumpConds.end());
 
       // now, preparing the new rules (same for every attempt)
@@ -384,6 +398,7 @@ namespace ufo
       cand->addRule(&qr_new);
 
       cand->addFailDecl(qr->dstRelation);
+      return true;
     }
 
     bool checkCand(bool goodtogo = true)
@@ -516,7 +531,19 @@ namespace ufo
       res = tryLexRankingFunctionCandidates(elements, elements, elements);
 
       if (res) return res;
+      res = tryLexRankingFunctionCandidates(elements, elements, seedsPrepped);
+
+      if (res) return res;
+      res = tryLexRankingFunctionCandidates(seedsPrepped, elements, seedsPrepped);
+
+      if (res) return res;
       res = tryLexRankingFunctionCandidates(seedsPrepped, seedsPrepped, seedsPrepped);
+
+      if (res) return res;
+      res = tryLexRankingFunctionCandidates(seedsPrepped, seedsPrepped, mutantsPrepped);
+
+      if (res) return res;
+      res = tryLexRankingFunctionCandidates(mutantsPrepped, seedsPrepped, mutantsPrepped);
 
       if (res) return res;
       res = tryLexRankingFunctionCandidates(mutantsPrepped, mutantsPrepped, mutantsPrepped);
@@ -535,6 +562,8 @@ namespace ufo
         exit(0);
       }
 
+      if (slv == spacer) getNondets(tr->body, trNondets);
+
       // Then, check if starting from a state satisfying the loop guard
       // we can reach state also satisfying the loop guard
       if (!resolveTrNondeterminism(loopGuard)) return false;
@@ -544,8 +573,6 @@ namespace ufo
 
       Expr loopGuardEnhanced = mk<AND>(lemmas2add, loopGuard);
       Expr renamedLoopGuard = replaceAll(loopGuardEnhanced, invVars, invVarsPr);
-
-      getNondets(tr->body, trNondets);
 
       Expr trBody = mk<AND>(tr->body, lemmas2add);
       if (!resolveTrNondeterminism(loopGuardEnhanced)) return false;
@@ -621,13 +648,16 @@ namespace ufo
           else if (a.isInductive) a.body = updTrBody;
           else if (a.isQuery) a.body = mk<NEG>(refinedGuard);
 
-        bool res = r1.checkWithSpacer();
-        if (res && refinedGuard == loopGuard) outs () << "Trully universal\n";
-
-        if (res)
+        if (!lightweight)
         {
-          outs () << "refined with " << *refinedGuard << "\n";
-          return false;
+          bool res = r1.checkWithSpacer();
+          if (res && refinedGuard == loopGuard) outs () << "Trully universal\n";
+
+          if (res)
+          {
+            outs () << "refined with " << *refinedGuard << "\n";
+            return false;
+          }
         }
 
         // very naive method to eliminate nondeterminism in Tr witout expensive AE-solving
