@@ -831,6 +831,130 @@ namespace ufo
     return dagVisit (rw, exp);
   }
 
+  inline static void simplBoolReplCnjHlp(ExprVector& hardVars, ExprSet& cnjs, ExprVector& facts, ExprVector& repls)
+  {
+    bool toRestart;
+    ExprSet toInsert;
+
+    for (auto it = cnjs.begin(); it != cnjs.end(); )
+    {
+      if (isOpX<TRUE>(*it))
+      {
+        it = cnjs.erase(it);
+        continue;
+      }
+
+      Expr a = replaceAll(*it, facts, repls);
+
+      if (isOpX<IMPL>(a))
+      {
+        Expr lhs = simplifyBool(a->left());
+        bool isTrue = isOpX<TRUE>(lhs);
+        bool isFalse = isOpX<FALSE>(lhs);
+
+        if (isTrue) a = simplifyBool(a->right());
+        else if (isFalse) continue;
+      }
+
+      if (isOpX<EQ>(a))
+      {
+        // TODO: this could be symmetric
+
+        Expr lhs = simplifyBool(a->left());
+        bool isTrue = isOpX<TRUE>(lhs);
+        bool isFalse = isOpX<FALSE>(lhs);
+
+        if (isTrue) a = simplifyBool(a->right());
+        else if (isFalse)
+        {
+          a = simplifyBool(mk<NEG>(a->right()));
+        }
+      }
+
+      ExprSet splitted;
+      getConj(a, splitted);
+      toRestart = false;
+
+      for (auto & c : splitted)
+      {
+        if (bind::isBoolConst(c))
+        {
+          bool nothard = find(hardVars.begin(), hardVars.end(), c) == hardVars.end();
+          if (nothard)
+          {
+            toRestart = true;
+            facts.push_back(c);
+            repls.push_back(mk<TRUE>(a->getFactory()));
+            facts.push_back(mk<NEG>(c));
+            repls.push_back(mk<FALSE>(a->getFactory()));
+          }
+          else
+          {
+            toInsert.insert(c);
+          }
+        }
+        else if (isOpX<NEG>(c) && bind::isBoolConst(c->left()))
+        {
+          bool nothardLeft = find(hardVars.begin(), hardVars.end(), c->left()) == hardVars.end();
+          if (nothardLeft)
+          {
+            toRestart = true;
+            facts.push_back(c);
+            repls.push_back(mk<TRUE>(a->getFactory()));
+            facts.push_back(c->left());
+            repls.push_back(mk<FALSE>(a->getFactory()));
+          }
+          else
+          {
+            toInsert.insert(c);
+          }
+        }
+        else if (isOpX<EQ>(c))
+        {
+          if (bind::isIntConst(c->left())  &&
+              find(hardVars.begin(), hardVars.end(), c->left()) == hardVars.end())
+          {
+            toRestart = true;
+            facts.push_back(c->left());
+            repls.push_back(c->right());
+          }
+          else if (bind::isIntConst(c->right())  &&
+                   find(hardVars.begin(), hardVars.end(), c->right()) == hardVars.end())
+          {
+            toRestart = true;
+            facts.push_back(c->right());
+            repls.push_back(c->left());
+          }
+          else
+          {
+            toInsert.insert(c);
+          }
+        }
+        else
+        {
+          toInsert.insert(c);
+        }
+      }
+
+      it = cnjs.erase(it);
+      if (toRestart) break;
+    }
+
+    cnjs.insert(toInsert.begin(), toInsert.end());
+    if (toRestart)
+    {
+      simplBoolReplCnjHlp(hardVars, cnjs, facts, repls);
+    }
+  }
+
+  // simplification based on boolean replacements
+  inline static void simplBoolReplCnj(ExprVector& hardVars, ExprSet& cnjs)
+  {
+    ExprVector facts;
+    ExprVector repls;
+    simplBoolReplCnjHlp(hardVars, cnjs, facts, repls);
+  }
+
   inline static ExprSet minusSets(ExprSet& v1, ExprSet& v2){
     ExprSet v3;
     bool res;

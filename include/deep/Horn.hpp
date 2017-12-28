@@ -106,7 +106,7 @@ namespace ufo
 
     CHCs(ExprFactory &efac, EZ3 &z3) : m_efac(efac), m_z3(z3)  {};
 
-    void preprocess (Expr term, ExprVector& srcVars, ExprVector& relations, Expr &srcRelation, ExprVector& lin)
+    void preprocess (Expr term, ExprVector& srcVars, ExprVector& relations, Expr &srcRelation, ExprSet& lin)
     {
       if (isOpX<AND>(term))
       {
@@ -119,7 +119,7 @@ namespace ufo
       {
         if (bind::isBoolConst(term))
         {
-          lin.push_back(term);
+          lin.insert(term);
         }
         if (isOpX<FAPP>(term))
         {
@@ -141,7 +141,7 @@ namespace ufo
         }
         else
         {
-          lin.push_back(term);
+          lin.insert(term);
         }
       }
     }
@@ -223,15 +223,14 @@ namespace ufo
         hr.dstRelation = head->arg(0)->arg(0);
 
         ExprVector origSrcSymbs;
-        ExprVector lin;
+        ExprSet lin;
 
         preprocess(body, origSrcSymbs, fp.m_rels, hr.srcRelation, lin);
         hr.isFact = isOpX<TRUE>(hr.srcRelation);
         hr.isQuery = (hr.dstRelation == failDecl);
         hr.isInductive = (hr.srcRelation == hr.dstRelation);
-        hr.body = conjoin(lin, m_efac);
-        outgs[hr.srcRelation].push_back(chcs.size()-1);
 
+        ExprVector allOrigSymbs = origSrcSymbs;
         ExprVector origDstSymbs;
 
         if (!hr.isQuery)
@@ -239,6 +238,14 @@ namespace ufo
           for (auto it = head->args_begin()+1, end = head->args_end(); it != end; ++it)
             origDstSymbs.push_back(*it);
         }
+
+        allOrigSymbs.insert(allOrigSymbs.end(), origDstSymbs.begin(), origDstSymbs.end());
+
+        Expr bodyPre = conjoin(lin, m_efac);
+        simplBoolReplCnj(allOrigSymbs, lin);
+        hr.body = conjoin(lin, m_efac);
+
+        outgs[hr.srcRelation].push_back(chcs.size()-1);
 
         hr.assignVarsAndRewrite (origSrcSymbs, invVars[hr.srcRelation],
                                  origDstSymbs, invVars[hr.dstRelation]);
@@ -370,6 +377,62 @@ namespace ufo
       hr->locVars.insert(hr->locVars.end(), newLocals.begin(), newLocals.end());
     }
 
+    void slice (Expr decl, ExprSet& vars)
+    {
+      HornRuleExt* hr;
+      for (auto &a : chcs) if (a.srcRelation == decl->left() && a.dstRelation == decl->left()) hr = &a;
+      ExprSet cnjs;
+      ExprSet newCnjs;
+      getConj(hr->body, cnjs);
+      map <Expr, ExprSet> deps;
+
+      for (auto &a : cnjs)
+      {
+        ExprSet cnj_vars;
+        ExprSet cnj_vars_cmpl;
+        expr::filter (a, bind::IsConst(), std::inserter (cnj_vars, cnj_vars.begin ()));
+        for (auto & a : cnj_vars)
+        {
+          int index = getVarIndex(a, hr->srcVars);
+          if (index >= 0)
+          {
+            cnj_vars_cmpl.insert(hr->dstVars[index]);
+            continue;
+          }
+          index = getVarIndex(a, hr->dstVars);
+          if (index >= 0)
+          {
+            cnj_vars_cmpl.insert(hr->srcVars[index]);
+          }
+        }
+        cnj_vars.insert(cnj_vars_cmpl.begin(), cnj_vars_cmpl.end());
+        deps[a] = cnj_vars;
+      }
+
+      while (vars.size() > 0)
+      {
+        for (auto vit = vars.begin(); vit != vars.end(); )
+        {
+          for (auto cit = cnjs.begin(); cit != cnjs.end(); )
+          {
+            ExprSet& d = deps[*cit];
+            if (find(d.begin(), d.end(), *vit) != d.end())
+            {
+              newCnjs.insert(*cit);
+              cit = cnjs.erase(cit);
+              vars.insert(d.begin(), d.end());
+            }
+            else
+            {
+              ++cit;
+            }
+          }
+          vit = vars.erase (vit);
+        }
+      }
+      hr->body = conjoin(newCnjs, m_efac);
+    }
+
     bool checkWithSpacer()
     {
       bool success = false;
@@ -433,7 +496,6 @@ namespace ufo
 
         fp.addRule(allVars, boolop::limp (mk<AND>(pre, r.body), r.head));
       }
-
       try {
         success = !fp.query(errApp);
       } catch (z3::exception &e){
