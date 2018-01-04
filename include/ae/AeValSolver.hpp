@@ -18,12 +18,14 @@ namespace ufo
     Expr s;
     Expr t;
     ExprSet v; // existentially quantified vars
+    ExprVector sVars;
     ExprVector stVars;
     
     ExprSet tConjs;
     ExprSet usedConjs;
     ExprMap defMap;
     ExprSet conflictVars;
+    ExprMap modelInvalid;
     
     ExprFactory &efac;
     EZ3 z3;
@@ -53,6 +55,7 @@ namespace ufo
     partitioning_size(0),
     debug(0)
     {
+      filter (s, bind::IsConst (), back_inserter (sVars));
       filter (boolop::land(s,t), bind::IsConst (), back_inserter (stVars));
       getConj(t, tConjs);
       for (auto &exp: v) {
@@ -71,7 +74,14 @@ namespace ufo
       if (!smt.solve ()) {
         if (debug) outs() << "\nE.v.: -; Iter.: 0; Result: valid\n\n";
         return false;
+      } else {
+        ZSolver<EZ3>::Model m = smt.getModel();
+
+        for (auto &e: sVars)
+          // keep a model in case the formula is invalid
+          modelInvalid[e] = m.eval(e);
       }
+
       if (v.size () == 0)
       {
         smt.assertExpr (boolop::lneg (t));
@@ -105,11 +115,16 @@ namespace ufo
         }
 
         getMBPandSkolem(m);
-        
         smt.pop();
         smt.assertExpr(boolop::lneg(projections[partitioning_size++]));
         if (!smt.solve()) { res = false; break; }
-        
+        else {
+          // keep a model in case the formula is invalid
+          m = smt.getModel();
+          for (auto &e: stVars)
+            modelInvalid[e] = m.eval(e);
+        }
+
         smt.push();
         smt.assertExpr (t);
       }
@@ -265,6 +280,23 @@ namespace ufo
       return mk<AND>(s, prs);
     }
     
+    /**
+     * Model of S /\ \neg T (if AE-formula is invalid)
+     */
+    Expr getModelNeg()
+    {
+      if (partitioning_size == 0) return mk<TRUE>(efac); // by convention
+      ExprVector assnmts;
+      for (auto &var : stVars){
+        if (var != modelInvalid[var])
+        {
+          Expr assnmt = modelInvalid[var];
+          assnmts.push_back(mk<EQ>(var, assnmt));
+        }
+      }
+      return conjoin (assnmts, efac);
+    }
+
     /**
      * Mine the structure of T to get what was assigned to a variable
      */

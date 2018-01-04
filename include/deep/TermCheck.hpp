@@ -553,6 +553,18 @@ namespace ufo
 
     bool checkNonterm()
     {
+      // Check if there is nondeterminism in init (for statistics only)
+      int nondeterministicIn = 0;
+      // check if there is a nondeterminism in init
+      for (auto & v : invVarsPr)
+      {
+        nondeterministicIn += !u.hasOneModel(v, fc->body);
+        // TODO: optimize the algorithm such that deterministically assigned input variables don't get refined much
+      }
+      outs () << "level of nondeterminism in init: " << nondeterministicIn << " / "<< invVars.size() << "\n";
+      // TODO: possibly use it as an heuristic: the lower level, the more chances that spacer will solve it faster
+
+      Expr CEs;
       // Initially, check if we can enter the loop from the initial state
       Expr initCheck = mk<AND>(loopGuard, fc->body);
       initCheck = replaceAll(initCheck, invVarsPr, invVars);
@@ -566,40 +578,39 @@ namespace ufo
 
       // Then, check if starting from a state satisfying the loop guard
       // we can reach state also satisfying the loop guard
-      if (!resolveTrNondeterminism(loopGuard)) return false;
+
+      if (!resolveTrNondeterminism(loopGuard, CEs)) return false;
+      else if (isOpX<TRUE>(CEs))
+      {
+        outs () << "Unable to determine non-termination\n";
+        return true;
+      }
 
       // Then, get some invariants and repeat
       if (lemmas2add == NULL) getSampleExprs();
-
-      Expr loopGuardEnhanced = mk<AND>(lemmas2add, loopGuard);
-      Expr renamedLoopGuard = replaceAll(loopGuardEnhanced, invVars, invVarsPr);
-
-      Expr trBody = mk<AND>(tr->body, lemmas2add);
-      if (!resolveTrNondeterminism(loopGuardEnhanced)) return false;
-
-      // Otherwise, try to resolve nondeterminism in init
-      bool nondeterministicIn = false;
-
-      // check if there is a nondeterminism in init
-      for (int i = 0; i < invVarsSz; i++)
+      Expr loopGuardEnhanced = loopGuard;
+      if (!u.isTrue(lemmas2add))
       {
-        Expr v = invVarsPr[i];
-        nondeterministicIn = !u.hasOneModel(v, fc->body);
-        if (nondeterministicIn) break;
+        loopGuardEnhanced = mk<AND>(lemmas2add, loopGuard);
+        if (!resolveTrNondeterminism(loopGuardEnhanced, CEs)) return false;
+        else if (isOpX<TRUE>(CEs))
+        {
+          outs () << "Unable to determine non-termination\n";
+          return true;
+        }
       }
 
       // try to refine the init conditions gradually:
-
-      bool res = resolveInNondeterminism(seeds, loopGuardEnhanced, 1);
-      if (res) res = resolveInNondeterminism(mutants, loopGuardEnhanced, 1);
+      bool res = resolveInNondeterminism(seeds, loopGuardEnhanced, 1, CEs);
+      if (res) res = resolveInNondeterminism(mutants, loopGuardEnhanced, 1, CEs);
       return res;
     }
 
-    bool resolveInNondeterminism(ExprSet& refineCands, Expr loopGuardEnhanced, int depth)
+    bool resolveInNondeterminism(ExprSet& refineCands, Expr loopGuardEnhanced, int depth, Expr CEs)
     {
       if (depth > nontlevel) return true;    // refinement becomes too complex
 
-      for (auto & refinee : refineCands)     // TODO: optimize
+      for (auto & refinee : refineCands)
       {
         Expr initCheck = mk<AND>(refinee, fc->body);
         initCheck = replaceAll(initCheck, invVarsPr, invVars);
@@ -615,23 +626,24 @@ namespace ufo
         Expr loopGuardEnhancedTryPr = replaceAll(loopGuardEnhancedTry, invVars, invVarsPr);
 
         if (!u.isSat (loopGuardEnhancedTryPr, fc->body)) continue;
+        if (u.isSat(CEs, loopGuardEnhancedTry)) continue;
 
-        bool res = resolveTrNondeterminism(loopGuardEnhancedTry);
-        if (! res)
+        Expr preCEs = CEs;
+        bool res = resolveTrNondeterminism(loopGuardEnhancedTry, CEs);
+        if (! res) return false;
+        else if (isOpX<TRUE>(CEs))
         {
-          return res;
+          CEs = preCEs;
+          continue;
         }
-        else res = resolveInNondeterminism(refineCands, loopGuardEnhancedTry, depth+1);
 
-        if (! res)
-        {
-          return res;
-        }
+        else res = resolveInNondeterminism(refineCands, loopGuardEnhancedTry, depth+1, CEs);
+        if (! res) return false;
       }
       return true;
     }
 
-    bool resolveTrNondeterminism(Expr refinedGuard)
+    bool resolveTrNondeterminism(Expr refinedGuard, Expr& CEs)
     {
       Expr trBody = tr->body;
       if (lemmas2add != NULL) trBody = mk<AND>(trBody, lemmas2add);
@@ -642,6 +654,7 @@ namespace ufo
       // try to prove universal non-termination
       if (slv == spacer)
       {
+        CEs = mk<FALSE>(efac); // for spacer, counterexample generation is not yet supported
         CHCs r1 = r;
         for (auto & a : r1.chcs)
           if (a.isFact) a.body = mk<AND>(renamedLoopGuard, a.body);
@@ -675,18 +688,29 @@ namespace ufo
             }
           }
         }
-
-        return true;
       }
       else
       {
         bool res = u.implies(updTrBody, renamedLoopGuard);
         if (res && refinedGuard == loopGuard) outs () << "Trully universal\n";
-        if (res) return false;
-
+        if (res)
+        {
+          outs () << "refined with " << *refinedGuard << "\n";
+          return false;
+        }
         // for some cases with MOD, DIV, and nonlinear arithmetic
         // we do not have a support in AE-VAL
-        if (findNonlin(refinedGuard) || findNonlin(trBody)) return true;
+        if (findNonlin(refinedGuard) || findNonlin(trBody))
+        {
+          Expr CE = u.getModel(invVars);
+          if (CEs == NULL) CEs = CE;
+          if (isOpX<FALSE>(CE)) CEs = CE;
+          else
+          {
+            CEs = mk<OR>(CEs, CE);
+          }
+          return true;
+        }
 
         ExprSet quantified;
         quantified.insert(tr->locVars.begin(), tr->locVars.end());
@@ -696,8 +720,24 @@ namespace ufo
 
         // finally, try to prove existential non-termination
         AeValSolver ae(refinedGuard, refinedTrBody, quantified);
-        return ae.solve();
+        res = ae.solve();
+        if (!res)
+        {
+          outs () << "refined with " << *refinedGuard << "\n";
+          return false;
+        }
+        else
+        {
+          Expr CE = ae.getModelNeg();
+          if (CEs == NULL) CEs = CE;
+          else if (isOpX<TRUE>(CE)) CEs = CE;
+          else
+          {
+            CEs = mk<OR>(CEs, CE);
+          }
+        }
       }
+      return true;
     }
   };
 
