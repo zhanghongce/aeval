@@ -93,6 +93,10 @@ namespace ufo
 
   class CHCs
   {
+    private:
+    bool checkedWithSpacer = false;
+    Expr cex;
+
     public:
 
     ExprFactory &m_efac;
@@ -504,7 +508,27 @@ namespace ufo
         outs() << "Z3 ex: " << str << "...\n";
         exit(55);
       }
+      checkedWithSpacer = true;
+      if (!success) cex = fp.getGroundSatAnswer();
       return success;
+    }
+
+    ExprVector getCex()
+    {
+      assert(checkedWithSpacer);
+      assert(cex != NULL);
+      ExprVector res;
+      for (int i = 1; i < cex->arity(); i++)
+      {
+        Expr app = cex->arg(i);
+        ExprVector assnmts;
+        for (int j = 1; j < app->arity(); j++)
+        {
+          assnmts.push_back(mk<EQ>(invVars[app->left()->left()][j-1], app->arg(j)));
+        }
+        res.push_back(conjoin(assnmts, m_efac));
+      }
+      return res;
     }
 
     void print()

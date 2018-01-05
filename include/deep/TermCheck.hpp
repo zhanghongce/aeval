@@ -48,6 +48,7 @@ namespace ufo
     ExprSet mutants;
     ExprSet mutantsPrepped;
     Expr loopGuard;
+    Expr rankCEs;
 
     std::map<Expr, ExprSet> trNondets;
 
@@ -238,6 +239,14 @@ namespace ufo
         }
       }
       if (cnt == 0) return false;
+
+      if (rankCEs != NULL)
+      {
+        if (u.isSat(conjoin(candConds, efac), fc->body, rankCEs))
+        {
+          return false;
+        }
+      }
 
       // now, preparing the new rules (same for every attempt)
 
@@ -487,12 +496,20 @@ namespace ufo
         if (r.srcRelation == invDecl)
           r.body = mk<AND>(r.body, lemmas2add);
 
-      return cand->checkWithSpacer();
+      bool res = cand->checkWithSpacer();
+      if (!res)
+      {
+        Expr ce = cand->getCex().back();
+        ce = replaceAll(replaceAll(ce, ghostVars, ghostVarsPr), invVars, invVarsPr);
+        addCE(ce, rankCEs);
+      }
+      return res;
     }
 
     bool synthesizeRankingFunction()
     {
       bool res = false;
+      rankCEs = NULL;
 
       getSampleExprs();
 
@@ -549,6 +566,16 @@ namespace ufo
       res = tryLexRankingFunctionCandidates(mutantsPrepped, mutantsPrepped, mutantsPrepped);
 
       return res;
+    }
+
+    void addCE (Expr ce, Expr& ces)
+    {
+      if (ces == NULL) ces = ce;
+      if (isOpX<FALSE>(ce)) ces = ce;
+      else
+      {
+        ces = mk<OR>(ces, ce);
+      }
     }
 
     bool checkNonterm()
@@ -654,7 +681,6 @@ namespace ufo
       // try to prove universal non-termination
       if (slv == spacer)
       {
-        CEs = mk<FALSE>(efac); // for spacer, counterexample generation is not yet supported
         CHCs r1 = r;
         for (auto & a : r1.chcs)
           if (a.isFact) a.body = mk<AND>(renamedLoopGuard, a.body);
@@ -671,6 +697,10 @@ namespace ufo
             outs () << "refined with " << *refinedGuard << "\n";
             return false;
           }
+          else
+          {
+            addCE(r1.getCex().back(), CEs);
+          }
         }
 
         // very naive method to eliminate nondeterminism in Tr witout expensive AE-solving
@@ -685,6 +715,10 @@ namespace ufo
             {
               outs () << "refined with " << *refinedGuard << " and " << *b << "\n";
               return false;
+            }
+            else
+            {
+              addCE(r1.getCex().back(), CEs);
             }
           }
         }
@@ -702,13 +736,7 @@ namespace ufo
         // we do not have a support in AE-VAL
         if (findNonlin(refinedGuard) || findNonlin(trBody))
         {
-          Expr CE = u.getModel(invVars);
-          if (CEs == NULL) CEs = CE;
-          if (isOpX<FALSE>(CE)) CEs = CE;
-          else
-          {
-            CEs = mk<OR>(CEs, CE);
-          }
+          addCE(u.getModel(invVars), CEs);
           return true;
         }
 
@@ -728,13 +756,7 @@ namespace ufo
         }
         else
         {
-          Expr CE = ae.getModelNeg();
-          if (CEs == NULL) CEs = CE;
-          else if (isOpX<TRUE>(CE)) CEs = CE;
-          else
-          {
-            CEs = mk<OR>(CEs, CE);
-          }
+          addCE(ae.getModelNeg(), CEs);
         }
       }
       return true;
