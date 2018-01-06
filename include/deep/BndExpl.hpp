@@ -165,6 +165,14 @@ namespace ufo
       return unsat;
     }
 
+    Expr getCexInputs(ExprVector& vars)
+    {
+      Expr cex = u.getModel(bindVars[0]);
+      for (int i = 0; i < bindVars[0].size(); i++)
+        cex = replaceAll(cex, bindVars[0][i], vars[i]);
+      return cex;
+    }
+
     bool kIndIterBase(int bnd1, int bnd2)
     {
       assert (bnd1 <= bnd2);

@@ -49,7 +49,22 @@ namespace ufo
       }
       return true;
     }
-    
+
+    /**
+     * SMT-check
+     */
+    bool isSat(Expr a, Expr b, Expr c)
+    {
+      smt.reset();
+      smt.assertExpr (a);
+      smt.assertExpr (b);
+      smt.assertExpr (c);
+      if (!smt.solve ()) {
+        return false;
+      }
+      return true;
+    }
+
     /**
      * SMT-check
      */

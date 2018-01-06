@@ -42,6 +42,8 @@ namespace ufo
     Expr ghostAss;
     Expr ghostGuard;
 
+    ExprVector allVarsPr;  // invVarsPr + ghostVarsPr
+
     ExprSet elements;
     ExprSet seeds;
     ExprSet seedsPrepped;
@@ -107,6 +109,9 @@ namespace ufo
       invVars = tr->srcVars;
       invVarsPr = tr->dstVars;
       invVarsSz = invVars.size();
+
+      allVarsPr = invVarsPr;
+      allVarsPr.insert(allVarsPr.end(), ghostVarsPr.begin(), ghostVarsPr.end());
 
       if (tr == NULL)
       {
@@ -464,7 +469,12 @@ namespace ufo
       // TODO: try reusing learnedLemmas between runs
       BndExpl be(*cand);
       bool bug = !(be.exploreTraces(2, bnd, false));
-      if (bug) return false;
+      if (bug)
+      {
+        Expr ce = be.getCexInputs(allVarsPr);
+        addCE(ce, rankCEs);
+        return false;
+      }
       else
       {
         outs () << "  keep proving.. ";
