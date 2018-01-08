@@ -4,8 +4,6 @@
 (declare-var y Int)
 (declare-var y1 Int)
 
-(declare-rel fail ())
-
 (rule (inv x y))
 
 (rule 

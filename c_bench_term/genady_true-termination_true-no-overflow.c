@@ -1,5 +1,3 @@
-extern int __VERIFIER_nondet_int(void);
-
 int main() {
     int i, j;
     j = 1;

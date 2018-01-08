@@ -4,14 +4,10 @@ int main()
 {
   int x = __VERIFIER_nondet_int();
   int y = __VERIFIER_nondet_int();
-
-  if (x <= y) return 0;
-  if (y <= 1) return 0;
   
   while (x >= 0)
   {
-    if (0 == __VERIFIER_nondet_int())
-      x = x / y;
-    else x = x-1;
+    x = x / y;
+    y++;
   }
 }

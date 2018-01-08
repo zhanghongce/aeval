@@ -10,16 +10,13 @@
 (rule (=> 
     (and 
         (inv j d)
-        (> j d)
-        (or
-            (= j1 (mod j d))
-            (= j1 (+ j 1))
-        )
+        (>= j 0)
+        (= j1 (mod j d))
     )
     (inv j1 d)
   )
 )
 
-(rule (=> (and (inv j d) (> j d) ) fail))
+(rule (=> (and (inv j d) (>= j 0)) fail))
 
 (query fail :print-certificate true)
