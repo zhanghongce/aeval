@@ -9,7 +9,7 @@ using namespace std;
 using namespace boost;
 namespace ufo
 {
-  typedef enum {kind, freqhorn, spacer} solver;
+  typedef enum {kind, freqhorn, spacer, muz} solver;
 
   class TermCheck
   {
@@ -430,7 +430,8 @@ namespace ufo
       {
         case kind: res = checkCandWithKind(); break;
         case freqhorn: res = checkCandWithFreqhorn(); break;
-        case spacer: res = checkCandWithSpacer(); break;
+        case spacer: res = checkCandWithPDR(true); break;
+        case muz: res = checkCandWithPDR(false); break;
       }
 
       if (res)
@@ -499,14 +500,14 @@ namespace ufo
       }
     }
 
-    bool checkCandWithSpacer()
+    bool checkCandWithPDR(bool sp)
     {
       // experimentally augment encoding:
       for (auto & r : cand->chcs)
         if (r.srcRelation == invDecl)
           r.body = mk<AND>(r.body, lemmas2add);
 
-      bool res = cand->checkWithSpacer();
+      bool res = cand->checkWith(sp);
       if (!res)
       {
         Expr ce = cand->getCex().back();
@@ -689,7 +690,7 @@ namespace ufo
       Expr renamedLoopGuard = replaceAll(refinedGuard, invVars, invVarsPr);
 
       // try to prove universal non-termination
-      if (slv == spacer)
+      if (slv == spacer || slv == muz)
       {
         CHCs r1 = r;
         for (auto & a : r1.chcs)
@@ -699,7 +700,7 @@ namespace ufo
 
         if (!lightweight)
         {
-          bool res = r1.checkWithSpacer();
+          bool res = r1.checkWith(slv == spacer);
           if (res && refinedGuard == loopGuard) outs () << "Trully universal\n";
 
           if (res)
@@ -720,7 +721,7 @@ namespace ufo
           {
             if (!u.isSat(updTrBody, b)) continue;
             for (auto & r : r1.chcs) if (r.isInductive) r.body = mk<AND>(updTrBody, b);
-            bool res = r1.checkWithSpacer();
+            bool res = r1.checkWith(slv == spacer);
             if (res)
             {
               outs () << "refined with " << *refinedGuard << " and " << *b << "\n";

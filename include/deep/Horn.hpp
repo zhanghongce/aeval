@@ -437,17 +437,19 @@ namespace ufo
       hr->body = conjoin(newCnjs, m_efac);
     }
 
-    bool checkWithSpacer()
+    bool checkWith(bool spacer)
     {
       bool success = false;
 
       // fixed-point object
       ZFixedPoint<EZ3> fp (m_z3);
       ZParams<EZ3> params (m_z3);
-      params.set (":engine", "spacer");
+      if (spacer) params.set (":engine", "spacer");
+        else params.set (":engine", "pdr");
+      params.set (":pdr.utvpi", false);
+      params.set (":use_heavy_mev", true);
       params.set (":xform.slice", false);
       params.set (":xform.inline-linear", false);
-      params.set (":xform.inline-eager", false);
       params.set (":xform.inline-eager", false);
 
       fp.set (params);

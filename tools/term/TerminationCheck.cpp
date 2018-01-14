@@ -61,7 +61,7 @@ int main (int argc, char ** argv)
     "                                      the higher level, the deeper search\n" <<
     " --rank <0|1|2|3>                     level of search for ranking functions:\n" <<
     "                                      0 - none, 1 - counter, 2 - lexicographic, 3 - both\n" <<
-    " --solver <spacer|freqhorn>           solver to confirm ranking function\n" <<  // GF: kind is disabled for now
+    " --solver <spacer|freqhorn|muz>       solver to confirm ranking function\n" <<  // GF: kind is disabled for now
     "                                      or universal nontermination\n" <<
     " --transform <NUM>                    pre-transform the inductive rule by grouping `NUM` bodies\n" <<
     " --lightweight                        sacrifice deep preprocessing (for big programs)\n";
@@ -75,10 +75,11 @@ int main (int argc, char ** argv)
   int lw = getBoolValue("--lightweight", false, &argc, argv);
 
   int sp = getBoolValue("--solver", "spacer", false, &argc, argv);
+  int mu = getBoolValue("--solver", "muz", false, &argc, argv);
   int fr = getBoolValue("--solver", "freqhorn", false, &argc, argv);
   int ki = getBoolValue("--solver", "kind", false, &argc, argv);
 
-  if (sp + fr + ki > 1)
+  if (sp + fr + ki + mu > 1)
   {
     outs() << "Only one solver could be chosen\n";
     return 0;
@@ -88,6 +89,7 @@ int main (int argc, char ** argv)
 
   solver slv;
   if (sp > 0) slv = spacer;
+  else if (mu > 0) slv = muz;
   else if (fr > 0) slv = freqhorn;
   else slv = kind;
 
