@@ -172,15 +172,13 @@ namespace ufo
 
       exprsmpl->calculateStatistics();
       exprsmpl->categorizeCHCs();
-      if (lightweight)
-      {
-        lemmas2add = mk<TRUE>(efac);
-      }
-      else
+      if (!lightweight)
       {
         exprsmpl->houdini(seeds, true, false);
         lemmas2add = conjoin(exprsmpl->getlearnedLemmas(0), efac);
       }
+
+      seedsPrepped.insert(mkTerm (mpz_class (*exprsmpl->getAllConsts().rbegin()), efac));
 
       for (auto s : seeds)
       {
@@ -484,7 +482,6 @@ namespace ufo
 
         for (auto& dcl: cand->decls) ds.initializeDecl(dcl);
 
-        ExprSet cands;
         for (auto& dcl: cand->decls) ds.doSeedMining (dcl->arg(0), cands);
 
         bool success = ds.houdini(cands, true, false);
@@ -495,17 +492,20 @@ namespace ufo
           ds.prioritiesDeferred();
 
           success = ds.synthesize(100, 3, 3);
+          cands = ds.getlearnedLemmas(0);
         }
         return success;
       }
     }
 
+    ExprSet cands;
     bool checkCandWithPDR(bool sp)
     {
       // experimentally augment encoding:
-      for (auto & r : cand->chcs)
-        if (r.srcRelation == invDecl)
-          r.body = mk<AND>(r.body, lemmas2add);
+      if (lemmas2add != NULL)
+        for (auto & r : cand->chcs)
+          if (r.srcRelation == invDecl)
+            r.body = mk<AND>(r.body, lemmas2add);
 
       bool res = cand->checkWith(sp);
       if (!res)
@@ -522,19 +522,43 @@ namespace ufo
       bool res = false;
       rankCEs = NULL;
 
+      // check all elements first:
+      if (lightweight)
+      {
+        for (auto &a : elements)
+        {
+          outs() << "element #" << candConds.size() << ": " << *a;
+          ExprSet tmp; tmp.insert(a);
+          res = checkCand(assembleCand(tmp));
+          if (res) return res;
+        }
+      }
+      else
+      {
+        outs() << "element #" << candConds.size() << ": " << *conjoin(elements, efac);
+        res = checkCand(assembleCand(elements));
+        if (res) return res;
+      }
+
       getSampleExprs();
 
-      // check all elements first:
-      // TODO: could be done one-by-one
-      outs() << "element #" << candConds.size() << ": " << *conjoin(elements, efac);
-      res = checkCand(assembleCand(elements));
-      if (res) return res;
-
       // otherwise check seeds:
-      // TODO: could be done one-by-one
-      outs() << "seed #" << candConds.size() << ": " << *conjoin(seedsPrepped, efac);
-      res = checkCand(assembleCand(seedsPrepped));
-      if (res) return res;
+      if (lightweight)
+      {
+        for (auto &a : seedsPrepped)
+        {
+          outs() << "seed #" << candConds.size() << ": " << *a;
+          ExprSet tmp; tmp.insert(a);
+          res = checkCand(assembleCand(tmp));
+          if (res) return res;
+        }
+      }
+      else
+      {
+        outs() << "seed #" << candConds.size() << ": " << *conjoin(seedsPrepped, efac);
+        res = checkCand(assembleCand(seedsPrepped));
+        if (res) return res;
+      }
 
       // otherwise check mutants in a loop:
       for (auto initCond : mutantsPrepped)

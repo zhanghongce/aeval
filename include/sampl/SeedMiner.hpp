@@ -259,12 +259,21 @@ namespace ufo
       {
         // hr.isInductive
         Expr e = unfoldITE(body);
-        ExprSet deltas; // some magic here for enhancing the grammar
-        retrieveDeltas(e, hr.srcVars, hr.dstVars, deltas);
-        for (auto & a : deltas)
+
+        // mine constants from transitions and add them to the grammar
+        ExprSet transitions;
+        retrieveTransitions(e, hr.srcVars, hr.dstVars, transitions);
+        for (auto & tr : transitions)
         {
-          obtainSeeds(a);
+          ExprSet intConstsE;
+          expr::filter (tr, bind::IsHardIntConst(), std::inserter (intConstsE, intConstsE.begin ()));
+
+          for (auto &i : intConstsE)
+          {
+            intConsts.insert(lexical_cast<int>(i));
+          }
         }
+
         e = overapproxTransitions(e, hr.srcVars, hr.dstVars);
         e = simplifyBool(e);
         e = rewriteBoolEq(e);

@@ -2077,6 +2077,32 @@ namespace ufo
     }
   };
 
+  // opposite to TransitionOverapprox
+  struct TransitionMiner : public std::unary_function<Expr, VisitAction>
+  {
+    ExprVector& srcVars;
+    ExprVector& dstVars;
+    ExprSet& transitions;
+
+    TransitionMiner (ExprVector& _srcVars, ExprVector& _dstVars, ExprSet& _transitions):
+      srcVars(_srcVars), dstVars(_dstVars), transitions(_transitions) {};
+
+    VisitAction operator() (Expr exp)
+    {
+      if (isOp<ComparissonOp>(exp) && !containsOp<ITE>(exp))
+      {
+        ExprVector av;
+        filter (exp, bind::IsConst (), inserter(av, av.begin()));
+        if (!emptyIntersect(av, srcVars) && !emptyIntersect(av, dstVars))
+        {
+          transitions.insert(exp);
+        }
+        return VisitAction::skipKids ();
+      }
+      return VisitAction::doKids ();
+    }
+  };
+
   struct BoolEqRewriter
   {
     BoolEqRewriter () {};
@@ -2183,6 +2209,12 @@ namespace ufo
   {
     CondRetriever dr (conds);
     dagVisit (dr, exp);
+  }
+
+  inline void retrieveTransitions (Expr exp, ExprVector& srcVars, ExprVector& dstVars, ExprSet& transitions)
+  {
+    TransitionMiner trm (srcVars, dstVars, transitions);
+    dagVisit (trm, exp);
   }
 
   inline static Expr overapproxTransitions (Expr exp, ExprVector& srcVars, ExprVector& dstVars)
