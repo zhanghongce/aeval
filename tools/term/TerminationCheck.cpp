@@ -64,7 +64,9 @@ int main (int argc, char ** argv)
     " --solver <spacer|freqhorn|muz>       solver to confirm ranking function\n" <<  // GF: kind is disabled for now
     "                                      or universal nontermination\n" <<
     " --transform <NUM>                    pre-transform the inductive rule by grouping `NUM` bodies\n" <<
-    " --lightweight                        sacrifice deep preprocessing (for big programs)\n";
+    " --lightweight                        sacrifice deep preprocessing (for big programs)\n" <<
+    "                                      and check candidates one-by-one\n" <<
+    " --cex                                use counter-examples to accelerate the search\n";
 
     return 0;
   }
@@ -73,6 +75,7 @@ int main (int argc, char ** argv)
   int rank = getIntValue("--rank", 3, &argc, argv);
   int mrg = getIntValue("--transform", 0, &argc, argv);
   int lw = getBoolValue("--lightweight", false, &argc, argv);
+  int cex = getBoolValue("--cex", false, &argc, argv);
 
   int sp = getBoolValue("--solver", "spacer", false, &argc, argv);
   int mu = getBoolValue("--solver", "muz", false, &argc, argv);
@@ -114,7 +117,7 @@ int main (int argc, char ** argv)
     return 0;
   }
 
-  terminationAnalysis(string(argv[argc-1]), nonterm, rank, mrg, slv, lw);
+  terminationAnalysis(string(argv[argc-1]), nonterm, rank, mrg, slv, lw, cex);
 
   return 0;
 }

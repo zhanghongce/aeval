@@ -60,11 +60,12 @@ namespace ufo
 
     int nontlevel;
     bool lightweight;
+    bool use_cex;
 
     public:
 
-    TermCheck (ExprFactory& _efac, EZ3& _z3, CHCs& _r, solver _slv, int _n, bool _l) :
-      efac(_efac), z3(_z3), u(efac), r(_r), slv(_slv), nontlevel(_n), lightweight(_l),
+    TermCheck (ExprFactory& _efac, EZ3& _z3, CHCs& _r, solver _slv, int _n, bool _l, bool _c) :
+      efac(_efac), z3(_z3), u(efac), r(_r), slv(_slv), nontlevel(_n), lightweight(_l), use_cex(_c),
       tr(NULL), fc(NULL), qr(NULL)
     {
       for (int i = 0; i < 2; i++)
@@ -172,7 +173,8 @@ namespace ufo
 
       exprsmpl->calculateStatistics();
       exprsmpl->categorizeCHCs();
-      if (!lightweight)
+      //if (!lightweight) // GF: experimentally, it does not make much difference,
+                          // and for some examples it makes performance even worse
       {
         exprsmpl->houdini(seeds, true, false);
         lemmas2add = conjoin(exprsmpl->getlearnedLemmas(0), efac);
@@ -319,10 +321,6 @@ namespace ufo
 
     bool assembleLexCand(ExprSet& initConds0, ExprSet& initConds1, ExprSet& iteConds)
     {
-      outs () << "< " << *conjoin(initConds0, efac) << "; "
-                      << *conjoin(initConds1, efac) << "; "
-                      << *conjoin(iteConds, efac)   << " >";
-
       // assemble an initCond-part for the base rule
       int cnt = 0;
       for (auto e : initConds0)
@@ -356,6 +354,10 @@ namespace ufo
         }
       }
       if (cnt == 0) return false;
+
+      outs () << "< " << *conjoin(initConds0, efac) << "; "
+                      << *conjoin(initConds1, efac) << "; "
+                      << *conjoin(iteConds, efac)   << " >";
 
       // then, assemble decrements for the tr rule
 
@@ -605,6 +607,11 @@ namespace ufo
 
     void addCE (Expr ce, Expr& ces)
     {
+      if (!use_cex)
+      {
+        ces = mk<FALSE>(efac);
+        return;
+      }
       if (ces == NULL) ces = ce;
       if (isOpX<FALSE>(ce)) ces = ce;
       else
@@ -798,7 +805,7 @@ namespace ufo
     }
   };
 
-  inline void terminationAnalysis(string chcfile, int nonterm, int rank, int mrg, solver slv, bool lw)
+  inline void terminationAnalysis(string chcfile, int nonterm, int rank, int mrg, solver slv, bool lw, bool cex)
   {
     std::srand(std::time(0));
 
@@ -812,7 +819,7 @@ namespace ufo
              << "corresponds to " << mrg << " original iterations\n";
       ruleManager.mergeIterations(*ruleManager.decls.begin(), mrg);
     }
-    TermCheck a(efac, z3, ruleManager, slv, nonterm, lw);
+    TermCheck a(efac, z3, ruleManager, slv, nonterm, lw, cex);
     a.checkPrerequisites();
 
     //    outs () << "Sketch encoding:\n";
