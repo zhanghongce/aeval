@@ -1,21 +1,15 @@
 extern int __VERIFIER_nondet_int(void);
 
 int main() {
-    int K, x, y;
-    K = __VERIFIER_nondet_int();
-    x = __VERIFIER_nondet_int();
-    y = __VERIFIER_nondet_int();
-    while (x != K || y != K) {
-        if (x > K) {
-            x = x - 1;
-        } else {
-            x = x + 1;
-        }
-        if (y > K) {
-            y = y - 1;
-        } else {
-            y = y + 1;
-        }
-    }
-    return 0;
+  int i, j, k, l, tmp;
+  i = __VERIFIER_nondet_int();
+  j = __VERIFIER_nondet_int();
+  k = __VERIFIER_nondet_int();
+  l = __VERIFIER_nondet_int();
+  while ((i <= l) && (j <= k)) {
+    tmp = i;
+    i = j;
+    j = tmp - 1;
+  }
+  return 0;
 }

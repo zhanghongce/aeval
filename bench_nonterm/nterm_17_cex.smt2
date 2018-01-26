@@ -4,7 +4,7 @@
 (declare-var n Int)
 (declare-var m Int)
 
-(rule (=> (and (>= n 0) (= x 0)) (itp x m n)))
+(rule (=> (and (> n 0) (= x 0)) (itp x m n)))
 
 (rule (=> 
     (and 

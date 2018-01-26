@@ -1,20 +1,23 @@
-(declare-rel inv (Int Int Int))
-(declare-var x Int)
-(declare-var x1 Int)
-(declare-var y Int)
-(declare-var y1 Int)
-(declare-var K Int)
+(declare-rel inv ( Int Int Int Int))
+(declare-var i Int)
+(declare-var i1 Int)
+(declare-var j Int)
+(declare-var j1 Int)
+(declare-var k Int)
+(declare-var l Int)
 
-(rule (inv x y K))
+(rule (inv i j k l))
+
+; requires --transform 2
 
 (rule (=> 
     (and 
-        (inv x y K)
-        (or (not (= x K))
-            (not (= y K)))
-        (= x1 (ite (> x K) (- x 1) (+ x 1)))
-        (= y1 (ite (> y K) (- y 1) (+ y 1)))
+        (inv i j k l)
+        (<= i l)
+        (<= j k)
+        (= i1 j)
+        (= j1 (- i 1))
     )
-    (inv x1 y1 K)
+    (inv i1 j1 k l)
   )
 )

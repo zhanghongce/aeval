@@ -6,7 +6,7 @@
 (declare-var x Int)
 (declare-var x1 Int)
 
-(rule (inv 0 0 d))
+(rule (inv 0 0 0))
 
 (rule (=> 
     (and 

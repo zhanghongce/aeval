@@ -3,8 +3,7 @@ extern int __VERIFIER_nondet_int(void);
 int main()
 {
   int x, y, z;
-  x = __VERIFIER_nondet_int();
-
+  x = 0;
   y = 0;
   z = 0;
   

@@ -2,12 +2,12 @@ extern int __VERIFIER_nondet_int(void);
 
 int main()
 {
-  int j = __VERIFIER_nondet_int();
-  int d = __VERIFIER_nondet_int();
-  if (d <= 1) return 0;
+  int x = __VERIFIER_nondet_int();
+  int y = __VERIFIER_nondet_int();
   
-  while (1 == 1)
+  while ((x > 0 && y > 0) || (x < 0 && y < 0))
   {
-    j = j - d;
+    y = y * -7;
+    x = x * -9;
   }
 }

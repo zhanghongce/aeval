@@ -1,19 +1,21 @@
-(declare-rel inv (Int Int))
+(declare-rel inv (Int Int Int))
 (declare-var x Int)
 (declare-var x1 Int)
 (declare-var y Int)
 (declare-var y1 Int)
 (declare-var z Int)
+(declare-var z1 Int)
 
-(rule (=> (= x (+ y 2)) (inv x y)))
+(rule (inv x y z))
 
 (rule (=> 
     (and 
-        (inv x y)
-        (not (= x y))
+        (inv x y z)
+        (or (> x y) (> y z))
         (= x1 (- x 3))
-        (= y1 (- y 1))
+        (= y1 (- y 2))
+        (= z1 (- z 1))
     )
-    (inv x1 y1)
+    (inv x1 y1 z1)
   )
 )

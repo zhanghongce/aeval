@@ -8,13 +8,15 @@
 
 (rule (inv x y 0))
 
+; requires --solver spacer 
+
 (rule (=>
   (and
     (inv x y z)
     (> x 0)
     (= x1 (- x y))
     (= y1 (- y z))
-    (= z1 (ite (= z 2) 0 (+ z 1))))
+    (= z1 (ite (= z 0) 12 (ite (= z 12) -1 0))))
   (inv x1 y1 z1)
   )
 )

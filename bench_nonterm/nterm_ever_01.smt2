@@ -1,17 +1,18 @@
 (declare-rel inv (Int Int))
-(declare-var i Int)
-(declare-var i1 Int)
-(declare-var j Int)
-(declare-var j1 Int)
-(declare-var d Int)
+(declare-var x Int)
+(declare-var x1 Int)
+(declare-var y Int)
+(declare-var y1 Int)
 
-(rule (=> (> d 1) (inv j d)))
+(rule (inv x y))
 
 (rule (=> 
     (and 
-        (inv j d)
-        (= j1 (- j d))
+        (inv x y)
+        (or (and (> x 0) (> y 0)) (and (< x 0) (< y 0)))
+        (= y1 (* -7 y))
+        (= x1 (* -9 x))
     )
-    (inv j1 d)
+    (inv x1 y1)
   )
 )

@@ -3,22 +3,16 @@
 (declare-var x1 Int)
 (declare-var y Int)
 (declare-var y1 Int)
-(declare-var z Int)
-
-(declare-rel fail ())
 
 (rule (inv x y))
 
 (rule (=> 
     (and 
         (inv x y)
-        (= x y)
-        (= x1 (- x))
+        (= x (* 3 y))
+        (= y1 (+ x y))
+        (or (= x1 (* 4 x)) (= x1 (+ y1 1)))
     )
     (inv x1 y1)
   )
 )
-
-(rule (=> (and (inv x y) (= x y)) fail))
-
-(query fail :print-certificate true)

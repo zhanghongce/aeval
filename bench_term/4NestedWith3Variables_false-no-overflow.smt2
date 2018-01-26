@@ -5,10 +5,9 @@
 (declare-var b1 Int)
 (declare-var q Int)
 (declare-var q1 Int)
-(declare-var olda Int)
-(declare-var olda1 Int)
 
 (rule (inv a b q ))
+
 (rule 
     (=>
         (and 

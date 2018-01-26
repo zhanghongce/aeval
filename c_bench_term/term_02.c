@@ -4,10 +4,12 @@ int main()
 {
   int x = __VERIFIER_nondet_int();
   int y = __VERIFIER_nondet_int();
+  int y = __VERIFIER_nondet_int();
 
-  while (x > y)
+  while (x > y && y > z)
   {
-    x = x-2;
-    y = y-1;
+    x = x-3;
+    y = y-2;
+    z = z-1;
   }
 }

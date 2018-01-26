@@ -3,12 +3,12 @@
 (declare-var x1 Int)
 (declare-var y Int)
 
-(rule (=> (> x (* 2 y)) (inv x y)))
+(rule (=> (> y 1) (inv x y)))
 
 (rule (=> 
     (and 
         (inv x y)
-        (not (= x (* 2 y)))
+        (>= x y)
         (= x1 (ite (= (mod x y) 1) (+ x 1) (- x 2)))
     )
     (inv x1 y)

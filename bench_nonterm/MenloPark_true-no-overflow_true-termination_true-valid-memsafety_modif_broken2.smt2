@@ -6,7 +6,9 @@
 (declare-var z Int)
 (declare-var z1 Int)
 
-(rule (=> (and (>= y 0) (= z 0)) (inv x y z)))
+; requires --solver spacer
+
+(rule (inv x y 0))
 
 (rule (=>
   (and

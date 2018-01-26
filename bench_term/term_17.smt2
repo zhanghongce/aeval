@@ -4,7 +4,7 @@
 (declare-var d Int)
 (declare-var d1 Int)
 
-(rule (inv 0 d))
+(rule (inv 0 0))
 
 (rule (=> 
     (and 

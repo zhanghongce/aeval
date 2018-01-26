@@ -3,7 +3,6 @@
 (declare-var x1 Int)
 (declare-var y Int)
 (declare-var y1 Int)
-(declare-var z Int)
 
 (rule (=> (> x y) (inv x y)))
 

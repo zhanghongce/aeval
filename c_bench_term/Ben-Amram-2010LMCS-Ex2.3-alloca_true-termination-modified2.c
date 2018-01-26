@@ -12,9 +12,9 @@ int main() {
       x = __VERIFIER_nondet_int();
       z = x - 1;
     } else {
-      z = z - 2;
+      z = z - 1;
       x = __VERIFIER_nondet_int();
-      y = x + 1;
+      y = x - 1;
     }
   }
   return 0;

@@ -6,7 +6,7 @@
 (declare-var z Int)
 (declare-var z1 Int)
 
-(declare-rel fail ())
+; needs --transform 2
 
 (rule (inv x y z))
 
@@ -23,7 +23,3 @@
     (inv x1 y1 z1)
   )
 )
-
-(rule (=> (and (inv x y z) (> x 0) (> y 0) (> z 0)) fail))
-
-(query fail :print-certificate true)

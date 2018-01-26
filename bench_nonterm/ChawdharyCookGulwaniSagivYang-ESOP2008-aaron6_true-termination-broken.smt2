@@ -9,7 +9,7 @@
 (declare-var ty1 Int)
 (declare-var N Int)
 
-(declare-rel fail ())
+; requires --transform 2
 
 (rule (=> (>= (+ x y) 0) (inv x y tx ty N)))
 
@@ -19,7 +19,6 @@
         (<= x N)
         (>= x (+ (* 2 tx) y))
         (>= y (+ ty 1))
-;     (>= x (+ tx 1))
         (or
             (and (= tx1 x) (= ty1 y))
             (and (= tx1 x) (= ty1 ty) (= y1 y))
@@ -28,12 +27,3 @@
     (inv x1 y1 tx1 ty1 N)
   )
 )
-
-(rule (=> (and (inv x y tx ty N)
-    (<= x N)
-    (>= x (+ (* 2 tx) y))
-    (>= y (+ ty 1))
-;    (>= x (+ tx 1))
-) fail))
-
-(query fail :print-certificate true)

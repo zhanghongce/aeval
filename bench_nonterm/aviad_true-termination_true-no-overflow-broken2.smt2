@@ -2,7 +2,7 @@
 (declare-var a Int)
 (declare-var a1 Int)
 
-(declare-rel fail ())
+; requires --transform 3
 
 (rule (inv a))
 
@@ -15,7 +15,3 @@
     (inv a1)
   )
 )
-
-(rule (=> (and (inv a) (> a 1)) fail))
-
-(query fail :print-certificate true)

@@ -2,12 +2,16 @@ extern int __VERIFIER_nondet_int(void);
 
 int main()
 {
-  int x = 0;
-  int y = 0;
-  while (x == y)
+  int x = __VERIFIER_nondet_int();
+  int y = __VERIFIER_nondet_int();
+  int z = __VERIFIER_nondet_int();
+  while (z > 0)
   {
-    y = __VERIFIER_nondet_int();
-    x = x + 1;
+    x ++;
+    y --;
+    if (__VERIFIER_nondet_int() == 0)
+      z = z + 4 * x;
+    else
+      z = z + 5 * y;
   }
 }
-
