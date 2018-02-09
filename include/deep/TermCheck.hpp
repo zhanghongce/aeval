@@ -643,7 +643,11 @@ namespace ufo
         exit(0);
       }
 
-      if (slv == spacer) getNondets(tr->body, trNondets);
+      if (slv == spacer || slv == muz)
+      {
+        getNondets(tr->body, trNondets);
+        if (lightweight && trNondets.empty()) lightweight = false;
+      }
 
       // Then, check if starting from a state satisfying the loop guard
       // we can reach state also satisfying the loop guard
