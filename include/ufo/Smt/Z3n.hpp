@@ -297,6 +297,7 @@ namespace ufo
 
   protected:
     z3::context &get_ctx () { return ctx; }
+    std::vector<Expr> adts;
 
     z3::ast toAst (Expr e)
     {
@@ -308,7 +309,8 @@ namespace ufo
       if (!a) return Expr();
 
       ast_expr_map seen;
-      return U::unmarshal (a, get_efac (), cache.right, seen);
+      std::vector<std::string> adts_seen;
+      return U::unmarshal (a, get_efac (), cache.right, seen, adts_seen, adts);
     }
 
     ExprFactory &get_efac () { return efac; }
@@ -354,6 +356,8 @@ namespace ufo
 	out << Z3_func_decl_to_string (ctx, fdecl) << "\n";
       return out.str ();
     }
+
+    ExprVector& getAdtConstructors(){ return adts; }
 
     template <typename Range>
     std::string toSmtLibDecls (const Range &rng)

@@ -962,6 +962,141 @@ namespace ufo
     EqMiner trm (var, eqs);
     dagVisit (trm, exp);
   }
+
+  struct QFregularizer
+  {
+    ExprVector& vars;
+
+    QFregularizer (ExprVector& _vars): vars(_vars){};
+
+    Expr operator() (Expr exp)
+    {
+      if (bind::isBVar(exp))
+      {
+        return vars[vars.size() - bind::bvarId(exp) - 1];
+      }
+      return exp;
+    }
+  };
+
+  inline static Expr regularizeQF (Expr exp)
+  {
+    if (!isOpX<FORALL>(exp)) return exp;
+    ExprVector vars;
+    for (int i = 0; i < exp->arity() - 1; i++)
+    {
+      vars.push_back(bind::fapp(exp->arg(i)));
+    }
+    RW<QFregularizer> rw(new QFregularizer(vars));
+    return dagVisit (rw, exp);
+  }
+
+  inline static bool findMatching(Expr pattern, Expr exp, ExprVector& vars, ExprMap& matching)
+  {
+    if (pattern == exp && (isOpX<FDECL>(pattern) || (isOpX<MPZ>(pattern))))  return true;
+
+    if (bind::typeOf(pattern) != bind::typeOf(exp)) return false;
+
+    if (pattern->arity() == 1 && find(vars.begin(), vars.end(), pattern) != vars.end())
+    {
+      if (matching[pattern] != NULL && matching[pattern] != exp) return false;
+      else
+      {
+        matching[pattern] = exp;
+        return true;
+      }
+    }
+
+    if ((isOpX<EQ>(exp) && isOpX<EQ>(pattern)) ||
+        (isOpX<LEQ>(exp) && isOpX<LEQ>(pattern)) ||
+        (isOpX<GEQ>(exp) && isOpX<GEQ>(pattern)) ||
+        (isOpX<LT>(exp) && isOpX<LT>(pattern)) ||
+        (isOpX<GT>(exp) && isOpX<GT>(pattern)) ||
+        (isOpX<FAPP>(exp) && isOpX<FAPP>(pattern) &&
+          pattern->left() == exp->left()))
+    {
+      for (int i = 0; i < pattern->arity(); i++)
+      {
+        if (!findMatching(pattern->arg(i), exp->arg(i), vars, matching))
+          return false;
+      }
+      return true;
+    }
+    return false;
+  }
+
+  struct SubexprMatcher : public std::unary_function<Expr, VisitAction>
+  {
+    bool found;
+    ExprVector& vars;
+    ExprMap& matching;
+    Expr pattern;
+    SubexprMatcher (Expr _p, ExprVector& _v, ExprMap& _m) :
+      found (false), pattern(_p), vars(_v), matching(_m) {}
+
+    VisitAction operator() (Expr exp)
+    {
+      if (found)
+      {
+        return VisitAction::skipKids ();
+      }
+      else if ((isOpX<FAPP>(exp) || isOp<ComparissonOp>(exp)) &&
+          findMatching (pattern, exp, vars, matching))
+      {
+        found = true;
+        return VisitAction::skipKids ();
+      }
+      return VisitAction::doKids ();
+    }
+  };
+
+  inline bool findMatchingSubexpr (Expr pattern, Expr exp, ExprVector& vars, ExprMap& matching)
+  {
+    SubexprMatcher fn (pattern, vars, matching);
+    dagVisit (fn, exp);
+    return fn.found;
+  }
+
+  struct ITElifter
+  {
+    ITElifter () {};
+
+    Expr operator() (Expr exp)
+    {
+      // currently, can lift only one ITE
+      if (isOpX<FAPP>(exp))
+      {
+        ExprVector vars1;
+        ExprVector vars2;
+        Expr cond = NULL;
+        vars1.push_back(exp->arg(0));
+        vars2.push_back(exp->arg(0));
+        for (int i = 1; i < exp->arity(); i++)
+        {
+          if (isOpX<ITE>(exp->arg(i)) && cond == NULL)
+          {
+            cond = exp->arg(i)->arg(0);
+            vars1.push_back(exp->arg(i)->arg(1));
+            vars2.push_back(exp->arg(i)->arg(2));
+          }
+          else
+          {
+            vars1.push_back(exp->arg(i));
+            vars2.push_back(exp->arg(i));
+          }
+        }
+        if (cond == NULL) return exp;
+        return mk<ITE>(cond, mknary<FAPP>(vars1), mknary<FAPP>(vars2));
+      }
+      return exp;
+    }
+  };
+
+  inline static Expr liftITEs (Expr exp)
+  {
+    RW<ITElifter> rw(new ITElifter());
+    return dagVisit (rw, exp);
+  }
 }
 
 #endif

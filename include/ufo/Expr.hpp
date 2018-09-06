@@ -2103,6 +2103,8 @@ namespace expr
     NOP(UNINT_TY,"UNINT",PREFIX,SimpleTypeOp)
     /** Array Type */
     NOP(ARRAY_TY,"ARRAY",PREFIX,SimpleTypeOp)
+    /** stub for ADTs **/
+    NOP(AD_TY,"",PREFIX,SimpleTypeOp)
   }
 
   namespace op
@@ -2112,6 +2114,7 @@ namespace expr
       inline Expr intTy (ExprFactory &efac) {return mk<INT_TY> (efac);}
       inline Expr boolTy (ExprFactory &efac) {return mk<BOOL_TY> (efac);}
       inline Expr realTy (ExprFactory &efac) {return mk<REAL_TY> (efac);}
+      inline Expr adTy (Expr name) {return mk<AD_TY> (name);}
       inline Expr arrayTy (Expr indexTy, Expr valTy) 
       {return mk<ARRAY_TY> (indexTy, valTy);}
       
@@ -2212,7 +2215,8 @@ namespace expr
       { return constDecl (name, mk<INT_TY> (name->efac ())); }
       inline Expr realConstDecl (Expr name)
       { return constDecl (name, mk<REAL_TY> (name->efac ())); }
-      
+      inline Expr adtConstDecl (Expr name)
+      { return constDecl (name, mk<AD_TY> (name->efac ())); }
       
       template <typename Range>
       Expr fdecl (Expr fname, const Range &args)
@@ -2290,13 +2294,13 @@ namespace expr
       inline Expr boolConst (Expr name) { return fapp (boolConstDecl (name)); }
       inline Expr intConst (Expr name) { return fapp (intConstDecl (name)); }
       inline Expr realConst (Expr name) { return fapp (realConstDecl (name)); }
-      
+      inline Expr adtConst (Expr name) { return fapp (adtConstDecl (name)); }
       
 
       inline bool isBoolConst (Expr v) { return isConst<BOOL_TY> (v); }
       inline bool isIntConst (Expr v) { return isConst<INT_TY> (v); }
       inline bool isRealConst (Expr v) { return isConst<REAL_TY> (v); }      
-
+      inline bool isAdtConst (Expr v) { return isConst<AD_TY> (v); }
       
       inline Expr typeOf (Expr v)
       {
@@ -2308,11 +2312,11 @@ namespace expr
           assert (isOpX<FDECL> (v->left ()));
           return rangeTy (v->left ());
         }
-        
-        if (isOpX<TRUE> (v) || isOpX<FALSE> (v)) return mk<BOOL_TY> (v->efac ());
+
+        if (isOp<BoolOp>(v) || isOp<ComparissonOp> (v)) return mk<BOOL_TY> (v->efac ());
         if (isOpX<MPZ> (v)) return mk<INT_TY> (v->efac ());
         if (isOpX<MPQ> (v)) return mk<REAL_TY> (v->efac ());
-         
+
         if (isOpX<BIND> (v)) return bind::type (v);
         
         if (isBoolVar (v) || isBoolConst (v))
@@ -2322,6 +2326,8 @@ namespace expr
         if (isRealVar (v) || isRealConst (v))
           return mk<REAL_TY> (v->efac ());
 
+        if (isOp<NumericOp>(v)) return typeOf(v->left());
+        if (isOpX<ITE>(v)) return typeOf(v->last());
         std::cerr << "WARNING: could not infer type of: " << *v << "\n";
         
         assert (0 && "Unreachable");
@@ -2447,7 +2453,7 @@ namespace expr
 	  return hasher (var);
 	}
 	
-	void Print (std::ostream &OS) const { OS << "B" << var; }	
+	void Print (std::ostream &OS) const { OS << "B" << var; }
       };
       inline std::ostream &operator<< (std::ostream &OS, const BoundVar &b)
       {
