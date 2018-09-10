@@ -25,11 +25,14 @@ namespace ufo
     ExprFactory &efac;
     SMTUtils u;
 
+    vector<int> rewriteSequence;
+    int maxDepth;
+    int maxSameAssm;
     public:
 
-    ADTSolver(Expr _goal, ExprVector& _assumptions, ExprVector& _constructors) :
+    ADTSolver(Expr _goal, ExprVector& _assumptions, ExprVector& _constructors, int _maxDepth, int _maxSameAssm) :
         goal(_goal), assumptions(_assumptions), constructors(_constructors),
-        efac(_goal->getFactory()), u(_goal->getFactory())
+        efac(_goal->getFactory()), u(_goal->getFactory()), maxDepth(_maxDepth), maxSameAssm(_maxSameAssm)
     {
       assert(isOpX<FORALL>(goal));
     }
@@ -119,10 +122,33 @@ namespace ufo
     }
 
     // this recursive method performs a naive search for a strategy
-    // FIXME: sometimes it diverges while applying the same rule infinite number of times
     bool rewriteAssumptions(Expr subgoal)
     {
       if (u.isEquiv(subgoal, mk<TRUE>(efac))) return true;
+
+      // check recursion depth
+      if (rewriteSequence.size() >= maxDepth)
+      {
+        outs() << "Maximum recursion depth reached\n";
+        return false;
+      }
+
+      // check consecutive applications of the same assumption
+      if (rewriteSequence.size() >= maxSameAssm)
+      {
+        int assmId = rewriteSequence.back();
+        int offset = rewriteSequence.size() - maxSameAssm - 1;
+        int i = 0;
+        for (; i < maxSameAssm; i++)
+          if (rewriteSequence[i + offset] != assmId)
+            break;
+
+        if (i == maxSameAssm)
+        {
+          outs() << "Maximum use of assumption #" << assmId << " reached\n";
+          return false;
+        }
+      }
 
       for (int i = 0; i < assumptions.size(); i++)
       {
@@ -131,7 +157,17 @@ namespace ufo
         if (res != NULL)
         {
           outs () << "rewritten [" << i << "]:   " << *res << "\n";
-          if  (rewriteAssumptions(res)) return true;
+          // save history
+          rewriteHistory.push_back(res);
+          rewriteSequence.push_back(i);
+
+          if  (rewriteAssumptions(res))
+            return true;
+          else {
+            // failed attempt, remove history
+            rewriteHistory.pop_back();
+            rewriteSequence.pop_back();
+          }
 
           // backtrack:
           outs () << "backtrack to:    " << *subgoal << "\n";
@@ -362,7 +398,7 @@ namespace ufo
     nums.push_back(atoi(substr));
   }
 
-  void adtSolve(EZ3& z3, Expr s, char* basecheck, char *indcheck)
+  void adtSolve(EZ3& z3, Expr s, char* basecheck, char *indcheck, int maxDepth, int maxSameAssm)
   {
     vector<int> basenums;
     vector<int> indnums;
@@ -399,7 +435,7 @@ namespace ufo
       outs () << "Unable to parse the query\n";
       return;
     }
-    ADTSolver sol (goal, assumptions, constructors);
+    ADTSolver sol (goal, assumptions, constructors, maxDepth, maxSameAssm);
     sol.solve (basenums, indnums);
   }
 }
