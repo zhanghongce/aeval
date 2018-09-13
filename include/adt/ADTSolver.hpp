@@ -28,6 +28,11 @@ namespace ufo
     vector<int> rewriteSequence;
     int maxDepth;
     int maxSameAssm;
+    bool assertIHPrime;
+
+
+    int maxDepthCnt;
+    int failureCnt;
     public:
 
     ADTSolver(Expr _goal, ExprVector& _assumptions, ExprVector& _constructors, int _maxDepth, int _maxSameAssm) :
@@ -136,7 +141,8 @@ namespace ufo
       // check recursion depth
       if (rewriteSequence.size() >= maxDepth) 
       {
-        outs() << "reach max recursion depth! \n";
+        outs() << ">>>>>>>> reached max recursion depth! \n";
+        maxDepthCnt ++;
         return false;
       }
       
@@ -150,7 +156,7 @@ namespace ufo
             break;
         // test here
         if (i == maxSameAssm){
-          outs() << "same assm applied too many times! \n";
+          outs() << "same assm["<<assmId<<"] applied too many times! \n";
           return false;
         }
       }
@@ -158,7 +164,7 @@ namespace ufo
 
       for (int i = 0; i < assumptions.size(); i++)
       {
-        if (rewriteSequence.size()){
+        if (assertIHPrime && rewriteSequence.size()){
           int assmId = rewriteSequence.back();
 
           // IH and IH' cannot be applied back-to-back
@@ -178,17 +184,17 @@ namespace ufo
 
           if  (rewriteAssumptions(res)) 
             return true;
-          else {
-            // failed attempt, remove history
-            rewriteHistory.pop_back();
-            rewriteSequence.pop_back();
-          }
-
+          
+          // failed attempt, remove history
+          rewriteHistory.pop_back();
+          rewriteSequence.pop_back();
           // backtrack:
-          outs () << "backtrack to:    " << *subgoal << "\n";
+          outs()<<"bt\n";
+          // outs () << "backtrack to:    " << *subgoal << "\n";
         }
       }
-
+      // failure node, stuck here, have to backtrack
+      failureCnt ++;
       return false;
     }
 
@@ -311,19 +317,24 @@ namespace ufo
       printAssumptions();
       outs() << "\nBase case:       " << *baseSubgoal << "\n";
 
-      rewriteHistory.clear();       // TODO: use it during the base case proving
+      rewriteSequence.clear();
+      rewriteHistory.clear();
+      maxDepthCnt = 0;
+      failureCnt = 0;
 
       bool baseres = basenums.empty() ?
               rewriteAssumptions(baseSubgoal) :
               tryStrategy(baseSubgoal, basenums);
-
+      
+      outs()<<"======== # of leaves at max depth: "<<maxDepthCnt<<"\n";
+      outs()<<"======== # of failure nodes: "<<failureCnt<<"\n";
+      
       if (!baseres)
       {
         outs () << "                 Failed\n";
         return true;
       }
-      rewriteSequence.clear();
-      rewriteHistory.clear();
+
       // generate inductive hypotheses
       ExprVector args;
       ExprVector indHypotheses;
@@ -338,7 +349,8 @@ namespace ufo
       for (auto & a : indHypotheses) {
         assumptions.push_back(a);
         // always add symmetric IH?
-        insertSymmetricAssumption(a);
+        if (assertIHPrime)
+          insertSymmetricAssumption(a);
       }
       // for simplicity, add conjunction of hypotheses as a single hypothesis
       // should be removed in the future (when all QF-assumptions are used at the same time)
@@ -350,11 +362,17 @@ namespace ufo
       printAssumptions();
       outs() << "\nInductive step:  " << * indSubgoal << "\n";
 
-      rewriteHistory.clear();         // TODO: use it during the base case proving
+      rewriteSequence.clear();
+      rewriteHistory.clear(); // TODO: use it during the base case proving
+      maxDepthCnt = 0;
+      failureCnt = 0;
 
       bool indres = indnums.empty() ?
                rewriteAssumptions(indSubgoal) :
                tryStrategy(indSubgoal, indnums);
+      
+      outs()<<"======== # of leaves at max depth: "<<maxDepthCnt<<"\n";
+      outs()<<"======== # of failure nodes: "<<failureCnt<<"\n";
 
       if (indres)
       {
