@@ -125,7 +125,13 @@ namespace ufo
     // FIXME: sometimes it diverges while applying the same rule infinite number of times
     bool rewriteAssumptions(Expr subgoal)
     {
-      if (u.isEquiv(subgoal, mk<TRUE>(efac))) return true;
+      if (u.isEquiv(subgoal, mk<TRUE>(efac))) {
+        outs()<<"Proof sequence:";
+        for (int a : rewriteSequence)
+          outs()<<" "<<a;
+        outs()<<"\n";
+        return true;
+      }
 
       // check recursion depth
       if (rewriteSequence.size() >= maxDepth) 
@@ -152,6 +158,15 @@ namespace ufo
 
       for (int i = 0; i < assumptions.size(); i++)
       {
+        if (rewriteSequence.size()){
+          int assmId = rewriteSequence.back();
+
+          // IH and IH' cannot be applied back-to-back
+          if ( ((assmId == assumptions.size() - 1) && (i == assmId - 1))
+            || ((assmId == assumptions.size() - 2) && (i == assmId + 1)))
+            continue;
+          // TODO: IH and IH' can be applied to different part of the expression
+        }
         Expr a = assumptions[i];
         Expr res = useAssumption(subgoal, a);
         if (res != NULL)
@@ -161,7 +176,7 @@ namespace ufo
           rewriteHistory.push_back(res);
           rewriteSequence.push_back(i);
 
-          if  (rewriteAssumptions(res))
+          if  (rewriteAssumptions(res)) 
             return true;
           else {
             // failed attempt, remove history
@@ -307,7 +322,8 @@ namespace ufo
         outs () << "                 Failed\n";
         return true;
       }
-
+      rewriteSequence.clear();
+      rewriteHistory.clear();
       // generate inductive hypotheses
       ExprVector args;
       ExprVector indHypotheses;
@@ -319,7 +335,11 @@ namespace ufo
         if (typeDecl->last() == indConstructor->arg(i)) // type check
           indHypotheses.push_back(replaceAll(goalQF, bind::fapp(typeDecl), s));
       }
-      for (auto & a : indHypotheses) assumptions.push_back(a);
+      for (auto & a : indHypotheses) {
+        assumptions.push_back(a);
+        // always add symmetric IH?
+        insertSymmetricAssumption(a);
+      }
       // for simplicity, add conjunction of hypotheses as a single hypothesis
       // should be removed in the future (when all QF-assumptions are used at the same time)
       if (indHypotheses.size() > 1) assumptions.push_back(conjoin(indHypotheses, efac));

@@ -1,0 +1,23 @@
+Simplified goal: (forall ((Lst)) ((rev (rev x))=x))
+
+=========================
+Assumptions [0]: (forall ((Lst)) ((append nil x)=x))
+Assumptions [1]: (forall (INT (Lst) (Lst)) ((append (cons x y) z)=(cons x (append y z))))
+Assumptions [2]: ((rev nil)=nil)
+Assumptions [3]: (forall (INT (Lst)) ((rev (cons x y))=(append (rev y) (cons x nil))))
+
+Base case:       ((rev (rev nil))=nil)
+rewritten [2]:   true
+=========================
+Assumptions [0]: (forall ((Lst)) ((append nil x)=x))
+Assumptions [1]: (forall (INT (Lst) (Lst)) ((append (cons x y) z)=(cons x (append y z))))
+Assumptions [2]: ((rev nil)=nil)
+Assumptions [3]: (forall (INT (Lst)) ((rev (cons x y))=(append (rev y) (cons x nil))))
+Assumptions [4]: ((rev (rev _t_2))=_t_2)
+
+Inductive step:  ((rev (rev (cons _t_1 _t_2)))=(cons _t_1 _t_2))
+rewritten [3]:   ((rev (append (rev _t_2) (cons _t_1 nil)))=(cons _t_1 _t_2))
+backtrack to:    ((rev (rev (cons _t_1 _t_2)))=(cons _t_1 _t_2))
+                 Failed
+
+              

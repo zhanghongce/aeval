@@ -13,3 +13,7 @@
 
 (assert (not (forall ((x Lst)) (= (rev (rev x)) x))))
 (check-sat)
+
+
+
+; 3,4,3,2,0,1,0,5
