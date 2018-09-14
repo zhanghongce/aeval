@@ -39,6 +39,7 @@ namespace ufo
         goal(_goal), assumptions(_assumptions), constructors(_constructors),
         efac(_goal->getFactory()), u(_goal->getFactory()), maxDepth(_maxDepth), maxSameAssm(_maxSameAssm)
     {
+      assertIHPrime = true;
       assert(isOpX<FORALL>(goal));
     }
 
@@ -195,6 +196,8 @@ namespace ufo
       }
       // failure node, stuck here, have to backtrack
       failureCnt ++;
+      // TODO: collect failure node "subgoal, rewriteHistory, rewriteSequence, [assumptions]" 
+      // generalize "subgoal" (replace () )
       return false;
     }
 
@@ -368,7 +371,7 @@ namespace ufo
       failureCnt = 0;
 
       bool indres = indnums.empty() ?
-               rewriteAssumptions(indSubgoal) :
+               rewriteAssumptions(indSubgoal) : // TODO: apply DFS, rank the failure nodes, synthesis of new lemma
                tryStrategy(indSubgoal, indnums);
       
       outs()<<"======== # of leaves at max depth: "<<maxDepthCnt<<"\n";
@@ -385,7 +388,22 @@ namespace ufo
         return false;
       }
     }
+    Expr generalise(Expr e, ) {
+      find inductive constructors;
+      replace constructor with  v : Type
 
+      vars = set of variables in "e",
+      qe = create forall vars .... "e"
+      
+      1. prove qe
+      2. find inductive constructors;
+            replace subset of constructors with  new var
+            prove candidate
+
+      3. find function app
+            replace with new var
+
+    }
     void solve(vector<int>& basenums, vector<int>& indnums)
     {
       unfoldGoal();
