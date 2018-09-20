@@ -20,11 +20,11 @@ namespace ufo
 
     map<Expr, Expr> baseConstructors;
     map<Expr, Expr> indConstructors;
-    ExprVector rewriteHistory;
 
     ExprFactory &efac;
     SMTUtils u;
 
+    ExprVector rewriteHistory;
     vector<int> rewriteSequence;
     int maxDepth;
     int maxSameAssm;
@@ -49,7 +49,17 @@ namespace ufo
       goalQF = u.simplifyITE(goalQF);
       if (u.isEquiv(goalQF, mk<TRUE>(efac))) return true;
 
-      goal = replaceAll(goal, goal->last(), goalQF);
+      ExprVector args;
+      for (int i = 0; i < goal->arity() - 1; i++)
+      {
+        if (contains(goal->last(), goal->arg(i))) args.push_back(goal->arg(i));
+      }
+      if (args.size() == 0) goal = goalQF;
+      else
+      {
+        args.push_back(goalQF);
+        goal = mknary<FORALL>(args);
+      }
       rewriteHistory.push_back(goal);
       return false;
     }
@@ -83,6 +93,17 @@ namespace ufo
           {
             for (auto & a : matching) repl = replaceAll(repl, a.first, a.second);
             return replaceAll(subgoal, repl->left(), repl->right());
+          }
+        }
+        if ((isOpX<LEQ>(assmQF) && isOpX<LEQ>(subgoal)) ||
+            (isOpX<GEQ>(assmQF) && isOpX<GEQ>(subgoal)) ||
+            (isOpX<LT>(assmQF) && isOpX<LT>(subgoal)) ||
+            (isOpX<GT>(assmQF) && isOpX<GT>(subgoal)))
+        {
+          if (findMatchingSubexpr (assmQF->left(), subgoal->left(), args, matching))
+          {
+            for (auto & a : matching) repl = replaceAll(repl, a.first, a.second);
+            if (u.implies(repl, subgoal)) return mk<TRUE>(efac);
           }
         }
       }
@@ -187,10 +208,10 @@ namespace ufo
       bool toRebuild = false;
       for (int i = 0; i < goal->arity() - 1; i++)
       {
-        Expr typeDecl = goal->arg(i);
+        Expr type = goal->arg(i)->last();
         for (auto & a : constructors)
         {
-          if (a->last() == typeDecl->last())
+          if (a->last() == type)
           {
             bool ind = false;
             for (int i = 0; i < a->arity() - 1; i++)
@@ -198,31 +219,45 @@ namespace ufo
               if (a->last() == a->arg(i))
               {
                 ind = true;
-                indConstructors[typeDecl] = a;
+                if (indConstructors[type] != NULL && indConstructors[type] != a)
+                {
+                  outs () << "Several inductive constructors are not supported\n";
+                  exit(0);
+                }
+                indConstructors[type] = a;
               }
             }
-            if (!ind) baseConstructors[typeDecl] = a;
+            if (!ind)
+            {
+              if (baseConstructors[type] != NULL && baseConstructors[type] != a)
+              {
+                outs () << "Several base constructors are not supported\n";
+                exit(0);
+              }
+              baseConstructors[type] = a;
+            }
           }
         }
-        if (baseConstructors[typeDecl] != NULL && indConstructors[typeDecl] == NULL)
+        if (baseConstructors[type] != NULL && indConstructors[type] == NULL)
         {
           toRebuild = true;
           ExprVector args;
-          args.push_back(baseConstructors[typeDecl]);
-          for (int i = 1; i < baseConstructors[typeDecl]->arity() - 1; i++)
+          args.push_back(baseConstructors[type]);
+          for (int i = 1; i < baseConstructors[type]->arity() - 1; i++)
           {
+            // TODO: make sure the name is unique
             Expr s = bind::mkConst(mkTerm<string>
                          ("_b_" + to_string(goalArgs.size()), efac),
-                         baseConstructors[typeDecl]->arg(i));
+                         baseConstructors[type]->arg(i));
             goalArgs.push_back(s->last());
             args.push_back(s);
           }
           Expr newApp = mknary<FAPP>(args);
-          unfoldedGoalQF = replaceAll(unfoldedGoalQF, bind::fapp(typeDecl), newApp);
+          unfoldedGoalQF = replaceAll(unfoldedGoalQF, bind::fapp(goal->arg(i)), newApp);
         }
         else
         {
-          goalArgs.push_back(typeDecl);
+          goalArgs.push_back(goal->arg(i));
         }
       }
 
@@ -266,27 +301,17 @@ namespace ufo
     {
       assert(num < goal->arity() - 1);
       Expr typeDecl = goal->arg(num);
+      Expr type = goal->arg(num)->last();
 
-      Expr baseConstructor = baseConstructors[typeDecl];
-      Expr indConstructor = indConstructors[typeDecl];
-
-      if (indConstructor == NULL)
-      {
-        outs () << "The Data Type is not inductive\n";
-        return false;
-      }
-
-      if (baseConstructor == NULL)
-      {
-        outs () << "The Data Type is ill-defined (no base constructor)\n";
-        return false;
-      }
+      Expr baseConstructor = baseConstructors[type];
+      Expr indConstructor = indConstructors[type];
 
       // instantiate every quantified variable (except the inductive one) in the goal
       Expr goalQF = goal->last();
       for (int i = 0; i < goal->arity() - 1; i++)
       {
         if (i == num) continue;
+        // TODO: make sure the name is unique
         Expr s = bind::mkConst(mkTerm<string> ("_v_" + to_string(i), efac), goal->arg(i)->last());
         goalQF = replaceAll(goalQF, bind::fapp(goal->arg(i)), s);
       }
@@ -296,7 +321,8 @@ namespace ufo
       printAssumptions();
       outs() << "\nBase case:       " << *baseSubgoal << "\n";
 
-      rewriteHistory.clear();       // TODO: use it during the base case proving
+      rewriteHistory.clear();
+      rewriteSequence.clear();
 
       bool baseres = basenums.empty() ?
               rewriteAssumptions(baseSubgoal) :
@@ -304,25 +330,65 @@ namespace ufo
 
       if (!baseres)
       {
-        outs () << "                 Failed\n";
-        return true;
+        ExprVector newArgs;
+        for (int i = 0; i < goal->arity() - 1; i++)
+        {
+          if (i == num) continue;
+          newArgs.push_back(goal->arg(i));
+        }
+        if (newArgs.size() > 0)
+        {
+          outs () << "\nProceeding to nested induction\n";
+          newArgs.push_back(replaceAll(goal->last(), typeDecl, baseConstructor));
+          Expr newGoal = mknary<FORALL>(newArgs);
+          ADTSolver sol (newGoal, assumptions, constructors, maxDepth, maxSameAssm);
+          if (!sol.solve (basenums, indnums)) return false;
+          outs () << "\nReturning to the outer induction\n\n";
+        }
+        else
+        {
+          return false;
+        }
       }
 
       // generate inductive hypotheses
       ExprVector args;
       ExprVector indHypotheses;
+      bool allQF = true;
       for (int i = 1; i < indConstructor->arity() - 1; i++)
       {
+        // TODO: make sure the name is unique
         Expr s = bind::mkConst(mkTerm<string> ("_t_" + to_string(i), efac), indConstructor->arg(i));
         args.push_back(s);
 
-        if (typeDecl->last() == indConstructor->arg(i)) // type check
-          indHypotheses.push_back(replaceAll(goalQF, bind::fapp(typeDecl), s));
+        if (type == indConstructor->arg(i)) // type check
+        {
+          ExprVector argsIH;
+          for (int j = 0; j < goal->arity() - 1; j++)
+          {
+            if (j != num) argsIH.push_back(goal->arg(j));
+          }
+          argsIH.push_back(replaceAll(goal->last(), bind::fapp(typeDecl), s));
+          if (argsIH.size() == 1)
+          {
+            indHypotheses.push_back(argsIH.back());
+          }
+          else
+          {
+            allQF = false;
+            indHypotheses.push_back(mknary<FORALL>(argsIH));
+          }
+        }
       }
-      for (auto & a : indHypotheses) assumptions.push_back(a);
+      for (auto & a : indHypotheses)
+      {
+        assumptions.push_back(a);
+        // always add symmetric IH?
+        insertSymmetricAssumption(a);
+      }
       // for simplicity, add conjunction of hypotheses as a single hypothesis
       // should be removed in the future (when all QF-assumptions are used at the same time)
-      if (indHypotheses.size() > 1) assumptions.push_back(conjoin(indHypotheses, efac));
+      if (indHypotheses.size() > 1 && allQF) assumptions.push_back(conjoin(indHypotheses, efac));
 
       // prove the inductive step
       Expr indConsApp = bind::fapp(indConstructor, args);
@@ -330,25 +396,35 @@ namespace ufo
       printAssumptions();
       outs() << "\nInductive step:  " << * indSubgoal << "\n";
 
-      rewriteHistory.clear();         // TODO: use it during the base case proving
+      rewriteHistory.clear();
+      rewriteSequence.clear();
 
       bool indres = indnums.empty() ?
                rewriteAssumptions(indSubgoal) :
                tryStrategy(indSubgoal, indnums);
 
-      if (indres)
-      {
-        outs () << "                 Proved\n";
-        return true;
-      }
+      if (indres) return true;
       else
       {
-        outs () << "                 Failed\n";
+        ExprVector newArgs;
+        for (int i = 0; i < goal->arity() - 1; i++)
+        {
+          if (i == num) continue;
+          newArgs.push_back(goal->arg(i));
+        }
+        if (newArgs.size() > 0)
+        {
+          outs () << "\nProceeding to nested induction\n";
+          newArgs.push_back(replaceAll(goal->last(), bind::fapp(typeDecl), indConsApp));
+          Expr newGoal = mknary<FORALL>(newArgs);
+          ADTSolver sol (newGoal, assumptions, constructors, maxDepth, maxSameAssm);
+          return sol.solve (basenums, indnums);
+        }
         return false;
       }
     }
 
-    void solve(vector<int>& basenums, vector<int>& indnums)
+    bool solve(vector<int>& basenums, vector<int>& indnums)
     {
       unfoldGoal();
       rewriteHistory.push_back(goal);
@@ -357,7 +433,7 @@ namespace ufo
         if (simplifyGoal())
         {
           outs () << "Trivially Proved\n";
-          return;
+          return true;
         }
       }
 
@@ -372,7 +448,24 @@ namespace ufo
       if (toRollback) goal = rewriteHistory[0];
 
       outs () << "Simplified goal: " << *goal << "\n\n";
-      induction(0, basenums, indnums);
+      for (int i = 0; i < goal->arity() - 1; i++)
+      {
+        Expr type = goal->arg(i)->last();
+        if (baseConstructors[type] != NULL && indConstructors[type] != NULL)
+        {
+          if (induction(i, basenums, indnums))
+          {
+            outs () << "                 Proved\n";
+            return true;
+          }
+          else
+          {
+            outs () << "                 Failed\n";
+            return false;
+          }
+        }
+      }
+      return false;
     }
   };
 
