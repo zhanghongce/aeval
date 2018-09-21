@@ -43,7 +43,5 @@ int main (int argc, char ** argv)
   Expr e = z3_from_smtlib_file (z3, infile);
   adtSolve(z3, e, basecheck, indcheck, maxDepth, maxSameAssm, flipIH);
 
-  
-
   return 0;
 }
