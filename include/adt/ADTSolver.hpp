@@ -3,6 +3,8 @@
 #include <assert.h>
 #include <string.h>
 
+#include <iterator>
+
 #include "ae/SMTUtils.hpp"
 #include "ufo/Smt/EZ3.hh"
 
@@ -33,18 +35,22 @@ namespace ufo
 
     int maxDepthCnt;
     int failureCnt;
+
+    ExprSet failures;
+
     public:
 
-    ADTSolver(Expr _goal, ExprVector& _assumptions, ExprVector& _constructors, int _maxDepth, int _maxSameAssm) :
+    ADTSolver(Expr _goal, ExprVector& _assumptions, ExprVector& _constructors, int _maxDepth, int _maxSameAssm, bool flipIH) :
         goal(_goal), assumptions(_assumptions), constructors(_constructors),
-        efac(_goal->getFactory()), u(_goal->getFactory()), maxDepth(_maxDepth), maxSameAssm(_maxSameAssm)
+        efac(_goal->getFactory()), u(_goal->getFactory()), maxDepth(_maxDepth), maxSameAssm(_maxSameAssm), assertIHPrime(flipIH)
     {
-      assertIHPrime = true;
+      // assertIHPrime = true;
       assert(isOpX<FORALL>(goal));
     }
 
     bool simplifyGoal()
     {
+      outs()<<"hello simplifyGoal\n";
       Expr goalQF = goal->last();
       for (auto & a : assumptions)
       {
@@ -195,6 +201,8 @@ namespace ufo
         }
       }
       // failure node, stuck here, have to backtrack
+      failures.insert(subgoal);
+      // outs()<<"***failure== "<< *subgoal<<"\n";
       failureCnt ++;
       // TODO: collect failure node "subgoal, rewriteHistory, rewriteSequence, [assumptions]" 
       // generalize "subgoal" (replace () )
@@ -324,6 +332,7 @@ namespace ufo
       rewriteHistory.clear();
       maxDepthCnt = 0;
       failureCnt = 0;
+      failures.clear();
 
       bool baseres = basenums.empty() ?
               rewriteAssumptions(baseSubgoal) :
@@ -331,6 +340,9 @@ namespace ufo
       
       outs()<<"======== # of leaves at max depth: "<<maxDepthCnt<<"\n";
       outs()<<"======== # of failure nodes: "<<failureCnt<<"\n";
+
+      outs()<<"======== # of unique failure nodes: ";
+      outs()<<failures.size()<<"\n";
       
       if (!baseres)
       {
@@ -369,6 +381,7 @@ namespace ufo
       rewriteHistory.clear(); // TODO: use it during the base case proving
       maxDepthCnt = 0;
       failureCnt = 0;
+      failures.clear();
 
       bool indres = indnums.empty() ?
                rewriteAssumptions(indSubgoal) : // TODO: apply DFS, rank the failure nodes, synthesis of new lemma
@@ -376,6 +389,60 @@ namespace ufo
       
       outs()<<"======== # of leaves at max depth: "<<maxDepthCnt<<"\n";
       outs()<<"======== # of failure nodes: "<<failureCnt<<"\n";
+
+      outs()<<"======== # of unique failure nodes: ";
+      outs()<<failures.size()<<"\n";
+      for (Expr f: failures)
+      {
+        outs()<<"      "<<*f<<"\n";
+        
+        // (f->arg(0)->arg(1)) ->Print(cout);
+
+        // if (bind::isConst<AD_TY>((f->arg(0)->arg(1))))
+        //   cout<<" is Const";
+        bind::IsConst isVar;
+        // if (isVar((f->arg(0)->arg(1))))
+        //   cout<<" is Var";
+
+
+        ExprVector args;
+        filter(f, isVar, back_inserter(args));
+        for (Expr e : args)
+        {
+          outs()<<"                "<<*e<<" of Type ";
+          Expr typeDecl = bind::typeOf(e);
+          outs()<<*typeDecl;
+
+          Expr baseCtor = baseConstructors[typeDecl];
+          if (baseCtor != NULL)
+            outs()<<" whose base Ctor is "<<* baseCtor;
+
+          outs()<<"\n";
+        }
+
+        // 1. 
+        // ADTSolver newSolver()
+      }
+
+      outs()<<"# of baseCtors: "<<baseConstructors.size()<<"\n";
+      for (auto p : baseConstructors)
+      {
+        outs()<<"======== typename: "<<*(p.first);
+        if (isOpX<AD_TY>(p.first)) outs()<<" [is AD_TY] ";
+        if (p.second)
+          outs()<<*(p.second);
+        outs()<<"\n";
+      }
+
+      outs()<<"# of indCtors: "<<indConstructors.size()<<"\n";
+      for (auto p : indConstructors)
+      {
+        outs()<<"======== typename: "<<*(p.first);
+        if (isOpX<AD_TY>(p.first)) outs()<<" [is AD_TY] ";
+        if (p.second)
+          outs()<<*(p.second);
+        outs()<<"\n";
+      }
 
       if (indres)
       {
@@ -388,7 +455,7 @@ namespace ufo
         return false;
       }
     }
-    Expr generalise(Expr e, ) {
+    /*Expr generalise(Expr e) {
       find inductive constructors;
       replace constructor with  v : Type
 
@@ -403,7 +470,8 @@ namespace ufo
       3. find function app
             replace with new var
 
-    }
+    }*/
+
     void solve(vector<int>& basenums, vector<int>& indnums)
     {
       unfoldGoal();
@@ -454,7 +522,7 @@ namespace ufo
     nums.push_back(atoi(substr));
   }
 
-  void adtSolve(EZ3& z3, Expr s, char* basecheck, char *indcheck, int maxDepth, int maxSameAssm)
+  void adtSolve(EZ3& z3, Expr s, char* basecheck, char *indcheck, int maxDepth, int maxSameAssm, bool flipIH)
   {
     vector<int> basenums;
     vector<int> indnums;
@@ -491,7 +559,7 @@ namespace ufo
       outs () << "Unable to parse the query\n";
       return;
     }
-    ADTSolver sol (goal, assumptions, constructors, maxDepth, maxSameAssm);
+    ADTSolver sol (goal, assumptions, constructors, maxDepth, maxSameAssm, flipIH);
     sol.solve (basenums, indnums);
   }
 }

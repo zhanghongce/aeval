@@ -15,6 +15,8 @@
 ; extra lemmas
 ;(assert (forall ((x Lst) (a Lst)) (= (rev2 x a) (append (rev2 x nil) a))))
 
+;((rev2 _t_2 (cons _t_1 nil))=(append (rev2 _t_2 nil) (cons _t_1 nil)))
+
 (assert (not (forall ((x Lst)) (= (rev2 x nil) (rev x)))))
 (check-sat)
 

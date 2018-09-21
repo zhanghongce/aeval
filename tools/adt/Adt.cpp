@@ -39,8 +39,11 @@ int main (int argc, char ** argv)
   char *indcheck = getStrValue("--ind", NULL, argc, argv);
   int maxDepth = atoi(getStrValue("--max-depth", "10", argc, argv));
   int maxSameAssm = atoi(getStrValue("--max-same-assm", "5", argc, argv));
+  bool flipIH = (getStrValue("--flip-ih", NULL, argc, argv) != NULL);
   Expr e = z3_from_smtlib_file (z3, infile);
-  adtSolve(z3, e, basecheck, indcheck, maxDepth, maxSameAssm);
+  adtSolve(z3, e, basecheck, indcheck, maxDepth, maxSameAssm, flipIH);
+
+  
 
   return 0;
 }

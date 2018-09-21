@@ -14,7 +14,16 @@
 
 ;extra lemmas
 (assert (forall ((x Lst) (a Lst)) (= (rev2 x a) (append (rev2 x nil) a))))
-(assert (forall ((x Lst) (y Lst)) (= (len (append x y)) (+ (len x) (len y)))))
+;(assert (forall ((x Lst) (y Lst)) (= (len (append x y)) (+ (len x) (len y)))))
 
 (assert (not (forall ((x Lst)) (= (len (rev2 x nil)) (len x)))))
 (check-sat)
+
+
+; 1 5 6 7 1 0 8
+
+
+;
+;
+;((len (append (rev2 _t_2 nil) (cons _t_1 nil)))=(1+(len _t_2)))
+;((len (append (rev2 _t_2 nil) (cons _t_1 nil)))=(len (cons _t_1 _t_2)))
