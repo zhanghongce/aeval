@@ -9,7 +9,7 @@
 (assert (forall ((x Int) (t Lst) (a Lst)) (= (rev2 (cons x t) a) (rev2 t (cons x a)))))
 
 ; extra lemma
-(assert (forall ((x Lst) (y Lst) (z Lst)) (= (append (append x y) z) (append x (append y z)))))
+;(assert (forall ((x Lst) (y Lst) (z Lst)) (= (append (append x y) z) (append x (append y z)))))
 
 (assert (not (forall ((x Lst) (a Lst)) (= (rev2 x a) (append (rev2 x nil) a)))))
 (check-sat)

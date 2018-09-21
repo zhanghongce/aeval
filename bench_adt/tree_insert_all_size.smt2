@@ -15,7 +15,7 @@
 (assert (forall ((x Int) (l Tree) (r Tree)) (= (tsize (node x l r)) (+ 1 (+ (tsize l) (tsize r))))))
 
 ; extra lemmas
-(assert (forall ((t Tree) (n Int)) (= (tsize (tinsert t n)) (+ 1 (tsize t)))))
+;(assert (forall ((t Tree) (n Int)) (= (tsize (tinsert t n)) (+ 1 (tsize t)))))
 
 (assert (not (forall ((l Lst) (t Tree)) (<= (tsize t) (tsize (tinsert-all t l))))))
 (check-sat)

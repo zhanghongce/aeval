@@ -33,7 +33,7 @@
 
 ; extra lemmas
 (assert (forall ((x Lst) (y Lst) (z Lst)) (= (append (append x y) z) (append x (append y z)))))
-(assert (forall ((x Lst) (a Lst)) (= (rev2 x a) (append (rev2 x nil) a))))
+;(assert (forall ((x Lst) (a Lst)) (= (rev2 x a) (append (rev2 x nil) a))))
 
 (assert (not (forall ((q Queue) (n Int)) (= (append (queue-to-lst q) (cons n nil)) (queue-to-lst (qpush q n))))))
 (check-sat)

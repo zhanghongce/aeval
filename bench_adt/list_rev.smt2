@@ -9,7 +9,7 @@
 (assert (forall ((x Int) (y Lst)) (= (rev (cons x y)) (append (rev y) (cons x nil)))))
 
 ; extra lemmas
-(assert (forall ((x Lst) (y Lst)) (= (rev (append x y)) (append (rev y) (rev x)))))
+;(assert (forall ((x Lst) (y Lst)) (= (rev (append x y)) (append (rev y) (rev x)))))
 
 (assert (not (forall ((x Lst)) (= (rev (rev x)) x))))
 (check-sat)

@@ -27,7 +27,7 @@
 
 ; extra lemmas
 (assert (forall ((x Lst)) (= (len (rev2 x nil)) (len x))))
-(assert (forall ((x Lst) (y Lst)) (= (len (append x y)) (+ (len x) (len y)))))
+;(assert (forall ((x Lst) (y Lst)) (= (len (append x y)) (+ (len x) (len y)))))
 
 (assert (not (forall ((x Lst) (y Lst)) (= (qlen (amortizeQueue x y)) (+ (len x) (len y))))))
 (check-sat)
