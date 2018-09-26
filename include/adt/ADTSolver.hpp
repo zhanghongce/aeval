@@ -17,8 +17,9 @@ namespace ufo
     private:
 
     Expr goal;
-    ExprVector& assumptions;
-    ExprVector& constructors;
+    // assumptions should be copied, prevents changes propagating
+    ExprVector assumptions;
+    ExprVector constructors;
 
     map<Expr, Expr> baseConstructors;
     map<Expr, Expr> indConstructors;
@@ -28,6 +29,7 @@ namespace ufo
 
     ExprVector rewriteHistory;
     vector<int> rewriteSequence;
+    ExprSet rewriteSet;
     int maxDepth;
     int maxSameAssm;
     bool assertIHPrime;
@@ -37,6 +39,9 @@ namespace ufo
     int failureCnt;
 
     ExprSet failures;
+    bool synthLemmas;
+
+    ExprVector indCtorDecls;
 
     public:
 
@@ -46,11 +51,25 @@ namespace ufo
     {
       // assertIHPrime = true;
       assert(isOpX<FORALL>(goal));
+      // bind::IsConst isVar;
+      // outs()<<"goal: "<<*goal<<"\n";
+      // outs()<<"===== quantified vars: ";
+      // for (int i = 0; i < goal->arity() - 1; i++)
+      // {
+
+      //   outs()<<" "<<* (goal->arg(i));
+      //   if (isOpX<FDECL>(goal->arg(i))) outs()<<"[is fdecl]";
+      // }
+      // outs()<<"\n";
+
+
+      // default : no synth
+      synthLemmas = false;
     }
 
     bool simplifyGoal()
     {
-      outs()<<"hello simplifyGoal\n";
+      // outs()<<"hello simplifyGoal\n";
       Expr goalQF = goal->last();
       for (auto & a : assumptions)
       {
@@ -228,6 +247,11 @@ namespace ufo
         Expr res = useAssumption(subgoal, a);
         if (res != NULL)
         {
+          // if (rewriteSet.find(res) != rewriteSet.end()){
+          //   outs()<<"revisit bt\n";
+          //   continue;
+          // }
+          // rewriteSet.insert(res);
           outs () << "rewritten [" << i << "]:   " << *res << "\n";
           // save history
           rewriteHistory.push_back(res);
@@ -376,7 +400,7 @@ namespace ufo
       Expr baseSubgoal = replaceAll(goalQF, typeDecl, baseConstructor);
       printAssumptions();
       outs() << "\nBase case:       " << *baseSubgoal << "\n";
-
+      rewriteSet.clear();
       rewriteSequence.clear();
       rewriteHistory.clear();
       maxDepthCnt = 0;
@@ -390,6 +414,8 @@ namespace ufo
       outs()<<"======== # of leaves at max depth: "<<maxDepthCnt<<"\n";
       outs()<<"======== # of failure nodes: "<<failureCnt<<"\n";
 
+      // remove baseSubgoal
+      failures.erase(baseSubgoal);
       outs()<<"======== # of unique failure nodes: ";
       outs()<<failures.size()<<"\n";
       
@@ -462,6 +488,7 @@ namespace ufo
       printAssumptions();
       outs() << "\nInductive step:  " << * indSubgoal << "\n";
 
+      rewriteSet.clear();
       rewriteSequence.clear();
       rewriteHistory.clear(); // TODO: use it during the base case proving
       maxDepthCnt = 0;
@@ -476,10 +503,12 @@ namespace ufo
       outs()<<"======== # of failure nodes: "<<failureCnt<<"\n";
 
       outs()<<"======== # of unique failure nodes: ";
+
+      failures.erase(indSubgoal);
       outs()<<failures.size()<<"\n";
-      for (Expr f: failures)
+      /*for (Expr f: failures)
       {
-        outs()<<"      "<<*f<<"\n";
+        outs()<<";      "<<*f<<"\n";
         
         // (f->arg(0)->arg(1)) ->Print(cout);
 
@@ -498,9 +527,12 @@ namespace ufo
           Expr typeDecl = bind::typeOf(e);
           outs()<<*typeDecl;
 
+          // YES isOpX<FAPP>(e)
+          // YES isOpX<AD_TY>(typeDecl)
+
           Expr baseCtor = baseConstructors[typeDecl];
-          if (baseCtor != NULL)
-            outs()<<" whose base Ctor is "<<* baseCtor;
+          if (baseCtor != NULL && e == bind::fapp(baseCtor))
+              outs()<<" is base ctor";
 
           outs()<<"\n";
         }
@@ -508,26 +540,26 @@ namespace ufo
         // 1. 
         // ADTSolver newSolver()
       }
+      */
+      // outs()<<"# of baseCtors: "<<baseConstructors.size()<<"\n";
+      // for (auto p : baseConstructors)
+      // {
+      //   outs()<<"======== typename: "<<*(p.first);
+      //   if (isOpX<AD_TY>(p.first)) outs()<<" [is AD_TY] ";
+      //   if (p.second)
+      //     outs()<<*(p.second);
+      //   outs()<<"\n";
+      // }
 
-      outs()<<"# of baseCtors: "<<baseConstructors.size()<<"\n";
-      for (auto p : baseConstructors)
-      {
-        outs()<<"======== typename: "<<*(p.first);
-        if (isOpX<AD_TY>(p.first)) outs()<<" [is AD_TY] ";
-        if (p.second)
-          outs()<<*(p.second);
-        outs()<<"\n";
-      }
-
-      outs()<<"# of indCtors: "<<indConstructors.size()<<"\n";
-      for (auto p : indConstructors)
-      {
-        outs()<<"======== typename: "<<*(p.first);
-        if (isOpX<AD_TY>(p.first)) outs()<<" [is AD_TY] ";
-        if (p.second)
-          outs()<<*(p.second);
-        outs()<<"\n";
-      }
+      // outs()<<"# of indCtors: "<<indConstructors.size()<<"\n";
+      // for (auto p : indConstructors)
+      // {
+      //   outs()<<"======== typename: "<<*(p.first);
+      //   if (isOpX<AD_TY>(p.first)) outs()<<" [is AD_TY] ";
+      //   if (p.second)
+      //     outs()<<*(p.second);
+      //   outs()<<"\n";
+      // }
 
       if (indres) return true;
       else
@@ -548,6 +580,7 @@ namespace ufo
         }
         return false;
       }
+
     }
     /*Expr generalise(Expr e) {
       find inductive constructors;
@@ -566,6 +599,112 @@ namespace ufo
 
     }*/
 
+    bool isVarFn(Expr e){
+      if (isOpX<FAPP> (e) && e->arity () == 1 && isOpX<FDECL> (e->first())) {
+        Expr baseCtor = baseConstructors[bind::typeOf(e)];
+        // exclude base constructors (e.g. nil:Lst)
+        return (baseCtor == NULL || e != bind::fapp(baseCtor));
+      } else return false;
+    }
+    bool isIndCtorFn(Expr e){
+      if (isOpX<FAPP> (e) && isOpX<FDECL> (e->first())){
+        if (find(indCtorDecls.begin(), indCtorDecls.end(), e->first()) != indCtorDecls.end())
+          return true;
+      }
+      return false;
+    }
+    void generalize(Expr goalQF, ExprVector &qVars, ExprVector &candidates)
+    {
+      // auto isCtor = [this](Expr e){
+      //   if (isOpX<FAPP> (e) && isOpX<FDECL> (e->first())){
+      //     if (find(indCtorDecls.begin(), indCtorDecls.end(), e->first()) != indCtorDecls.end())
+      //       return true;
+      //   }
+      //   return false;
+      // };
+      ExprVector ctorApps;
+      filter(goalQF, [this](Expr e){return isIndCtorFn(e);}, back_inserter(ctorApps));
+      for (Expr ctor: ctorApps){
+        // outs()<<"**** found ind ctor: "<<*ctor;
+        ExprVector ctorArgs;
+        filter(ctor, [this](Expr e){return isVarFn(e);}, back_inserter(ctorArgs));
+        Expr ty = bind::typeOf(ctor);
+        auto tyStr = getTerm<string>(ty->first());
+        Expr newVar = bind::mkConst(mkTerm<string>("_lm_gen_" + tyStr, ctor->efac()), ty);
+        // outs()<<" replaced by newVar: "<<*newVar<<"\n";
+        Expr newGoalQF = replaceAll(goalQF, ctor, newVar);
+
+        bool replaceSuccess = true;
+        for (Expr arg: ctorArgs)
+          if (contains(newGoalQF, arg)){
+            replaceSuccess= false;
+            break;
+          }
+        if (replaceSuccess)
+        {
+          ExprVector vars;
+          filter(newGoalQF, [this](Expr e){return isVarFn(e);}, back_inserter(vars));
+          // remove fapp for quantified vars
+          for (Expr &v : vars) v = v->first();
+          vars.push_back(newGoalQF);
+          Expr newGoal = mknary<FORALL>(vars);
+
+          for (Expr c: candidates)
+            if (newGoal != c) {
+              candidates.push_back(newGoal);
+              outs()<<"****===*** new goal:  "<<*newGoal<<"\n";
+            }
+        }
+      }
+    }
+    bool tryLemmas(ExprVector assm)
+    {
+      if (failures.empty()) return false;
+      ExprVector candidates;
+
+      // auto isVar = [this](Expr e){
+      //   if (isOpX<FAPP> (e) && e->arity () == 1 && isOpX<FDECL> (e->first())) {
+      //     Expr baseCtor = baseConstructors[bind::typeOf(e)];
+      //     // exclude base constructors (e.g. nil:Lst)
+      //     return (baseCtor == NULL || e != bind::fapp(baseCtor));
+      //   } else return false;
+      // };
+      for (Expr f : failures)
+      {
+        outs()<<";      "<<*f<<"\n";
+        ExprVector vars;
+        ExprVector renamedVars;
+        filter(f, [this](Expr e){return isVarFn(e);}, back_inserter(vars));
+        for (Expr v: vars)
+        {
+          // outs()<<" "<<*v;
+          Expr varDecl = v->left();
+          auto nameStr = "_lm" + getTerm<string>(varDecl->left());
+          Expr newName = mkTerm<string>(nameStr, v->efac());
+          renamedVars.push_back(bind::fapp(bind::rename(varDecl, newName)));
+        }
+        Expr goalQF = replaceAll(f, vars, renamedVars);
+
+        generalize(goalQF, renamedVars, candidates);
+        
+        outs()<<"\n";
+      }
+      vector<int> basenums;
+      vector<int> indnums;
+      for (Expr lemma: candidates)
+      {
+        assm.push_back(lemma);
+        outs()<<"\n\n=======================\n\n";
+        ADTSolver sol (goal, assm, constructors, maxDepth, maxSameAssm, assertIHPrime);
+        bool res = sol.solve (basenums, indnums);
+        if (res) {
+          outs()<<"===========Solved with new lemma: "<< *lemma <<"\n";
+        }
+        outs()<<"\n\n=======================\n\n";
+        assm.pop_back();
+      }
+      return false;
+    }
     bool solve(vector<int>& basenums, vector<int>& indnums)
     {
       unfoldGoal();
@@ -577,6 +716,12 @@ namespace ufo
           outs () << "Trivially Proved\n";
           return true;
         }
+      }
+
+      for (auto p : indConstructors)
+      {
+        if (isOpX<AD_TY>(p.first) && p.second != NULL)
+          indCtorDecls.push_back(p.second);
       }
 
       // simple heuristic: if the result of every rewriting made the goal larger, we rollback
@@ -605,6 +750,7 @@ namespace ufo
             outs () << "                 Failed\n";
             return false;
           }
+
         }
       }
       return false;
@@ -671,7 +817,8 @@ namespace ufo
       return;
     }
     ADTSolver sol (goal, assumptions, constructors, maxDepth, maxSameAssm, flipIH);
-    sol.solve (basenums, indnums);
+    bool res = sol.solve (basenums, indnums);
+    if (!res) sol.tryLemmas(assumptions);
   }
 }
 
