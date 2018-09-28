@@ -22,3 +22,9 @@
 
 
 ; 3,5,6,7
+
+;x     ((rev2 (cons _t_1 _t_2) nil)=(append (rev _t_2) (cons _t_1 nil)))
+;y     ((rev2 _t_2 (cons _t_1 nil))=(append (rev _t_2) (cons _t_1 nil)))
+;y      ((rev2 _t_2 (cons _t_1 nil))=(append (rev2 _t_2 nil) (cons _t_1 nil)))
+;x     ((rev2 (cons _t_1 _t_2) nil)=(append (rev2 _t_2 nil) (cons _t_1 nil)))
+;x      ((rev2 _t_2 (cons _t_1 nil))=(rev (cons _t_1 _t_2))) 

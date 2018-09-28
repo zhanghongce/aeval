@@ -4,6 +4,7 @@
 (declare-fun len (Lst) Int)
 (assert (= (len nil) 0))
 (assert (forall ((x Int) (y Lst)) (= (len (cons x y)) (+ 1 (len y)))))
+(assert (forall ((x Lst)) (>= (len x) 0)))
 
 (declare-fun qlen (Queue) Int)
 (assert (forall ((x Lst) (y Lst)) (= (qlen (queue x y)) (+ (len x) (len y)))))
@@ -26,8 +27,14 @@
     (queue (append x (qrev y)) nil)))))
 
 ; extra lemmas
-(assert (forall ((x Lst)) (= (len (rev2 x nil)) (len x))))
+; (assert (forall ((x Lst)) (= (len (rev2 x nil)) (len x))))
+; (len (rev2 (cons _t_1 _t_2) nil))+0)=(0+(len (cons _t_1 _t_2))
+
+
 ;(assert (forall ((x Lst) (y Lst)) (= (len (append x y)) (+ (len x) (len y)))))
+; (1+(len (append _t_2 (rev2 _v_1 nil))))+0)=((1+(len _t_2))+(len _v_1)))
+
 
 (assert (not (forall ((x Lst) (y Lst)) (= (qlen (amortizeQueue x y)) (+ (len x) (len y))))))
 (check-sat)
+
