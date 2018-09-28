@@ -176,6 +176,9 @@ namespace ufo
     // this recursive method performs a naive search for a strategy
     bool rewriteAssumptions(Expr subgoal)
     {
+      // Expr newGoal = rewriteITE(subgoal);
+      // if (newGoal) subgoal = newGoal;
+
       if (u.isEquiv(subgoal, mk<TRUE>(efac))) {
         outs()<<"Proof sequence:";
         for (int a : rewriteSequence)
@@ -247,10 +250,10 @@ namespace ufo
         Expr res = useAssumption(subgoal, a);
         if (res != NULL)
         {
-          // if (rewriteSet.find(res) != rewriteSet.end()){
-          //   outs()<<"revisit bt\n";
-          //   continue;
-          // }
+          if (rewriteSet.find(res) != rewriteSet.end()){
+            outs()<<"revisit bt\n";
+            continue;
+          }
           // rewriteSet.insert(res);
           outs () << "rewritten [" << i << "]:   " << *res << "\n";
           // save history
@@ -264,7 +267,7 @@ namespace ufo
             rewriteHistory.pop_back();
             rewriteSequence.pop_back();
             // backtrack:
-            outs()<<"bt\n";
+            // outs()<<"bt\n";
             // outs () << "backtrack to:    " << *subgoal << "\n";
           }
         }
@@ -613,15 +616,40 @@ namespace ufo
       }
       return false;
     }
+    void insertUniqueGoal(Expr goalQF, ExprVector& candidates) {
+      ExprVector vars;
+      filter(goalQF, [this](Expr e){return isVarFn(e);}, back_inserter(vars));
+      // remove fapp for quantified vars
+      for (Expr &v : vars) v = v->first();
+      vars.push_back(goalQF);
+      Expr newGoal = mknary<FORALL>(vars);
+      if (find(candidates.begin(), candidates.end(), newGoal) == candidates.end())
+      {
+        candidates.push_back(newGoal);
+        outs()<<"****===*** new goal:  "<<*newGoal<<"\n";
+      }
+    }
+    Expr rewriteITE(Expr e)
+    {
+      if (!isOpX<EQ>(e) || e->arity() != 2) return NULL;
+      Expr ite;
+      if (isOpX<ITE>(e->left()))
+      {
+        ite = e->left();
+        e = e->right();
+      }else if (isOpX<ITE>(e->right())){
+        ite = e->right();
+        e = e->left();
+      }else return NULL;
+
+      Expr thenBr = boolop::limp(ite->left(), mk<EQ>(e, ite->arg(1)));
+      Expr elseBr = boolop::limp(boolop::lneg(ite->left()), mk<EQ>(e, ite->arg(2)));
+      if (u.isEquiv(thenBr, mk<TRUE>(efac))) return elseBr;
+      if (u.isEquiv(elseBr, mk<TRUE>(efac))) return thenBr;
+      else return NULL;
+    }
     void generalize(Expr goalQF, ExprVector &qVars, ExprVector &candidates)
     {
-      // auto isCtor = [this](Expr e){
-      //   if (isOpX<FAPP> (e) && isOpX<FDECL> (e->first())){
-      //     if (find(indCtorDecls.begin(), indCtorDecls.end(), e->first()) != indCtorDecls.end())
-      //       return true;
-      //   }
-      //   return false;
-      // };
       ExprVector ctorApps;
       filter(goalQF, [this](Expr e){return isIndCtorFn(e);}, back_inserter(ctorApps));
       for (Expr ctor: ctorApps){
@@ -641,34 +669,17 @@ namespace ufo
             break;
           }
         if (replaceSuccess)
-        {
-          ExprVector vars;
-          filter(newGoalQF, [this](Expr e){return isVarFn(e);}, back_inserter(vars));
-          // remove fapp for quantified vars
-          for (Expr &v : vars) v = v->first();
-          vars.push_back(newGoalQF);
-          Expr newGoal = mknary<FORALL>(vars);
-
-          for (Expr c: candidates)
-            if (newGoal != c) {
-              candidates.push_back(newGoal);
-              outs()<<"****===*** new goal:  "<<*newGoal<<"\n";
-            }
-        }
+          insertUniqueGoal(newGoalQF, candidates);
+      }
+      if (ctorApps.empty()) {
+        goalQF = rewriteITE(goalQF);
+        if (goalQF) insertUniqueGoal(goalQF, candidates);
       }
     }
-    bool tryLemmas(ExprVector assm)
+    bool tryLemmas(ExprVector assm, bool tryAgain = false)
     {
       if (failures.empty()) return false;
       ExprVector candidates;
-
-      // auto isVar = [this](Expr e){
-      //   if (isOpX<FAPP> (e) && e->arity () == 1 && isOpX<FDECL> (e->first())) {
-      //     Expr baseCtor = baseConstructors[bind::typeOf(e)];
-      //     // exclude base constructors (e.g. nil:Lst)
-      //     return (baseCtor == NULL || e != bind::fapp(baseCtor));
-      //   } else return false;
-      // };
       for (Expr f : failures)
       {
         outs()<<";      "<<*f<<"\n";
@@ -677,7 +688,7 @@ namespace ufo
         filter(f, [this](Expr e){return isVarFn(e);}, back_inserter(vars));
         for (Expr v: vars)
         {
-          // outs()<<" "<<*v;
+          outs()<<" "<<*v;
           Expr varDecl = v->left();
           auto nameStr = "_lm" + getTerm<string>(varDecl->left());
           Expr newName = mkTerm<string>(nameStr, v->efac());
@@ -699,6 +710,10 @@ namespace ufo
         bool res = sol.solve (basenums, indnums);
         if (res) {
           outs()<<"===========Solved with new lemma: "<< *lemma <<"\n";
+          return true;
+        }else {
+          outs()<<"===========Not solved with new lemma: "<< *lemma <<"\n";
+          if (tryAgain) sol.tryLemmas(assm);
         }
         outs()<<"\n\n=======================\n\n";
         assm.pop_back();
@@ -818,7 +833,7 @@ namespace ufo
     }
     ADTSolver sol (goal, assumptions, constructors, maxDepth, maxSameAssm, flipIH);
     bool res = sol.solve (basenums, indnums);
-    if (!res) sol.tryLemmas(assumptions);
+    if (!res) sol.tryLemmas(assumptions, true);
   }
 }
 
