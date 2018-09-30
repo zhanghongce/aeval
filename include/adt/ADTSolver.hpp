@@ -157,6 +157,72 @@ namespace ufo
       return NULL;
     }
 
+    void useAssumptionMulti(Expr subgoal, Expr assm, ExprVector& results)
+    {
+      subgoal = liftITEs(subgoal);
+      if (isOpX<FORALL>(assm))
+      {
+        ExprMap matching;
+        ExprVector args;
+        for (int i = 0; i < assm->arity() - 1; i++) args.push_back(bind::fapp(assm->arg(i)));
+        Expr assmQF = assm->last();
+        Expr repl = assmQF;
+
+        // we first search for a matching of the entire assumption (usually some inequality)
+        if (findMatchingSubexpr (assmQF, subgoal, args, matching))
+        {
+          for (auto & a : matching) repl = replaceAll(repl, a.first, a.second);
+          Expr replaced = replaceAll(subgoal, repl, mk<TRUE>(efac));
+          if (subgoal != replaced)
+          {
+            results.push_back(replaced);
+            return;
+          }
+        }
+        if (isOpX<EQ>(assmQF))
+        {
+          vector<ExprMap> matchings;
+          findMultiMatchingSubexpr (assmQF->left(), subgoal, args, matchings);
+          for (ExprMap &match: matchings)
+          {
+            repl = assmQF;
+            for (auto & a : match) repl = replaceAll(repl, a.first, a.second);
+            results.push_back(replaceAll(subgoal, repl->left(), repl->right()));
+          }
+        }
+        if ((isOpX<LEQ>(assmQF) && isOpX<LEQ>(subgoal)) ||
+            (isOpX<GEQ>(assmQF) && isOpX<GEQ>(subgoal)) ||
+            (isOpX<LT>(assmQF) && isOpX<LT>(subgoal)) ||
+            (isOpX<GT>(assmQF) && isOpX<GT>(subgoal)))
+        {
+          vector<ExprMap> matchings;
+          findMultiMatchingSubexpr (assmQF->left(), subgoal, args, matchings);
+          for (ExprMap &match: matchings)
+          {
+            repl = assmQF;
+            for (auto & a : match) repl = replaceAll(repl, a.first, a.second);
+            if (u.implies(repl, subgoal)) results.push_back(mk<TRUE>(efac));
+          }
+        }
+      }
+      else
+      {
+        // for a quantifier-free assumption (e.g., inductive hypotheses),
+        // we create an SMT query and check with Z3
+        // TODO: we can do so for ALL constistent quantifier-free assumptions at once
+        if (u.implies(assm, subgoal)) results.push_back(mk<TRUE>(efac));
+        if (isOpX<EQ>(assm))
+        {
+          Expr res = replaceAll(subgoal, assm->left(), assm->right());
+          if (res != subgoal)
+          {
+            results.push_back(res);
+          }
+        }
+      }
+    }
+
+
     // this method is used when a strategy is specified from the command line
     bool tryStrategy(Expr subgoal, vector<int>& strat)
     {
@@ -247,28 +313,33 @@ namespace ufo
           // TODO: IH and IH' can be applied to different part of the expression
         }
         Expr a = assumptions[i];
-        Expr res = useAssumption(subgoal, a);
-        if (res != NULL)
+        // Expr res = useAssumption(subgoal, a);
+        ExprVector results;
+        useAssumptionMulti(subgoal, a, results);
+        for (Expr res : results)
         {
-          if (rewriteSet.find(res) != rewriteSet.end()){
-            outs()<<"revisit bt\n";
-            continue;
-          }
-          // rewriteSet.insert(res);
-          outs () << "rewritten [" << i << "]:   " << *res << "\n";
-          // save history
-          rewriteHistory.push_back(res);
-          rewriteSequence.push_back(i);
+          if (res != NULL)
+          {
+            if (rewriteSet.find(res) != rewriteSet.end()){
+              outs()<<"revisit bt\n";
+              continue;
+            }
+            // rewriteSet.insert(res);
+            outs () << "rewritten [" << i << "]:   " << *res << "\n";
+            // save history
+            rewriteHistory.push_back(res);
+            rewriteSequence.push_back(i);
 
-          if  (rewriteAssumptions(res))
-            return true;
-          else {
-            // failed attempt, remove history
-            rewriteHistory.pop_back();
-            rewriteSequence.pop_back();
-            // backtrack:
-            // outs()<<"bt\n";
-            // outs () << "backtrack to:    " << *subgoal << "\n";
+            if  (rewriteAssumptions(res))
+              return true;
+            else {
+              // failed attempt, remove history
+              rewriteHistory.pop_back();
+              rewriteSequence.pop_back();
+              // backtrack:
+              // outs()<<"bt\n";
+              // outs () << "backtrack to:    " << *subgoal << "\n";
+            }
           }
         }
       }
@@ -704,18 +775,32 @@ namespace ufo
       vector<int> indnums;
       for (Expr lemma: candidates)
       {
+        outs()<<"\n\n======={ try proving lemma\n\n";
+        ADTSolver solLemma (lemma, assm, constructors, maxDepth, maxSameAssm, assertIHPrime);
+        bool res = solLemma.solve (basenums, indnums);
+        if (!res) res = solLemma.tryLemmas(assm, true);
+        if (!res) {
+          outs()<<"\n\n======= lemma is invalid / not proved }\n\n";
+          continue;
+        }
+        outs()<<"\n\n========lemma is valid and proved}\n\n";
         assm.push_back(lemma);
-        outs()<<"\n\n=======================\n\n";
         ADTSolver sol (goal, assm, constructors, maxDepth, maxSameAssm, assertIHPrime);
-        bool res = sol.solve (basenums, indnums);
+        outs()<<"\n\n======={ try original goal with lemma\n\n";
+        res = sol.solve (basenums, indnums);
         if (res) {
-          outs()<<"===========Solved with new lemma: "<< *lemma <<"\n";
+          outs()<<"===========Solved with new lemma: "<< *lemma <<"}\n";
           return true;
         }else {
-          outs()<<"===========Not solved with new lemma: "<< *lemma <<"\n";
-          if (tryAgain) sol.tryLemmas(assm);
+          outs()<<"===========Not solved with new lemma: "<< *lemma <<"}\n";
+          if (tryAgain){
+            outs()<<"===========tryLemmas 2nd attempt begin{\n";
+            res = sol.tryLemmas(assm, false);
+            outs()<<"===========tryLemmas 2nd attempt end}\n";
+            if (res) return true;
+          }
         }
-        outs()<<"\n\n=======================\n\n";
+        // outs()<<"\n\n=======================\n\n";
         assm.pop_back();
       }
       return false;

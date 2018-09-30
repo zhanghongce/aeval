@@ -1050,6 +1050,39 @@ namespace ufo
     }
   };
 
+  struct SubexprMultiMatcher : public std::unary_function<Expr, VisitAction>
+  {
+    // int found;
+    ExprVector& vars;
+    vector<ExprMap>& matchings;
+    Expr pattern;
+    SubexprMultiMatcher (Expr _p, ExprVector& _v, vector<ExprMap>& _m) :
+       pattern(_p), vars(_v), matchings(_m) {}
+
+    VisitAction operator() (Expr exp)
+    {
+      // if (found)
+      // {
+      //   return VisitAction::skipKids ();
+      // }
+      ExprMap matching;
+      if ((isOpX<FAPP>(exp) || isOp<ComparissonOp>(exp)) &&
+          findMatching (pattern, exp, vars, matching))
+      {
+        matchings.push_back(matching);
+        // comment this?
+        return VisitAction::skipKids ();
+      }
+      return VisitAction::doKids ();
+    }
+  };
+  inline int findMultiMatchingSubexpr (Expr pattern, Expr exp, ExprVector& vars, vector<ExprMap>& matchings)
+  {
+    SubexprMultiMatcher fn (pattern, vars, matchings);
+    dagVisit (fn, exp);
+    return matchings.size();
+  }
+
   inline bool findMatchingSubexpr (Expr pattern, Expr exp, ExprVector& vars, ExprMap& matching)
   {
     SubexprMatcher fn (pattern, vars, matching);
