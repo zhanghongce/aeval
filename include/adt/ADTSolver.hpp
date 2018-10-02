@@ -743,8 +743,9 @@ namespace ufo
           insertUniqueGoal(newGoalQF, candidates);
       }
       if (ctorApps.empty()) {
-        goalQF = rewriteITE(goalQF);
-        if (goalQF) insertUniqueGoal(goalQF, candidates);
+        // goalQF = rewriteITE(goalQF);
+        // if (goalQF) 
+        insertUniqueGoal(goalQF, candidates);
       }
     }
     bool tryLemmas(ExprVector assm, bool tryAgain = false)
@@ -773,16 +774,17 @@ namespace ufo
       }
       vector<int> basenums;
       vector<int> indnums;
+      bool res;
       for (Expr lemma: candidates)
       {
-        outs()<<"\n\n======={ try proving lemma\n\n";
+        /*outs()<<"\n\n======={ try proving lemma\n\n";
         ADTSolver solLemma (lemma, assm, constructors, maxDepth, maxSameAssm, assertIHPrime);
-        bool res = solLemma.solve (basenums, indnums);
+        res = solLemma.solve (basenums, indnums);
         if (!res) res = solLemma.tryLemmas(assm, true);
         if (!res) {
           outs()<<"\n\n======= lemma is invalid / not proved }\n\n";
           continue;
-        }
+        }*/
         outs()<<"\n\n========lemma is valid and proved}\n\n";
         assm.push_back(lemma);
         ADTSolver sol (goal, assm, constructors, maxDepth, maxSameAssm, assertIHPrime);
