@@ -12,6 +12,143 @@ using namespace std;
 using namespace boost;
 namespace ufo
 {
+  class TermEnumerator
+  {
+  private:
+    ExprMap baseCtors;
+    ExprMap indCtors;
+    ExprVector vars;
+    ExprVector funcs;
+    int maxDepth;
+    map<Expr, ExprVector> allTerms;
+    vector<size_t> depthIdx;
+    bool isVarFn(Expr e){
+      if (isOpX<FAPP> (e) && e->arity () == 1 && isOpX<FDECL> (e->first())) {
+        Expr baseCtor = baseCtors[bind::typeOf(e)];
+        // exclude base constructors (e.g. nil:Lst)
+        return (baseCtor == NULL || e != bind::fapp(baseCtor));
+      } else return false;
+    }
+    bool isFuncFn(Expr e){
+      // fdecl [name fromTy ... toTy]
+      if (isOpX<FDECL> (e) && e->arity () >= 3) {
+        return true;
+      } else return false;
+    }
+    // bool isIndCtorFn(Expr e){
+    //   if (isOpX<FAPP> (e) && isOpX<FDECL> (e->first())){
+    //     if (find(indCtorDecls.begin(), indCtorDecls.end(), e->first()) != indCtorDecls.end())
+    //       return true;
+    //   }
+    //   return false;
+    // }
+  public:
+    TermEnumerator(Expr expr, ExprMap _baseCtors, ExprMap _indCtors, int _maxDepth = 3) :
+      baseCtors(_baseCtors), indCtors(_indCtors), maxDepth(_maxDepth)
+    {
+      outs()<<"expr: "<<*expr;
+      filter(expr, [this](Expr e){return isVarFn(e);}, back_inserter(vars));
+      outs()<<"\nvars:";
+      for (Expr v: vars) outs()<<" "<<*v;
+      outs()<<"\nfuncs:";
+      filter(expr, [this](Expr e){return isFuncFn(e);}, back_inserter(funcs));
+      for (Expr f: funcs) outs()<<" "<<*f;
+      outs()<<"\n\n";
+    }
+    bool isOk()
+    {
+      getTerms();
+      return true;
+    }
+    int depth(Expr e)
+    {
+      bind::IsConst isConst;
+      int maxD = 0;
+      if (isConst(e)) return 1;
+      if (isOpX<FAPP>(e))
+      {
+        for (int i = 0; i < bind::domainSz(e->first()); i++)
+        {
+          int d = depth(e->arg(i+1));
+          if (d > maxD) maxD = d;
+        }
+      }
+      return maxD + 1;
+    }
+    void getTerms()
+    {
+      outs()<<"=======Base terms:\n";
+      for (Expr v: vars)
+      {
+        allTerms[bind::typeOf(v)].push_back(v);
+        outs()<<"Variable "<<*v<<" of type: "<<*bind::typeOf(v)<<"\n";
+      }
+      for (auto p: baseCtors)
+      {
+        if (!p.second || (p.second)->arity() != 2) continue;
+        allTerms[p.first].push_back(bind::fapp(p.second));
+        outs()<<"Ctor "<<*bind::fapp(p.second)<<" of type: "<<*(p.first)<<"\n";
+      }
+      int i, d;
+      for (d = 1; d < maxDepth; d++)
+      {
+        ExprVector newTerms;
+        for (Expr fdecl : funcs){
+          Expr ty = fdecl->last();
+          int nArgs = bind::domainSz(fdecl);
+          ExprVector conArgs(nArgs, NULL); // concrete args
+          vector<int> stk(nArgs, 0);
+          while (true)
+          {
+            bool correctDepth = false;
+            for (i = 0; i < nArgs; i++)
+            {
+              int choice = stk[i];
+              conArgs[i] = allTerms[bind::domainTy(fdecl, i)][choice];
+              if (depth(conArgs[i]) == d) correctDepth = true;
+            }
+            Expr term = bind::fapp(fdecl, conArgs);
+            if (depth(term) == d+1) // at least d+1
+              newTerms.push_back(term);
+
+            for (i = 0; i < nArgs; i++)
+            {
+              stk[i] ++;
+              if (stk[i] < allTerms[bind::domainTy(fdecl, i)].size()) break;
+              else stk[i] = 0;
+            }
+            if (i == nArgs) break;
+          }
+        }
+        outs()<<"======Depth "<<d<<" terms:\n";
+        for (Expr t : newTerms)
+        {
+          // TODO check depth
+          Expr ty = bind::typeOf(t);
+          allTerms[ty].push_back(t);
+          outs()<<"  "<<*t<<" of type: "<<*ty<<"\n";
+        }
+      }
+    }
+    // void getTerms(Expr ty, int d) {
+    //   if (d < maxDepth)
+    //   {
+    //     for (Expr fdecl : funcs) {
+    //       if (!ty || ty == bind::typeOf(fdecl))
+    //         select fdecl
+    //     }
+    //   }
+    //   else if (d == maxDepth)
+    //   {
+    //     for (Expr v : vars) {
+    //       if (!ty || ty == bind::typeOf(v))
+    //         yield v
+    //     }
+    //   }
+    // }
+    ~TermEnumerator(){}
+    
+  };
   class ADTSolver
   {
     private:
@@ -837,6 +974,8 @@ namespace ufo
       if (toRollback) goal = rewriteHistory[0];
 
       outs () << "Simplified goal: " << *goal << "\n\n";
+      TermEnumerator tEnum(goal, baseConstructors, indConstructors);
+      if (tEnum.isOk()) return false;
       for (int i = 0; i < goal->arity() - 1; i++)
       {
         Expr type = goal->arg(i)->last();
