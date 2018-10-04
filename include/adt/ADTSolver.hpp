@@ -54,6 +54,10 @@ namespace ufo
       filter(expr, [this](Expr e){return isFuncFn(e);}, back_inserter(funcs));
       for (Expr f: funcs) outs()<<" "<<*f;
       outs()<<"\n\n";
+
+      // outs()<<"Please input max depth:";
+      // cin>>maxDepth;
+      // outs()<<"max depth is "<<maxDepth<<"\n";
     }
     bool isOk()
     {
@@ -181,7 +185,7 @@ namespace ufo
     ExprVector indCtorDecls;
 
     public:
-
+    int maxTermDepth;
     ADTSolver(Expr _goal, ExprVector& _assumptions, ExprVector& _constructors, int _maxDepth, int _maxSameAssm, bool flipIH) :
         goal(_goal), assumptions(_assumptions), constructors(_constructors),
         efac(_goal->getFactory()), u(_goal->getFactory()), maxDepth(_maxDepth), maxSameAssm(_maxSameAssm), assertIHPrime(flipIH)
@@ -974,7 +978,7 @@ namespace ufo
       if (toRollback) goal = rewriteHistory[0];
 
       outs () << "Simplified goal: " << *goal << "\n\n";
-      TermEnumerator tEnum(goal, baseConstructors, indConstructors);
+      TermEnumerator tEnum(goal, baseConstructors, indConstructors, maxTermDepth);
       if (tEnum.isOk()) return false;
       for (int i = 0; i < goal->arity() - 1; i++)
       {
@@ -1020,7 +1024,7 @@ namespace ufo
     nums.push_back(atoi(substr));
   }
 
-  void adtSolve(EZ3& z3, Expr s, char* basecheck, char *indcheck, int maxDepth, int maxSameAssm, bool flipIH)
+  void adtSolve(EZ3& z3, Expr s, char* basecheck, char *indcheck, int maxDepth, int maxSameAssm, bool flipIH, int maxTermDepth)
   {
     vector<int> basenums;
     vector<int> indnums;
@@ -1058,6 +1062,7 @@ namespace ufo
       return;
     }
     ADTSolver sol (goal, assumptions, constructors, maxDepth, maxSameAssm, flipIH);
+    sol.maxTermDepth = maxTermDepth;
     bool res = sol.solve (basenums, indnums);
     if (!res) sol.tryLemmas(assumptions, true);
   }
