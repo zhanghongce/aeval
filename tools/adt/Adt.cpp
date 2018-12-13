@@ -40,7 +40,7 @@ int main (int argc, char ** argv)
   int maxDepth = atoi(getStrValue("--max-depth", "10", argc, argv));
   int maxSameAssm = atoi(getStrValue("--max-same-assm", "5", argc, argv));
   bool flipIH = (getStrValue("--flip-ih", NULL, argc, argv) != NULL);
-  int maxTermDepth = atoi(getStrValue("--max-term-depth", "5", argc, argv));
+  int maxTermDepth = atoi(getStrValue("--max-term-depth", "3", argc, argv));
   Expr e = z3_from_smtlib_file (z3, infile);
   adtSolve(z3, e, basecheck, indcheck, maxDepth, maxSameAssm, flipIH, maxTermDepth);
 

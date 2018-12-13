@@ -20,7 +20,6 @@ namespace ufo
     ExprVector vars;
     ExprVector funcs;
     int maxDepth;
-    map<Expr, ExprVector> allTerms;
     vector<size_t> depthIdx;
     bool isVarFn(Expr e){
       if (isOpX<FAPP> (e) && e->arity () == 1 && isOpX<FDECL> (e->first())) {
@@ -28,6 +27,11 @@ namespace ufo
         // exclude base constructors (e.g. nil:Lst)
         return (baseCtor == NULL || e != bind::fapp(baseCtor));
       } else return false;
+    }
+    bool isBaseCtor(Expr e){
+      if (isOpX<FAPP> (e) && e->arity () == 1 && isOpX<FDECL> (e->first())
+        && (e->first() == baseCtors[bind::typeOf(e)])) return true;
+        else return false;
     }
     bool isFuncFn(Expr e){
       // fdecl [name fromTy ... toTy]
@@ -43,6 +47,7 @@ namespace ufo
     //   return false;
     // }
   public:
+    map<Expr, ExprVector> allTerms;
     TermEnumerator(Expr expr, ExprMap _baseCtors, ExprMap _indCtors, int _maxDepth = 3) :
       baseCtors(_baseCtors), indCtors(_indCtors), maxDepth(_maxDepth)
     {
@@ -104,15 +109,18 @@ namespace ufo
           vector<int> stk(nArgs, 0);
           while (true)
           {
-            bool correctDepth = false;
+            bool allBaseCtor = true;
             for (i = 0; i < nArgs; i++)
             {
               int choice = stk[i];
               conArgs[i] = allTerms[bind::domainTy(fdecl, i)][choice];
-              if (depth(conArgs[i]) == d) correctDepth = true;
+              if (!isBaseCtor(conArgs[i])) allBaseCtor = false;
             }
+            // ok to have len(nil) and such
+            if (nArgs == 1) allBaseCtor = false;
+
             Expr term = bind::fapp(fdecl, conArgs);
-            if (depth(term) == d+1) // at least d+1
+            if (depth(term) == d+1 && !allBaseCtor) // at least d+1, not OK to have (append nil nil)
               newTerms.push_back(term);
 
             for (i = 0; i < nArgs; i++)
@@ -124,7 +132,7 @@ namespace ufo
             if (i == nArgs) break;
           }
         }
-        outs()<<"======Depth "<<d<<" terms:\n";
+        outs()<<"======Depth "<<d<<" terms ("<<newTerms.size()<<"):\n";
         for (Expr t : newTerms)
         {
           // TODO check depth
@@ -156,7 +164,7 @@ namespace ufo
   class ADTSolver
   {
     private:
-
+    static int cntr;
     Expr goal;
     // assumptions should be copied, prevents changes propagating
     ExprVector assumptions;
@@ -206,6 +214,7 @@ namespace ufo
 
       // default : no synth
       synthLemmas = false;
+      cntr ++;
     }
 
     bool simplifyGoal()
@@ -479,7 +488,7 @@ namespace ufo
               rewriteSequence.pop_back();
               // backtrack:
               // outs()<<"bt\n";
-              // outs () << "backtrack to:    " << *subgoal << "\n";
+              outs () << "backtrack to:    " << *subgoal << "\n";
             }
           }
         }
@@ -607,7 +616,7 @@ namespace ufo
       {
         if (i == num) continue;
         // TODO: make sure the name is unique
-        Expr s = bind::mkConst(mkTerm<string> ("_v_" + to_string(i), efac), goal->arg(i)->last());
+        Expr s = bind::mkConst(mkTerm<string> ("_v_" + to_string(i) + "_sn" + to_string(cntr), efac), goal->arg(i)->last());
         goalQF = replaceAll(goalQF, bind::fapp(goal->arg(i)), s);
       }
 
@@ -664,7 +673,7 @@ namespace ufo
       for (int i = 1; i < indConstructor->arity() - 1; i++)
       {
         // TODO: make sure the name is unique
-        Expr s = bind::mkConst(mkTerm<string> ("_t_" + to_string(i), efac), indConstructor->arg(i));
+        Expr s = bind::mkConst(mkTerm<string> ("_t_" + to_string(i) + "_sn" + to_string(cntr), efac), indConstructor->arg(i));
         args.push_back(s);
 
         if (type == indConstructor->arg(i)) // type check
@@ -721,6 +730,7 @@ namespace ufo
 
       failures.erase(indSubgoal);
       outs()<<failures.size()<<"\n";
+      for (Expr f : failures) outs()<<"     "<<*f<<"\n";
       /*for (Expr f: failures)
       {
         outs()<<";      "<<*f<<"\n";
@@ -865,13 +875,13 @@ namespace ufo
       ExprVector ctorApps;
       filter(goalQF, [this](Expr e){return isIndCtorFn(e);}, back_inserter(ctorApps));
       for (Expr ctor: ctorApps){
-        // outs()<<"**** found ind ctor: "<<*ctor;
+        outs()<<"**** found ind ctor: "<<*ctor;
         ExprVector ctorArgs;
         filter(ctor, [this](Expr e){return isVarFn(e);}, back_inserter(ctorArgs));
         Expr ty = bind::typeOf(ctor);
         auto tyStr = getTerm<string>(ty->first());
         Expr newVar = bind::mkConst(mkTerm<string>("_lm_gen_" + tyStr, ctor->efac()), ty);
-        // outs()<<" replaced by newVar: "<<*newVar<<"\n";
+        outs()<<" replaced by newVar: "<<*newVar<<"\n";
         Expr newGoalQF = replaceAll(goalQF, ctor, newVar);
 
         bool replaceSuccess = true;
@@ -882,12 +892,73 @@ namespace ufo
           }
         if (replaceSuccess)
           insertUniqueGoal(newGoalQF, candidates);
+        else
+        {
+          insertUniqueGoal(goalQF, candidates);
+          continue;
+          outs()<<"(*************hello***********)\n\n";
+          Expr LHS = newGoalQF->first()->arg(2);
+
+          Expr lhsTy = bind::typeOf(LHS);
+          ExprVector lhsVars;
+          filter(LHS, [this](Expr e){return isVarFn(e);}, back_inserter(lhsVars));
+
+          TermEnumerator tEnum(LHS, baseConstructors, indConstructors, maxTermDepth);
+          tEnum.getTerms();
+          ExprVector &tList = tEnum.allTerms[lhsTy];
+          int validCnt = tList.size();
+          /*for (Expr t: tEnum.allTerms[lhsTy])
+          {
+            // if (bind::typeOf(t) != lhsTy) continue;
+            ExprVector rhsVars;
+            filter(t, [this](Expr e){return isVarFn(e);}, back_inserter(rhsVars));
+            if (rhsVars == lhsVars) {
+              insertUniqueGoal(mk<EQ>(LHS, t), candidates);
+              tList.push_back(t);
+              validCnt++;
+            }
+          }*/
+          // return;
+          outs()<<"==== # terms "<<validCnt<<"\n";
+          // ExprVector lemmaCandidates;
+          for (int i = 0; i < validCnt; i ++)
+            for (int j = i; j < validCnt; j++)
+            {
+              Expr RHS = mk<PLUS>(tList[i], tList[j]);
+              ExprVector rhsVars;
+              filter(RHS, [this](Expr e){return isVarFn(e);}, back_inserter(rhsVars));
+              if (rhsVars == lhsVars)
+                insertUniqueGoal(mk<EQ>(LHS, RHS), candidates);
+            }
+        }
       }
+      /*
       if (ctorApps.empty()) {
         // goalQF = rewriteITE(goalQF);
         // if (goalQF) 
-        insertUniqueGoal(goalQF, candidates);
-      }
+        // insertUniqueGoal(goalQF, candidates);
+
+
+        // generalise failed. enumerate (RHS)
+          Expr LHS = goalQF;
+          Expr lhsTy = bind::typeOf(LHS);
+          ExprVector lhsVars;
+          filter(LHS, [this](Expr e){return isVarFn(e);}, back_inserter(lhsVars));
+          TermEnumerator tEnum(LHS, baseConstructors, indConstructors, maxTermDepth);
+          tEnum.getTerms();
+          int validCnt = 0;
+          for (Expr t: tEnum.allTerms[lhsTy])
+          {
+            // if (bind::typeOf(t) != lhsTy) continue;
+            ExprVector rhsVars;
+            filter(t, [this](Expr e){return isVarFn(e);}, back_inserter(rhsVars));
+            if (rhsVars == lhsVars) {
+              insertUniqueGoal(mk<EQ>(LHS, t), candidates);
+              validCnt++;
+            }
+          }
+          outs()<<"==== # valid terms "<<validCnt<<"\n";
+      }*/
     }
     bool tryLemmas(ExprVector assm, bool tryAgain = false)
     {
@@ -895,7 +966,7 @@ namespace ufo
       ExprVector candidates;
       for (Expr f : failures)
       {
-        outs()<<";      "<<*f<<"\n";
+        outs()<<";failure      "<<*f<<"\n";
         ExprVector vars;
         ExprVector renamedVars;
         filter(f, [this](Expr e){return isVarFn(e);}, back_inserter(vars));
@@ -910,22 +981,25 @@ namespace ufo
         Expr goalQF = replaceAll(f, vars, renamedVars);
 
         generalize(goalQF, renamedVars, candidates);
-        
+        //break;
         outs()<<"\n";
       }
       vector<int> basenums;
       vector<int> indnums;
       bool res;
+      outs()<<"\n\n======== # of lemma candidates"<<candidates.size()<< "\n\n";
+      tryAgain = false;
       for (Expr lemma: candidates)
       {
-        /*outs()<<"\n\n======={ try proving lemma\n\n";
-        ADTSolver solLemma (lemma, assm, constructors, maxDepth, maxSameAssm, assertIHPrime);
-        res = solLemma.solve (basenums, indnums);
-        if (!res) res = solLemma.tryLemmas(assm, true);
-        if (!res) {
-          outs()<<"\n\n======= lemma is invalid / not proved }\n\n";
-          continue;
-        }*/
+        outs()<<"\n\n======={ try proving lemma\n\n";
+        // ADTSolver solLemma (lemma, assm, constructors, maxDepth, maxSameAssm, assertIHPrime);
+        // res = solLemma.solve (basenums, indnums);
+        // if (!res) {
+        //   outs()<<"\n\n======= lemma is invalid / not proved }\n\n";
+        //   continue;
+        // }
+
+        
         outs()<<"\n\n========lemma is valid and proved}\n\n";
         assm.push_back(lemma);
         ADTSolver sol (goal, assm, constructors, maxDepth, maxSameAssm, assertIHPrime);
@@ -978,8 +1052,31 @@ namespace ufo
       if (toRollback) goal = rewriteHistory[0];
 
       outs () << "Simplified goal: " << *goal << "\n\n";
-      TermEnumerator tEnum(goal, baseConstructors, indConstructors, maxTermDepth);
-      if (tEnum.isOk()) return false;
+      
+      // Expr LHS = goal->arg(2)->first();
+
+      //     Expr lhsTy = bind::typeOf(LHS);
+      //     ExprVector lhsVars;
+      //     filter(LHS, [this](Expr e){return isVarFn(e);}, back_inserter(lhsVars));
+      // TermEnumerator tEnum(LHS, baseConstructors, indConstructors, maxTermDepth);
+      // tEnum.isOk();
+
+      // ExprVector &tList = tEnum.allTerms[lhsTy];
+      //     int validCnt = tList.size();
+                   // return;
+      //     outs()<<"==== # terms "<<validCnt<<"\n";
+      //     ExprVector lemmaCandidates;
+      //     for (int i = 0; i < validCnt; i ++)
+      //       {
+      //         Expr cand = tList[i];
+      //         ExprVector rhsVars;
+      //         filter(cand, [this](Expr e){return isVarFn(e);}, back_inserter(rhsVars));
+      //         if (rhsVars == lhsVars){
+      //           insertUniqueGoal(cand, lemmaCandidates);
+      //         }
+      //       }
+      //   outs()<<"==== # lemmas "<<lemmaCandidates.size()<<"\n";
+      // return false;
       for (int i = 0; i < goal->arity() - 1; i++)
       {
         Expr type = goal->arg(i)->last();
@@ -1002,6 +1099,7 @@ namespace ufo
     }
   };
 
+  int ADTSolver::cntr = 0;
   static inline void getNums(vector<int>& nums, char * str)
   {
     if (str == NULL) return;
@@ -1064,7 +1162,7 @@ namespace ufo
     ADTSolver sol (goal, assumptions, constructors, maxDepth, maxSameAssm, flipIH);
     sol.maxTermDepth = maxTermDepth;
     bool res = sol.solve (basenums, indnums);
-    if (!res) sol.tryLemmas(assumptions, true);
+    //if (!res) sol.tryLemmas(assumptions, true);
   }
 }
 

@@ -12,11 +12,26 @@
 (assert (forall ((a Lst)) (= (rev2 nil a) a)))
 (assert (forall ((x Int) (t Lst) (a Lst)) (= (rev2 (cons x t) a) (rev2 t (cons x a)))))
 
+
+(declare-fun rev (Lst) Lst)
+(assert (= (rev nil) nil))
+(assert (forall ((x Int) (t Lst)) (= (rev (cons x t)) (append (cons x nil) (rev t)))))
+
 ;extra lemmas
-(assert (forall ((x Lst) (a Lst)) (= (rev2 x a) (append (rev2 x nil) a))))
+;(assert (forall ((x Lst) (a Lst)) (= (rev2 x a) (append (rev2 x nil) a))))
+
 ;(assert (forall ((x Lst) (y Lst)) (= (len (append x y)) (+ (len x) (len y)))))
 
+
+;GOAL
+
+(assert (forall ((x Lst)) (= (rev2 x nil) (rev x))))
+
 (assert (not (forall ((x Lst)) (= (len (rev2 x nil)) (len x)))))
+
+;(assert (not (forall ((x Lst)) (= (len (rev x)) (len x)))))
+;(assert (not (forall ((x Lst) (a Lst)) (= (append (rev2 x nil) a) (rev2 x a)))))
+
 (check-sat)
 
 
