@@ -7,6 +7,9 @@
 
 #include "ae/SMTUtils.hpp"
 #include "ufo/Smt/EZ3.hh"
+#include <algorithm>
+
+#include <iostream>
 
 using namespace std;
 using namespace boost;
@@ -201,7 +204,7 @@ namespace ufo
       // assertIHPrime = true;
       assert(isOpX<FORALL>(goal));
       // bind::IsConst isVar;
-      // outs()<<"goal: "<<*goal<<"\n";
+      outs()<<"goal: "<<*goal<<"\n";
       // outs()<<"===== quantified vars: ";
       // for (int i = 0; i < goal->arity() - 1; i++)
       // {
@@ -215,6 +218,12 @@ namespace ufo
       // default : no synth
       synthLemmas = false;
       cntr ++;
+    }
+
+    bool p(Expr e){
+      auto f = [this](){return this->cntr > 0;};
+      outs()<<*e;
+      return f();
     }
 
     bool simplifyGoal()
@@ -406,7 +415,7 @@ namespace ufo
       // check recursion depth
       if (rewriteSequence.size() >= maxDepth) 
       {
-        outs() << ">>>>>>>> reached max recursion depth! \n";
+        outs() << "reached max recursion depth! \n";
         maxDepthCnt ++;
         return false;
       }
@@ -426,31 +435,7 @@ namespace ufo
         }
       }
 
-
-      // check recursion depth
-      if (rewriteSequence.size() >= maxDepth)
-      {
-        outs() << "Maximum recursion depth reached\n";
-        return false;
-      }
-
-      // check consecutive applications of the same assumption
-      if (rewriteSequence.size() >= maxSameAssm)
-      {
-        int assmId = rewriteSequence.back();
-        int offset = rewriteSequence.size() - maxSameAssm - 1;
-        int i = 0;
-        for (; i < maxSameAssm; i++)
-          if (rewriteSequence[i + offset] != assmId)
-            break;
-
-        if (i == maxSameAssm)
-        {
-          outs() << "Maximum use of assumption #" << assmId << " reached\n";
-          return false;
-        }
-      }
-
+      bool noMoreRewriting = true;
       for (int i = 0; i < assumptions.size(); i++)
       {
         if (assertIHPrime && rewriteSequence.size()){
@@ -470,11 +455,12 @@ namespace ufo
         {
           if (res != NULL)
           {
+            noMoreRewriting = false;
             if (rewriteSet.find(res) != rewriteSet.end()){
               outs()<<"revisit bt\n";
               continue;
             }
-            // rewriteSet.insert(res);
+            rewriteSet.insert(res);
             outs () << "rewritten [" << i << "]:   " << *res << "\n";
             // save history
             rewriteHistory.push_back(res);
@@ -487,16 +473,24 @@ namespace ufo
               rewriteHistory.pop_back();
               rewriteSequence.pop_back();
               // backtrack:
-              // outs()<<"bt\n";
-              outs () << "backtrack to:    " << *subgoal << "\n";
+              outs()<<"bt\n";
+              // outs () << "backtrack to:    " << *subgoal << "\n";
             }
           }
         }
       }
       // failure node, stuck here, have to backtrack
-      failures.insert(subgoal);
-      // outs()<<"***failure== "<< *subgoal<<"\n";
-      failureCnt ++;
+
+      if (noMoreRewriting){
+        int fcnt = failures.size();
+        failures.insert(subgoal);
+        if (fcnt < failures.size())
+        {
+          outs()<<rewriteSequence.size();
+          outs()<<"***new failure== "<< *subgoal<<"\n";
+        }
+        failureCnt ++;
+      }
       // TODO: collect failure node "subgoal, rewriteHistory, rewriteSequence, [assumptions]" 
       // generalize "subgoal" (replace () )
       return false;
@@ -635,13 +629,12 @@ namespace ufo
               rewriteAssumptions(baseSubgoal) :
               tryStrategy(baseSubgoal, basenums);
       
-      outs()<<"======== # of leaves at max depth: "<<maxDepthCnt<<"\n";
-      outs()<<"======== # of failure nodes: "<<failureCnt<<"\n";
+      outs()<<"======== base # of leaves at max depth: "<<maxDepthCnt<<"\n";
+      outs()<<"======== base # of failure nodes: "<<failureCnt<<"\n";
 
       // remove baseSubgoal
       failures.erase(baseSubgoal);
-      outs()<<"======== # of unique failure nodes: ";
-      outs()<<failures.size()<<"\n";
+      outs()<<"======== base # of unique failure nodes: "<<failures.size()<<"\n";
       
       if (!baseres)
       {
@@ -653,7 +646,7 @@ namespace ufo
         }
         if (newArgs.size() > 0)
         {
-          outs () << "\nProceeding to nested induction\n";
+          outs () << "\nProceeding to nested induction for base case\n";
           newArgs.push_back(replaceAll(goal->last(), typeDecl, baseConstructor));
           Expr newGoal = mknary<FORALL>(newArgs);
           ADTSolver sol (newGoal, assumptions, constructors, maxDepth, maxSameAssm, assertIHPrime);
@@ -723,14 +716,12 @@ namespace ufo
                rewriteAssumptions(indSubgoal) : // TODO: apply DFS, rank the failure nodes, synthesis of new lemma
                tryStrategy(indSubgoal, indnums);
       
-      outs()<<"======== # of leaves at max depth: "<<maxDepthCnt<<"\n";
-      outs()<<"======== # of failure nodes: "<<failureCnt<<"\n";
-
-      outs()<<"======== # of unique failure nodes: ";
-
+      outs()<<"======== ind # of leaves at max depth: "<<maxDepthCnt<<"\n";
+      outs()<<"======== ind # of failure nodes: "<<failureCnt<<"\n";
       failures.erase(indSubgoal);
-      outs()<<failures.size()<<"\n";
-      for (Expr f : failures) outs()<<"     "<<*f<<"\n";
+      outs()<<"======== ind # of unique failure nodes: "<<failures.size()<<"\n";
+
+      // for (Expr f : failures) outs()<<"     "<<*f<<"\n";
       /*for (Expr f: failures)
       {
         outs()<<";      "<<*f<<"\n";
@@ -797,7 +788,7 @@ namespace ufo
         }
         if (newArgs.size() > 0)
         {
-          outs () << "\nProceeding to nested induction\n";
+          outs () << "\nProceeding to nested induction for ind case\n";
           newArgs.push_back(replaceAll(goal->last(), bind::fapp(typeDecl), indConsApp));
           Expr newGoal = mknary<FORALL>(newArgs);
           ADTSolver sol (newGoal, assumptions, constructors, maxDepth, maxSameAssm, assertIHPrime);
@@ -894,7 +885,7 @@ namespace ufo
           insertUniqueGoal(newGoalQF, candidates);
         else
         {
-          insertUniqueGoal(goalQF, candidates);
+          // insertUniqueGoal(goalQF, candidates);
           continue;
           outs()<<"(*************hello***********)\n\n";
           Expr LHS = newGoalQF->first()->arg(2);
@@ -960,12 +951,28 @@ namespace ufo
           outs()<<"==== # valid terms "<<validCnt<<"\n";
       }*/
     }
-    bool tryLemmas(ExprVector assm, bool tryAgain = false)
+    int cntFuncFn(Expr e){
+      auto isFuncFn = [](Expr e){return isOpX<FDECL> (e) && e->arity () >= 3;};
+      ExprSet funcs;
+      filter(e, [](Expr e){return isOpX<FDECL> (e) && e->arity () >= 3;}, 
+        inserter(funcs, funcs.end()));
+      return funcs.size();
+    }
+    bool tryLemmas(Expr originaGoal, ExprVector assm, bool tryAgain = false)
     {
       if (failures.empty()) return false;
       ExprVector candidates;
-      for (Expr f : failures)
+
+      // rank failures. less functions the better
+      vector<pair<int, Expr>> sortedF;
+      for (Expr f : failures){
+        sortedF.emplace_back(cntFuncFn(f), f);
+      }
+      std::sort(sortedF.begin(),sortedF.end(), 
+        [](pair<int, Expr>& x, pair<int, Expr>& y){return x.first < y.first;});
+      for (auto x : sortedF)
       {
+        Expr f = x.second;
         outs()<<";failure      "<<*f<<"\n";
         ExprVector vars;
         ExprVector renamedVars;
@@ -992,17 +999,17 @@ namespace ufo
       for (Expr lemma: candidates)
       {
         outs()<<"\n\n======={ try proving lemma\n\n";
-        // ADTSolver solLemma (lemma, assm, constructors, maxDepth, maxSameAssm, assertIHPrime);
-        // res = solLemma.solve (basenums, indnums);
-        // if (!res) {
-        //   outs()<<"\n\n======= lemma is invalid / not proved }\n\n";
-        //   continue;
-        // }
+        ADTSolver solLemma (lemma, assm, constructors, maxDepth, maxSameAssm, assertIHPrime);
+        res = solLemma.solve (basenums, indnums);
+        if (!res) {
+          outs()<<"\n\n======= lemma is invalid / not proved }\n\n";
+          continue;
+        }
 
         
         outs()<<"\n\n========lemma is valid and proved}\n\n";
         assm.push_back(lemma);
-        ADTSolver sol (goal, assm, constructors, maxDepth, maxSameAssm, assertIHPrime);
+        ADTSolver sol (originaGoal, assm, constructors, maxDepth, maxSameAssm, assertIHPrime);
         outs()<<"\n\n======={ try original goal with lemma\n\n";
         res = sol.solve (basenums, indnums);
         if (res) {
@@ -1012,7 +1019,7 @@ namespace ufo
           outs()<<"===========Not solved with new lemma: "<< *lemma <<"}\n";
           if (tryAgain){
             outs()<<"===========tryLemmas 2nd attempt begin{\n";
-            res = sol.tryLemmas(assm, false);
+            res = sol.tryLemmas(originaGoal, assm, false);
             outs()<<"===========tryLemmas 2nd attempt end}\n";
             if (res) return true;
           }
@@ -1026,7 +1033,7 @@ namespace ufo
     {
       unfoldGoal();
       rewriteHistory.push_back(goal);
-      for (int i = 0; i < 5; i++)
+      for (int i = 0; i < 8; i++)
       {
         if (simplifyGoal())
         {
@@ -1042,14 +1049,15 @@ namespace ufo
       }
 
       // simple heuristic: if the result of every rewriting made the goal larger, we rollback
-      bool toRollback = true;
+      /*bool toRollback = true;
       for (int i = 1; i < rewriteHistory.size(); i++)
       {
         toRollback = toRollback &&
             (treeSize(rewriteHistory[i-1]) < treeSize(rewriteHistory[i]));
       }
 
-      if (toRollback) goal = rewriteHistory[0];
+      if (toRollback) goal = rewriteHistory[0];*/
+      if (treeSize(goal) >= treeSize(rewriteHistory[0])) goal = rewriteHistory[0];
 
       outs () << "Simplified goal: " << *goal << "\n\n";
       
@@ -1162,7 +1170,10 @@ namespace ufo
     ADTSolver sol (goal, assumptions, constructors, maxDepth, maxSameAssm, flipIH);
     sol.maxTermDepth = maxTermDepth;
     bool res = sol.solve (basenums, indnums);
-    //if (!res) sol.tryLemmas(assumptions, true);
+    if (!res){
+      outs()<<" *** not solved. attempt lemma synth\n";
+      sol.tryLemmas(goal, assumptions, true);
+    }
   }
 }
 
