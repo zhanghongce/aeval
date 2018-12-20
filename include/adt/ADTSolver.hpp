@@ -890,8 +890,6 @@ namespace ufo
           insertUniqueGoal(newGoalQF, candidates);
         else
         {
-          // insertUniqueGoal(goalQF, candidates);
-          continue;
           outs()<<"(*************Term Enum preparations***********)\n\n";
           Expr LHS = newGoalQF->first()->arg(2);
 
