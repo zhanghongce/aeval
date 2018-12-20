@@ -220,11 +220,11 @@ namespace ufo
       cntr ++;
     }
 
-    bool p(Expr e){
-      auto f = [this](){return this->cntr > 0;};
-      outs()<<*e;
-      return f();
-    }
+    // bool p(Expr e){
+    //   auto f = [this](){return this->cntr > 0;};
+    //   outs()<<*e;
+    //   return f();
+    // }
 
     bool simplifyGoal()
     {
@@ -457,11 +457,11 @@ namespace ufo
           {
             noMoreRewriting = false;
             if (rewriteSet.find(res) != rewriteSet.end()){
-              outs()<<"revisit bt\n";
+              // outs()<<"revisit bt\n";
               continue;
             }
             rewriteSet.insert(res);
-            outs () << "rewritten [" << i << "]:   " << *res << "\n";
+            // outs () << "rewritten [" << i << "]:   " << *res << "\n";
             // save history
             rewriteHistory.push_back(res);
             rewriteSequence.push_back(i);
@@ -473,7 +473,7 @@ namespace ufo
               rewriteHistory.pop_back();
               rewriteSequence.pop_back();
               // backtrack:
-              outs()<<"bt\n";
+              // outs()<<"bt\n";
               // outs () << "backtrack to:    " << *subgoal << "\n";
             }
           }
@@ -822,6 +822,11 @@ namespace ufo
         return (baseCtor == NULL || e != bind::fapp(baseCtor));
       } else return false;
     }
+    bool isBaseCtorFn(Expr e){
+      if (isOpX<FAPP> (e) && e->arity () == 1 && isOpX<FDECL> (e->first())
+        && (e->first() == baseConstructors[bind::typeOf(e)])) return true;
+        else return false;
+    }
     bool isIndCtorFn(Expr e){
       if (isOpX<FAPP> (e) && isOpX<FDECL> (e->first())){
         if (find(indCtorDecls.begin(), indCtorDecls.end(), e->first()) != indCtorDecls.end())
@@ -871,7 +876,7 @@ namespace ufo
         filter(ctor, [this](Expr e){return isVarFn(e);}, back_inserter(ctorArgs));
         Expr ty = bind::typeOf(ctor);
         auto tyStr = getTerm<string>(ty->first());
-        Expr newVar = bind::mkConst(mkTerm<string>("_lm_gen_" + tyStr, ctor->efac()), ty);
+        Expr newVar = bind::mkConst(mkTerm<string>("_lm_ind_" + tyStr, ctor->efac()), ty);
         outs()<<" replaced by newVar: "<<*newVar<<"\n";
         Expr newGoalQF = replaceAll(goalQF, ctor, newVar);
 
@@ -887,9 +892,20 @@ namespace ufo
         {
           // insertUniqueGoal(goalQF, candidates);
           continue;
-          outs()<<"(*************hello***********)\n\n";
+          outs()<<"(*************Term Enum preparations***********)\n\n";
           Expr LHS = newGoalQF->first()->arg(2);
 
+          // replace base ctor
+          ExprVector baseCtors;
+          filter(LHS, [this](Expr e){return isBaseCtorFn(e);}, back_inserter(baseCtors));
+          if (!baseCtors.empty()) {
+            Expr ty = bind::typeOf(ctor);
+            auto tyStr = getTerm<string>(ty->first());
+            Expr newVar = bind::mkConst(mkTerm<string>("_lm_base_" + tyStr, ctor->efac()), ty);
+            LHS = replaceAll(newGoalQF, baseCtors[0], newVar);
+          }
+
+          outs()<<"template LHS: "<<*LHS<<"\n";
           Expr lhsTy = bind::typeOf(LHS);
           ExprVector lhsVars;
           filter(LHS, [this](Expr e){return isVarFn(e);}, back_inserter(lhsVars));
@@ -911,7 +927,23 @@ namespace ufo
           }*/
           // return;
           outs()<<"==== # terms "<<validCnt<<"\n";
-          // ExprVector lemmaCandidates;
+
+          /* TEMPLATE 1
+           * LHS fixed = <???>
+           * fill RHS
+           */
+          for (int i = 0; i < validCnt; i ++)
+          {
+            ExprVector rhsVars;
+            filter(tList[i], [this](Expr e){return isVarFn(e);}, back_inserter(rhsVars));
+            if (rhsVars == lhsVars)
+              insertUniqueGoal(mk<EQ>(LHS, tList[i]), candidates);
+          }
+          /* TEMPLATE 1
+           * LHS fixed = <???> + <???> for Int
+           * fill RHS x 2
+           */
+           /*
           for (int i = 0; i < validCnt; i ++)
             for (int j = i; j < validCnt; j++)
             {
@@ -920,7 +952,7 @@ namespace ufo
               filter(RHS, [this](Expr e){return isVarFn(e);}, back_inserter(rhsVars));
               if (rhsVars == lhsVars)
                 insertUniqueGoal(mk<EQ>(LHS, RHS), candidates);
-            }
+            }*/
         }
       }
       /*

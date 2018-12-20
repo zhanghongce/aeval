@@ -30,6 +30,13 @@ char * getSmtFileName(int num, int argc, char ** argv)
   return NULL;
 }
 
+
+bool PrintExpr(Expr e)
+{
+  outs()<<*e;
+  return false;
+}
+
 int main (int argc, char ** argv)
 {
   ExprFactory efac;
