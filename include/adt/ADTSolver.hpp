@@ -932,18 +932,18 @@ namespace ufo
            * LHS fixed = <???>
            * fill RHS
            */
-          for (int i = 0; i < validCnt; i ++)
+          /*for (int i = 0; i < validCnt; i ++)
           {
             ExprVector rhsVars;
             filter(tList[i], [this](Expr e){return isVarFn(e);}, back_inserter(rhsVars));
             if (rhsVars == lhsVars)
               insertUniqueGoal(mk<EQ>(LHS, tList[i]), candidates);
-          }
-          /* TEMPLATE 1
+          }*/
+          /* TEMPLATE 2
            * LHS fixed = <???> + <???> for Int
            * fill RHS x 2
            */
-           /*
+          
           for (int i = 0; i < validCnt; i ++)
             for (int j = i; j < validCnt; j++)
             {
@@ -952,7 +952,7 @@ namespace ufo
               filter(RHS, [this](Expr e){return isVarFn(e);}, back_inserter(rhsVars));
               if (rhsVars == lhsVars)
                 insertUniqueGoal(mk<EQ>(LHS, RHS), candidates);
-            }*/
+            }
         }
       }
       /*
