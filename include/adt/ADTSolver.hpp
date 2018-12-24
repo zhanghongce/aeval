@@ -20,8 +20,8 @@ namespace ufo
   private:
     ExprMap baseCtors;
     ExprMap indCtors;
-    ExprVector vars;
-    ExprVector funcs;
+    ExprSet vars;
+    ExprSet funcs;
     int maxDepth;
     vector<size_t> depthIdx;
     bool isVarFn(Expr e){
@@ -55,17 +55,16 @@ namespace ufo
       baseCtors(_baseCtors), indCtors(_indCtors), maxDepth(_maxDepth)
     {
       outs()<<"expr: "<<*expr;
-      filter(expr, [this](Expr e){return isVarFn(e);}, back_inserter(vars));
-      outs()<<"\nvars:";
-      for (Expr v: vars) outs()<<" "<<*v;
-      outs()<<"\nfuncs:";
-      filter(expr, [this](Expr e){return isFuncFn(e);}, back_inserter(funcs));
-      for (Expr f: funcs) outs()<<" "<<*f;
-      outs()<<"\n\n";
-
+      filter(expr, [this](Expr e){return isVarFn(e);}, inserter(vars, vars.end()));
+      // outs()<<"\nvars:";
+      // for (Expr v: vars) outs()<<" "<<*v;
+      filter(expr, [this](Expr e){return isFuncFn(e);}, inserter(funcs, funcs.end()));
       // outs()<<"Please input max depth:";
       // cin>>maxDepth;
       // outs()<<"max depth is "<<maxDepth<<"\n";
+    }
+    void addFunctions(Expr axiom){
+      filter(axiom, [this](Expr e){return isFuncFn(e);}, inserter(funcs, funcs.end()));
     }
     bool isOk()
     {
@@ -101,14 +100,31 @@ namespace ufo
         allTerms[p.first].push_back(bind::fapp(p.second));
         outs()<<"Ctor "<<*bind::fapp(p.second)<<" of type: "<<*(p.first)<<"\n";
       }
+
+      outs()<<"\nfuncs:";
+      for (Expr f: funcs) outs()<<" "<<*f;
+      outs()<<"\n\n";
+
       int i, d;
       for (d = 1; d < maxDepth; d++)
       {
         ExprVector newTerms;
-        for (Expr fdecl : funcs){
+        for (Expr fdecl : funcs)
+        {
           Expr ty = fdecl->last();
           int nArgs = bind::domainSz(fdecl);
           ExprVector conArgs(nArgs, NULL); // concrete args
+          // check required type terms exist
+          bool termsExist = true;
+          for (i = 0; i < nArgs; i++)
+            if (allTerms.count(bind::domainTy(fdecl, i)) == 0){
+              termsExist = false;
+              break;
+            }
+          // chose another function
+          if (!termsExist) continue;
+
+          // stack
           vector<int> stk(nArgs, 0);
           while (true)
           {
@@ -891,16 +907,17 @@ namespace ufo
         else
         {
           outs()<<"(*************Term Enum preparations***********)\n\n";
-          Expr LHS = newGoalQF->first()->arg(2);
+          Expr LHS = newGoalQF->first();
 
           // replace base ctor
           ExprVector baseCtors;
           filter(LHS, [this](Expr e){return isBaseCtorFn(e);}, back_inserter(baseCtors));
           if (!baseCtors.empty()) {
-            Expr ty = bind::typeOf(ctor);
+            Expr baseCtor = baseCtors[0];
+            Expr ty = bind::typeOf(baseCtor);
             auto tyStr = getTerm<string>(ty->first());
-            Expr newVar = bind::mkConst(mkTerm<string>("_lm_base_" + tyStr, ctor->efac()), ty);
-            LHS = replaceAll(newGoalQF, baseCtors[0], newVar);
+            Expr newVar = bind::mkConst(mkTerm<string>("_lm_base_" + tyStr, baseCtor->efac()), ty);
+            LHS = replaceAll(LHS, baseCtor, newVar);
           }
 
           outs()<<"template LHS: "<<*LHS<<"\n";
@@ -909,6 +926,9 @@ namespace ufo
           filter(LHS, [this](Expr e){return isVarFn(e);}, back_inserter(lhsVars));
 
           TermEnumerator tEnum(LHS, baseConstructors, indConstructors, maxTermDepth);
+          // collect all functions
+          for (Expr assm : assumptions)
+            tEnum.addFunctions(assm);
           tEnum.getTerms();
           ExprVector &tList = tEnum.allTerms[lhsTy];
           int validCnt = tList.size();

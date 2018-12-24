@@ -15,7 +15,8 @@
 ; add is commutative lemma
 ;(assert (forall ((x INT) (y INT)) (= (add x y) (add y x))))
 
-
+;lemma
+(assert (forall ((x Int) (y Int)) (= (- (mult x y) y) (mult (- x 1) y))) )
 (assert (not (forall ((n Int) (m Int)) (= (mult n m) (mult m n)) )))
 
 (check-sat)
