@@ -2328,8 +2328,8 @@ namespace expr
 
         if (isOp<NumericOp>(v)) return typeOf(v->left());
         if (isOpX<ITE>(v)) return typeOf(v->last());
-        std::cerr << "WARNING: could not infer type of: " << *v << "\n";
-        
+        std::cerr << "WARNING: could not infer type of: " << *v << "(it's prolly INT)\n";
+        // if (isOpX<INT>(v)) return mk<INT_TY> (v->efac ());
         assert (0 && "Unreachable");
         return Expr();    
       }

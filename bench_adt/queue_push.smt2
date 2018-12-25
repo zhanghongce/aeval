@@ -29,7 +29,10 @@
 (assert (forall ((x Lst) (y Lst) (n Int)) (= (qpush (queue x y) n) (amortizeQueue x (cons n y)))))
 
 ; extra lemma
-;(assert (forall ((x Lst) (y Lst)) (= (qlen (amortizeQueue x y)) (+ (len x) (len y)))))
+;(assert (forall ((x Lst) (y Lst)) (= (qlen (amortizeQueue x y)) (+ (len x) (len (append nil y))))))
+
+
+;(assert (forall ((x Lst) (y Lst)) (= (len (append x (rev2 y nil))) (+  (len x)  (len y)))))
 
 (assert (not (forall ((q Queue) (n Int)) (= (qlen (qpush q n)) (+ 1 (qlen q))))))
 (check-sat)

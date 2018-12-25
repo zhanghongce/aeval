@@ -59,6 +59,12 @@ namespace ufo
       // outs()<<"\nvars:";
       // for (Expr v: vars) outs()<<" "<<*v;
       filter(expr, [this](Expr e){return isFuncFn(e);}, inserter(funcs, funcs.end()));
+
+      for(auto p: indCtors)
+      {
+        if (p.second)
+          funcs.insert(p.second);
+      }
       // outs()<<"Please input max depth:";
       // cin>>maxDepth;
       // outs()<<"max depth is "<<maxDepth<<"\n";
@@ -189,8 +195,8 @@ namespace ufo
     ExprVector assumptions;
     ExprVector constructors;
 
-    map<Expr, Expr> baseConstructors;
-    map<Expr, Expr> indConstructors;
+    ExprMap baseConstructors;
+    ExprMap indConstructors;
 
     ExprFactory &efac;
     SMTUtils u;
@@ -210,7 +216,9 @@ namespace ufo
     bool synthLemmas;
 
     ExprVector indCtorDecls;
+    ExprMap valueMap;
 
+    int nextInt;
     public:
     int maxTermDepth;
     ADTSolver(Expr _goal, ExprVector& _assumptions, ExprVector& _constructors, int _maxDepth, int _maxSameAssm, bool flipIH) :
@@ -234,6 +242,7 @@ namespace ufo
       // default : no synth
       synthLemmas = false;
       cntr ++;
+      nextInt = 0;
     }
 
     // bool p(Expr e){
@@ -268,6 +277,29 @@ namespace ufo
       }
       rewriteHistory.push_back(goal);
       return false;
+    }
+
+    bool refuteGoal(Expr goalQF, int nTimes)
+    {
+
+      outs()<<"???? try to invalidate :"<<*goalQF<<"\n";
+
+      for (int i = 0; i < nTimes; ++i)
+      {
+        for (auto & a : assumptions) {
+          Expr goalSimpl = useAssumption(goalQF, a);
+          if (goalSimpl != NULL) goalQF = goalSimpl;
+        }
+      }
+      if (u.isEquiv(goalQF, mk<FALSE>(efac))){
+        outs()<<"===*** REFUTED!!!\n";
+        return false;
+      } 
+      if (u.isEquiv(goalQF, mk<TRUE>(efac))){
+        outs()<<"===*** Valid!!!\n";
+        return true;
+      }
+      return true;
     }
 
     // main method to do rewriting
@@ -431,7 +463,7 @@ namespace ufo
       // check recursion depth
       if (rewriteSequence.size() >= maxDepth) 
       {
-        outs() << "reached max recursion depth! \n";
+        // outs() << "reached max recursion depth! \n";
         maxDepthCnt ++;
         return false;
       }
@@ -446,7 +478,7 @@ namespace ufo
             break;
         // test here
         if (i == maxSameAssm){
-          outs() << "same assm["<<assmId<<"] applied too many times! \n";
+          // outs() << "same assm["<<assmId<<"] applied too many times! \n";
           return false;
         }
       }
@@ -500,11 +532,11 @@ namespace ufo
       if (noMoreRewriting){
         int fcnt = failures.size();
         failures.insert(subgoal);
-        if (fcnt < failures.size())
-        {
-          outs()<<rewriteSequence.size();
-          outs()<<"***new failure== "<< *subgoal<<"\n";
-        }
+        // if (fcnt < failures.size())
+        // {
+        //   outs()<<rewriteSequence.size();
+        //   outs()<<"***new failure== "<< *subgoal<<"\n";
+        // }
         failureCnt ++;
       }
       // TODO: collect failure node "subgoal, rewriteHistory, rewriteSequence, [assumptions]" 
@@ -922,8 +954,8 @@ namespace ufo
 
           outs()<<"template LHS: "<<*LHS<<"\n";
           Expr lhsTy = bind::typeOf(LHS);
-          ExprVector lhsVars;
-          filter(LHS, [this](Expr e){return isVarFn(e);}, back_inserter(lhsVars));
+          ExprSet lhsVars;
+          filter(LHS, [this](Expr e){return isVarFn(e);}, inserter(lhsVars, lhsVars.end()));
 
           TermEnumerator tEnum(LHS, baseConstructors, indConstructors, maxTermDepth);
           // collect all functions
@@ -966,8 +998,8 @@ namespace ufo
             for (int j = i; j < validCnt; j++)
             {
               Expr RHS = mk<PLUS>(tList[i], tList[j]);
-              ExprVector rhsVars;
-              filter(RHS, [this](Expr e){return isVarFn(e);}, back_inserter(rhsVars));
+              ExprSet rhsVars;
+              filter(RHS, [this](Expr e){return isVarFn(e);}, inserter(rhsVars, rhsVars.end()));
               if (rhsVars == lhsVars)
                 insertUniqueGoal(mk<EQ>(LHS, RHS), candidates);
             }
@@ -1008,6 +1040,36 @@ namespace ufo
         inserter(funcs, funcs.end()));
       return funcs.size();
     }
+
+    void resetValues(){
+      nextInt = 0;
+      valueMap.clear();
+    }
+    Expr getNextValue(Expr ty)
+    {
+      if (isOpX<INT_TY>(ty))
+        return mkTerm<mpz_class>(++nextInt, efac);
+      else {
+        if (valueMap.count(ty) == 0){
+          valueMap[ty] = bind::fapp(baseConstructors[ty]);
+        }
+        Expr currentValue = valueMap[ty];
+        Expr indCtorDecl = indConstructors[ty];
+
+        ExprVector args;
+        args.push_back(indCtorDecl);
+        for (int i = 1; i < indCtorDecl->arity() - 1; ++i)
+        {
+          Expr argTy = indCtorDecl->arg(i);
+          if (argTy == ty) args.push_back(currentValue);
+          else args.push_back(getNextValue(argTy));
+        }
+        currentValue = mknary<FAPP>(args);
+        valueMap[ty] = currentValue;
+        return currentValue;
+      }
+    }
+
     bool tryLemmas(Expr originaGoal, ExprVector assm, bool tryAgain = false)
     {
       if (failures.empty()) return false;
@@ -1046,12 +1108,49 @@ namespace ufo
       bool res;
       outs()<<"\n\n======== # of lemma candidates"<<candidates.size()<< "\n\n";
       tryAgain = false;
-      for (Expr lemma: candidates)
+
+      ExprVector filteredCandidates;
+
+      for (Expr lemma: candidates){
+        int nQVars = lemma->arity() - 1;
+        int nTest = 3;
+        resetValues();
+        while (nTest--)
+        {
+          Expr lemmaQF = lemma->last();
+          for (int i = 0; i < nQVars; i++)
+          {
+            Expr qVar = bind::fapp(lemma->arg(i));
+            Expr ty = bind::typeOf(qVar);
+            lemmaQF = replaceAll(lemmaQF, qVar, getNextValue(ty));
+          }
+          
+          // bad lemma
+          
+          if (refuteGoal(lemmaQF, 25) == false)  break;  
+        }
+
+        // some test failed
+        if (nTest != -1) continue;
+        outs()<<"\nlemma is prolly good:"<<*lemma<<"\n";
+        filteredCandidates.push_back(lemma);
+
+        // jsut try 20 
+        if (filteredCandidates.size() > 20) break;
+      }
+
+      outs()<<"\n\n======== # of FILTERED lemma candidates"<<filteredCandidates.size()<< "\n\n";
+
+      for (Expr lemma: filteredCandidates)
       {
         outs()<<"\n\n======={ try proving lemma\n\n";
         ADTSolver solLemma (lemma, assm, constructors, maxDepth, maxSameAssm, assertIHPrime);
         res = solLemma.solve (basenums, indnums);
         if (!res) {
+
+          outs()<<" ****** not solved. attempt lemma synth on proposed lemma\n***\n***\n";
+          solLemma.tryLemmas(lemma, assumptions, true);
+
           outs()<<"\n\n======= lemma is invalid / not proved }\n\n";
           continue;
         }
