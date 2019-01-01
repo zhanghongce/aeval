@@ -15,27 +15,32 @@
 
 (declare-fun rev (Lst) Lst)
 (assert (= (rev nil) nil))
-(assert (forall ((x Int) (t Lst)) (= (rev (cons x t)) (append (cons x nil) (rev t)))))
+(assert (forall ((x Int) (t Lst)) (= (rev (cons x t)) (append (rev t) (cons x nil)))))
 
 ;extra lemmas
 ;(assert (forall ((x Lst) (a Lst)) (= (rev2 x a) (append (rev2 x nil) a))))
 
-;(assert (forall ((x Lst) (y Lst)) (= (len (append x y)) (+ (len x) (len y)))))
+;(assert (forall ((x Lst) (y Int)) (= (len (append x y)) (+ (len x) (len y)))))
 
 
 ;GOAL
 
-(assert (forall ((x Lst)) (= (rev2 x nil) (rev x))))
 
-(assert (not (forall ((x Lst)) (= (len (rev2 x nil)) (len x)))))
 
-;(assert (not (forall ((x Lst)) (= (len (rev x)) (len x)))))
+;(assert (forall ((x Lst)) (= (rev2 x nil) (rev x))))
+
+;(assert (not (forall ((x Lst)) (= (len (rev2 x nil)) (len x)))))
+
+
+;(assert (not (forall ((x Lst) (y Int)) (= (len (append (rev x) y)) (+ (len x) (len y))))))
+
+
 ;(assert (not (forall ((x Lst) (a Lst)) (= (append (rev2 x nil) a) (rev2 x a)))))
 
 (check-sat)
 
 
-; 1 5 6 7 1 0 8
+; 1 7 8 1 0 9
 
 
 ;

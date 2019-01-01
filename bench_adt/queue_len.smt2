@@ -13,34 +13,42 @@
 (assert (forall ((x Lst)) (= (append nil x) x)))
 (assert (forall ((x Int) (y Lst) (z Lst)) (= (append (cons x y) z) (cons x (append y z)))))
 
-(declare-fun rev2 (Lst Lst) Lst)
-(assert (forall ((a Lst)) (= (rev2 nil a) a)))
-(assert (forall ((x Int) (t Lst) (a Lst)) (= (rev2 (cons x t) a) (rev2 t (cons x a)))))
 
-(declare-fun qrev (Lst) Lst)
-(assert (forall ((x Lst)) (= (qrev x) (rev2 x nil))))
+(declare-fun rev (Lst) Lst)
+(assert (= (rev nil) nil))
+(assert (forall ((x Int) (y Lst)) (= (rev (cons x y)) (append (rev y) (cons x nil)))))
+
+
+;(declare-fun rev2 (Lst Lst) Lst)
+;(assert (forall ((a Lst)) (= (rev2 nil a) a)))
+;(assert (forall ((x Int) (t Lst) (a Lst)) (= (rev2 (cons x t) a) (rev2 t (cons x a)))))
+
+;(declare-fun qrev (Lst) Lst)
+;(assert (forall ((x Lst)) (= (qrev x) (rev2 x nil))))
 
 (declare-fun amortizeQueue (Lst Lst) Queue)
 (assert (forall ((x Lst) (y Lst)) (= (amortizeQueue x y)
     (ite (<= (len y) (len x))
     (queue x y)
-    (queue (append x (qrev y)) nil)))))
+    (queue (append x (rev y)) nil)))))
 
 ; extra lemmas
 
 
-; (assert (forall ((x Lst)) (= (len (rev2 x nil)) (len x))))
-
-
-
 ;(assert (forall ((x Lst)) (= (len (rev2 x nil)) (len x))))
+
+
+;(assert (forall ((x Lst)) (= (len (rev x)) (len x))))
+
+
+;(assert (forall ((x Lst)) (= (len (rev x)) (len x))))
 
 ;(forall ((Lst)) ((!((len _lm_v_1)<=0))->((0+(len _lm_v_1))=((len (rev2 _lm_v_1 nil))+0))))
 
 ; (len (rev2 (cons _t_1 _t_2) nil))+0)=(0+(len (cons _t_1 _t_2))
 
 
-;(assert (forall ((x Lst) (y Lst)) (= (len (append x y)) (+  (len x)  (len y)))))
+(assert (forall ((x Lst) (y Lst)) (= (len (append x y)) (+  (len x)  (len y)))))
 
 
 ;(assert (forall ((x Lst) (y Lst)) (= (len (append x (rev2 y nil))) (+  (len x)  (len y)))))

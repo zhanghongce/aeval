@@ -999,6 +999,7 @@ namespace ufo
 
     if (pattern->arity() == 1 && find(vars.begin(), vars.end(), pattern) != vars.end())
     {
+      // match variable to exp
       if (matching[pattern] != NULL && matching[pattern] != exp) return false;
       else
       {
@@ -1024,7 +1025,30 @@ namespace ufo
     }
     return false;
   }
+  template <typename F, typename OIter>
+  struct RecFV : public std::unary_function<Expr, VisitAction>
+  {
+    F filter;
+    OIter out;
+    ExprSet seen;
+    typedef RecFV<F,OIter> this_type;
+    
+    RecFV(const this_type &rhs ) = delete;
+    RecFV(F f, OIter o): filter(f), out(o) {}
 
+    VisitAction operator()(Expr e){
+      if (seen.count(e)) return VisitAction::skipKids ();
+      seen.insert(e);
+      if (filter(e))
+        *(out++) = e;
+      return VisitAction::doKids();
+    }
+  };
+  template <typename F, typename OIter>
+  void recFilter(Expr e, F filter, OIter out) {
+    RecFV<F, OIter> fv(filter, out);
+    dagVisit(fv, e);
+  }
   struct SubexprMatcher : public std::unary_function<Expr, VisitAction>
   {
     bool found;
@@ -1061,16 +1085,11 @@ namespace ufo
 
     VisitAction operator() (Expr exp)
     {
-      // if (found)
-      // {
-      //   return VisitAction::skipKids ();
-      // }
       ExprMap matching;
       if ((isOpX<FAPP>(exp) || isOp<ComparissonOp>(exp)) &&
           findMatching (pattern, exp, vars, matching))
       {
         matchings.push_back(matching);
-        // comment this?
         return VisitAction::skipKids ();
       }
       return VisitAction::doKids ();
