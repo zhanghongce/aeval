@@ -26,16 +26,13 @@
 (assert (forall ((x Lst) (y Lst) (n Int)) (= (qpush (queue x y) n) (amortizeQueue x (cons n y)))))
 
 ; extra lemma
-
 ;(assert (forall ((x Lst) (y Lst)) (= (len (append x y)) (+  (len x) (len y)))))
-
 ;(assert (forall ((x Lst)) (= (len (rev x)) (len x))))
 
 (assert (not (forall ((q Queue) (n Int)) (= (qlen (qpush q n)) (+ 1 (qlen q))))))
 
 
-;	(len (append (rev _lm_v_1_sn1) (cons n nil))) = 1+len _lm_v_1_sn1
-
-;(assert (not (forall ((x Lst)) (= (qlen (amortizeQueue nil x)) (len x)))))
-
 (check-sat)
+
+
+;RUN  "--template 2 --gen-fapp --candidates 5 --timeout 3"

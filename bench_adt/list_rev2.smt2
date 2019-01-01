@@ -4,8 +4,6 @@
 (assert (forall ((x Lst)) (= (append nil x) x)))
 (assert (forall ((x Int) (y Lst) (z Lst)) (= (append (cons x y) z) (cons x (append y z)))))
 
-(assert (forall ((x Lst) (y Lst) (z Lst)) (= (append (append x y) z) (append x (append y z)))))
-
 (declare-fun rev (Lst) Lst)
 (assert (= (rev nil) nil))
 (assert (forall ((x Int) (y Lst)) (= (rev (cons x y)) (append (rev y) (cons x nil)))))
@@ -16,6 +14,7 @@
 
 ; extra lemmas
 ;(assert (forall ((x Lst) (a Lst)) (= (rev2 x a) (append (rev2 x nil) a))))
+;(assert (forall ((x Lst) (y Lst) (z Lst)) (= (append (append x y) z) (append x (append y z)))))
 
 (assert (not (forall ((x Lst)) (= (rev2 x nil) (rev x)))))
 
@@ -23,10 +22,4 @@
 (check-sat)
 
 
-; 3,5,6,7
-
-;x     ((rev2 (cons _t_1 _t_2) nil)=(append (rev _t_2) (cons _t_1 nil)))
-;y     ((rev2 _t_2 (cons _t_1 nil))=(append (rev _t_2) (cons _t_1 nil)))
-;y      ((rev2 _t_2 (cons _t_1 nil))=(append (rev2 _t_2 nil) (cons _t_1 nil)))
-;x     ((rev2 (cons _t_1 _t_2) nil)=(append (rev2 _t_2 nil) (cons _t_1 nil)))
-;x      ((rev2 _t_2 (cons _t_1 nil))=(rev (cons _t_1 _t_2))) 
+;RUN "--try-assoc"

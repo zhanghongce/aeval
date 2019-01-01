@@ -44,12 +44,11 @@ int main (int argc, char ** argv)
   char *infile = getSmtFileName(1, argc, argv);
   char *basecheck = getStrValue("--base", NULL, argc, argv);
   char *indcheck = getStrValue("--ind", NULL, argc, argv);
-  int maxDepth = atoi(getStrValue("--max-depth", "10", argc, argv));
-  int maxSameAssm = atoi(getStrValue("--max-same-assm", "5", argc, argv));
-  bool flipIH = (getStrValue("--flip-ih", NULL, argc, argv) != NULL);
-  int maxTermDepth = atoi(getStrValue("--max-term-depth", "3", argc, argv));
+  
+  Config cfg(argc, argv);
+  
   Expr e = z3_from_smtlib_file (z3, infile);
-  adtSolve(z3, e, basecheck, indcheck, maxDepth, maxSameAssm, flipIH, maxTermDepth);
+  adtSolve(z3, e, basecheck, indcheck, cfg);
 
   return 0;
 }

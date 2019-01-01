@@ -15,10 +15,10 @@
 
 
 ; add is associative lemma
-(assert (forall ((x INT) (y INT) (z INT)) (= (add x (add y z)) (add (add x y) z))))
+;(assert (forall ((x INT) (y INT) (z INT)) (= (add x (add y z)) (add (add x y) z))))
 
 ; add is commutative lemma
-(assert (forall ((x INT) (y INT)) (= (add x y) (add y x))))
+;(assert (forall ((x INT) (y INT)) (= (add x y) (add y x))))
 
 (assert (not (forall ((n INT) (m INT)) (= (mult n m) (mult m n)) )))
 
