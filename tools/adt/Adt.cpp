@@ -48,7 +48,7 @@ int main (int argc, char ** argv)
   Config cfg(argc, argv);
   
   Expr e = z3_from_smtlib_file (z3, infile);
-  adtSolve(z3, e, basecheck, indcheck, cfg);
-
-  return 0;
+  bool res = adtSolve(z3, e, basecheck, indcheck, cfg);
+  if (res) return 0;
+  else return 1;
 }

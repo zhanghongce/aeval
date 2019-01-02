@@ -12,9 +12,14 @@
 
 #include <iostream>
 
+#define LOG(_level, _code) \
+  do{ if (_level <= _global_verbosity) _code; \
+  } while(0)
+
 using namespace std;
 namespace ufo
 {
+  static int _global_verbosity = 1;
   struct Config {
     int flipIH = 0;
     int genFapp = 0;
@@ -25,10 +30,9 @@ namespace ufo
     int maxTermDepth = 3;
     int refuteTests = 3;
     int refuteSimpl = 25;
-    int timeoutSecs = 5;
-    int tryCandidates = 10;
+    int timeoutSecs = 3;
+    int tryCandidates = 5;
     int presolveTimes = 8;
-    int verbosity = 0;
 
     Config(int argc, char** argv) {
       static struct option long_options[] = {
@@ -103,7 +107,7 @@ namespace ufo
             break;
           
           case 'V':
-            verbosity = value;
+            _global_verbosity = value;
             break;
 
           case '?':
@@ -194,10 +198,8 @@ namespace ufo
     TermEnumerator(Expr expr, ExprMap _baseCtors, ExprMap _indCtors, int _maxDepth = 3) :
       baseCtors(_baseCtors), indCtors(_indCtors), maxDepth(_maxDepth)
     {
-      outs()<<"expr: "<<*expr;
+      LOG(1, outs()<<"<term-enum> from expr: "<<*expr<<"\n");
       filter(expr, [this](Expr e){return isVarFn(e);}, inserter(vars, vars.end()));
-      // outs()<<"\nvars:";
-      // for (Expr v: vars) outs()<<" "<<*v;
       filter(expr, [this](Expr e){return isFuncFn(e);}, inserter(funcs, funcs.end()));
 
       for(auto p: indCtors)
@@ -205,18 +207,11 @@ namespace ufo
         if (p.second)
           funcs.insert(p.second);
       }
-      // outs()<<"Please input max depth:";
-      // cin>>maxDepth;
-      // outs()<<"max depth is "<<maxDepth<<"\n";
     }
     void addFunctions(Expr axiom){
       filter(axiom, [this](Expr e){return isFuncFn(e);}, inserter(funcs, funcs.end()));
     }
-    bool isOk()
-    {
-      getTerms();
-      return true;
-    }
+
     int depth(Expr e)
     {
       bind::IsConst isConst;
@@ -234,22 +229,21 @@ namespace ufo
     }
     void getTerms()
     {
-      outs()<<"=======Base terms:\n";
+      LOG(5, outs()<<"<term-enum> base terms:\n");
       for (Expr v: vars)
       {
         allTerms[bind::typeOf(v)].push_back(v);
-        outs()<<"Variable "<<*v<<" of type: "<<*bind::typeOf(v)<<"\n";
+        LOG(5, outs()<<"Variable "<<*v<<" of type: "<<*bind::typeOf(v)<<"\n");
       }
       for (auto p: baseCtors)
       {
         if (!p.second || (p.second)->arity() != 2) continue;
         allTerms[p.first].push_back(bind::fapp(p.second));
-        outs()<<"Ctor "<<*bind::fapp(p.second)<<" of type: "<<*(p.first)<<"\n";
+        LOG(5, outs()<<"Ctor "<<*bind::fapp(p.second)<<" of type: "<<*(p.first)<<"\n");
       }
 
-      outs()<<"\nfuncs:";
-      for (Expr f: funcs) outs()<<" "<<*f;
-      outs()<<"\n\n";
+      LOG(5, for (Expr f: funcs) outs()<<"Function "<<*f);
+      LOG(5, outs()<<"\n");
 
       int i, d;
       for (d = 1; d < maxDepth; d++)
@@ -297,13 +291,13 @@ namespace ufo
             if (i == nArgs) break;
           }
         }
-        outs()<<"======Depth "<<d<<" terms ("<<newTerms.size()<<"):\n";
+        LOG(5, outs()<<"<term-enum> Depth "<<d<<" terms ("<<newTerms.size()<<"):\n");
         for (Expr t : newTerms)
         {
           // TODO check depth
           Expr ty = bind::typeOf(t);
           allTerms[ty].push_back(t);
-          // outs()<<"  "<<*t<<" of type: "<<*ty<<"\n";
+          LOG(5, outs()<<" => "<<*t<<" of type: "<<*ty<<"\n");
         }
       }
     }
@@ -360,7 +354,6 @@ namespace ufo
 
     bool simplifyGoal()
     {
-      // outs()<<"hello simplifyGoal\n";
       Expr goalQF = goal->last();
       for (auto & a : assumptions)
       {
@@ -396,9 +389,6 @@ namespace ufo
     }
     bool refuteGoal(Expr goalQF, int nTimes)
     {
-
-      outs()<<"???? try to invalidate :"<<*goalQF<<"\n";
-
       for (int i = 0; i < nTimes; ++i)
       {
         for (auto & a : assumptions) {
@@ -408,11 +398,11 @@ namespace ufo
       }
       // if (u.isEquiv(goalQF, mk<FALSE>(efac))){
       if (u.isFalse(goalQF) || testNotEQ(goalQF)){
-        outs()<<"===*** REFUTED!!!\n";
+        LOG(4, outs()<<" *** REFUTED!!!\n");
         return false;
       } 
       if (u.isTrue(goalQF)){
-        outs()<<"===*** Valid!!!\n";
+        LOG(4, outs()<<" *** Valid!!!\n");
         return true;
       }
       return true;
@@ -556,7 +546,7 @@ namespace ufo
         subgoal_copy = useAssumption(subgoal_copy, assumptions[i]);
         if (subgoal_copy == NULL || subgoal_copy == subgoal) break;
 
-        outs () << "rewritten [" << i << "]:   " << *subgoal_copy << "\n";
+        LOG(3, outs () << "rewritten [" << i << "]:   " << *subgoal_copy << "\n");
         if (u.isEquiv(subgoal_copy, mk<TRUE>(efac))) return true;
       }
       return false;
@@ -570,17 +560,15 @@ namespace ufo
       if (newGoal) subgoal = newGoal;
 
       if (u.isEquiv(subgoal, mk<TRUE>(efac))) {
-        outs()<<"Proof sequence:";
-        for (int a : rewriteSequence)
-          outs()<<" "<<a;
-        outs()<<"\n";
+        LOG(2, outs()<<"Proof sequence:");
+        LOG(2, for (int a : rewriteSequence) outs()<<" "<<a; outs()<<"\n");
         return true;
       }
 
       // check recursion depth
       if (rewriteSequence.size() >= cfg.maxSearchD) 
       {
-        // outs() << "reached max recursion depth! \n";
+        LOG(4, outs() << "  reached max search depth! \n");
         maxDepthCnt ++;
         return false;
       }
@@ -595,7 +583,7 @@ namespace ufo
             break;
         // test here
         if (i == cfg.maxSameAssm){
-          // outs() << "same assm["<<assmId<<"] applied too many times! \n";
+          LOG(4, outs() << "  same assm["<<assmId<<"] applied too many times! \n");
           return false;
         }
       }
@@ -604,7 +592,7 @@ namespace ufo
 
       auto elapsed = std::chrono::system_clock::now() - begin;
       if (elapsed > maxTime){
-        outs()<<"TIME OUT!!!!\n";
+        LOG(5, outs()<<"  TIME OUT!!!!\n");
         return false;
       }
 
@@ -629,11 +617,11 @@ namespace ufo
           {
             noMoreRewriting = false;
             if (rewriteSet.find(res) != rewriteSet.end()){
-              // outs()<<"revisit bt\n";
+              LOG(5, outs()<<"  revisit\n");
               continue;
             }
             rewriteSet.insert(res);
-            //outs () << "rewritten [" << i << "]:   " << *res << "\n";
+            LOG(3, outs () << "rewritten [" << i << "]:   " << *res << "\n");
             // save history
             rewriteHistory.push_back(res);
             rewriteSequence.push_back(i);
@@ -645,8 +633,7 @@ namespace ufo
               rewriteHistory.pop_back();
               rewriteSequence.pop_back();
               // backtrack:
-              // outs()<<"bt\n";
-              // outs () << "backtrack to:    " << *subgoal << "\n";
+              LOG(4, outs()<<"  bt\n");
             }
           }
         }
@@ -658,9 +645,11 @@ namespace ufo
         failures.insert(subgoal);
         if (fcnt < failures.size())
         {
-          outs()<<"***new failure== "<< *subgoal<<"\nreached by: \n";
-          for (int k = 0; k < rewriteSequence.size(); k ++)
-            outs()<<"["<<rewriteSequence[k]<<"] "<<*(rewriteHistory[k])<<"\n";
+          LOG(2, outs()<<"***new failure== "<< *subgoal<<"\nreached by: \n");
+          LOG(2,
+            for (int k = 0; k < rewriteSequence.size(); k ++)
+              outs()<<"["<<rewriteSequence[k]<<"] "<<*(rewriteHistory[k])<<"\n"
+          );
         }
         failureCnt ++;
       }
@@ -691,7 +680,7 @@ namespace ufo
                 if (indConstructors[type] != NULL && indConstructors[type] != a)
                 {
                   outs () << "Several inductive constructors are not supported\n";
-                  exit(0);
+                  exit(1);
                 }
                 indConstructors[type] = a;
               }
@@ -701,7 +690,7 @@ namespace ufo
               if (baseConstructors[type] != NULL && baseConstructors[type] != a)
               {
                 outs () << "Several base constructors are not supported\n";
-                exit(0);
+                exit(1);
               }
               baseConstructors[type] = a;
             }
@@ -787,8 +776,8 @@ namespace ufo
 
       // prove the base case
       Expr baseSubgoal = replaceAll(goalQF, typeDecl, baseConstructor);
-      printAssumptions();
-      outs() << "\nBase case:       " << *baseSubgoal << "\n";
+      LOG(2, printAssumptions());
+      LOG(1, outs() << "\nBase case: " << *baseSubgoal << "\n");
       rewriteSet.clear();
       rewriteSequence.clear();
       rewriteHistory.clear();
@@ -803,12 +792,11 @@ namespace ufo
               rewriteAssumptions(baseSubgoal) :
               tryStrategy(baseSubgoal, basenums);
       
-      outs()<<"======== base # of leaves at max depth: "<<maxDepthCnt<<"\n";
-      outs()<<"======== base # of failure nodes: "<<failureCnt<<"\n";
-
       // remove baseSubgoal
       failures.erase(baseSubgoal);
-      outs()<<"======== base # of unique failure nodes: "<<failures.size()<<"\n";
+      LOG(2, outs()<<"======== base # of leaves at max depth: "<<maxDepthCnt<<"\n");
+      LOG(2, outs()<<"======== base # of failure nodes: "<<failureCnt<<"\n");
+      LOG(2, outs()<<"======== base # of unique failure nodes: "<<failures.size()<<"\n");
       
       if (!baseres)
       {
@@ -820,16 +808,16 @@ namespace ufo
         }
         if (newArgs.size() > 0)
         {
-          outs () << "\nProceeding to nested induction for base case\n";
+          LOG(1, outs () << "Proceeding to nested induction for base case\n");
           newArgs.push_back(replaceAll(goal->last(), typeDecl, baseConstructor));
           Expr newGoal = mknary<FORALL>(newArgs);
           ADTSolver sol (newGoal, assumptions, constructors, cfg);
           if (!sol.solve (basenums, indnums)) 
           {
-            outs () << "\nNested induction for base case failed!!!\n";
+            LOG(1, outs () << "Nested induction for base case failed!!!\n");
             return false;
           }
-          outs () << "\nReturning to the outer induction\n\n";
+          LOG(1, outs () << "Returning to the outer induction\n\n");
         }
         else
         {
@@ -880,8 +868,8 @@ namespace ufo
       // prove the inductive step
       Expr indConsApp = bind::fapp(indConstructor, args);
       Expr indSubgoal = replaceAll(goalQF, bind::fapp(typeDecl), indConsApp);
-      printAssumptions();
-      outs() << "\nInductive step:  " << * indSubgoal << "\n";
+      LOG(2, printAssumptions());
+      LOG(1, outs() << "Inductive case:  " << * indSubgoal << "\n");
 
       rewriteSet.clear();
       rewriteSequence.clear();
@@ -894,67 +882,10 @@ namespace ufo
       bool indres = indnums.empty() ?
                rewriteAssumptions(indSubgoal) : // TODO: apply DFS, rank the failure nodes, synthesis of new lemma
                tryStrategy(indSubgoal, indnums);
-      
-      outs()<<"======== ind # of leaves at max depth: "<<maxDepthCnt<<"\n";
-      outs()<<"======== ind # of failure nodes: "<<failureCnt<<"\n";
       failures.erase(indSubgoal);
-      outs()<<"======== ind # of unique failure nodes: "<<failures.size()<<"\n";
-
-      // for (Expr f : failures) outs()<<"     "<<*f<<"\n";
-      /*for (Expr f: failures)
-      {
-        outs()<<";      "<<*f<<"\n";
-        
-        // (f->arg(0)->arg(1)) ->Print(cout);
-
-        // if (bind::isConst<AD_TY>((f->arg(0)->arg(1))))
-        //   cout<<" is Const";
-        bind::IsConst isVar;
-        // if (isVar((f->arg(0)->arg(1))))
-        //   cout<<" is Var";
-
-
-        ExprVector args;
-        filter(f, isVar, back_inserter(args));
-        for (Expr e : args)
-        {
-          outs()<<"                "<<*e<<" of Type ";
-          Expr typeDecl = bind::typeOf(e);
-          outs()<<*typeDecl;
-
-          // YES isOpX<FAPP>(e)
-          // YES isOpX<AD_TY>(typeDecl)
-
-          Expr baseCtor = baseConstructors[typeDecl];
-          if (baseCtor != NULL && e == bind::fapp(baseCtor))
-              outs()<<" is base ctor";
-
-          outs()<<"\n";
-        }
-
-        // 1. 
-        // ADTSolver newSolver()
-      }
-      */
-      // outs()<<"# of baseCtors: "<<baseConstructors.size()<<"\n";
-      // for (auto p : baseConstructors)
-      // {
-      //   outs()<<"======== typename: "<<*(p.first);
-      //   if (isOpX<AD_TY>(p.first)) outs()<<" [is AD_TY] ";
-      //   if (p.second)
-      //     outs()<<*(p.second);
-      //   outs()<<"\n";
-      // }
-
-      // outs()<<"# of indCtors: "<<indConstructors.size()<<"\n";
-      // for (auto p : indConstructors)
-      // {
-      //   outs()<<"======== typename: "<<*(p.first);
-      //   if (isOpX<AD_TY>(p.first)) outs()<<" [is AD_TY] ";
-      //   if (p.second)
-      //     outs()<<*(p.second);
-      //   outs()<<"\n";
-      // }
+      LOG(2, outs()<<"======== ind # of leaves at max depth: "<<maxDepthCnt<<"\n");
+      LOG(2, outs()<<"======== ind # of failure nodes: "<<failureCnt<<"\n");
+      LOG(2, outs()<<"======== ind # of unique failure nodes: "<<failures.size()<<"\n");
 
       if (indres) return true;
       else
@@ -967,7 +898,7 @@ namespace ufo
         }
         if (newArgs.size() > 0)
         {
-          outs () << "\nProceeding to nested induction for ind case\n";
+          LOG(1, outs () << "Proceeding to nested induction for ind case\n");
           newArgs.push_back(replaceAll(goal->last(), bind::fapp(typeDecl), indConsApp));
           Expr newGoal = mknary<FORALL>(newArgs);
           ADTSolver sol (newGoal, assumptions, constructors, cfg);
@@ -1010,7 +941,7 @@ namespace ufo
       if (find(candidates.begin(), candidates.end(), newGoal) == candidates.end())
       {
         candidates.push_back(newGoal);
-        outs()<<"****===*** new goal:  "<<*newGoal<<"\n";
+        LOG(2, outs()<<" *** new lemma candidate:  "<<*newGoal<<"\n");
       }
     }
     Expr rewriteITE(Expr e)
@@ -1039,13 +970,13 @@ namespace ufo
       ExprVector ctorApps;
       filter(goalQF, [this](Expr e){return isIndCtorFn(e);}, back_inserter(ctorApps));
       for (Expr ctor: ctorApps){
-        outs()<<"**** found ind ctor: "<<*ctor;
         ExprVector ctorArgs;
         filter(ctor, [this](Expr e){return isVarFn(e);}, back_inserter(ctorArgs));
         Expr ty = bind::typeOf(ctor);
         auto tyStr = getTerm<string>(ty->first());
         Expr newVar = bind::mkConst(mkTerm<string>("_lm_ind_" + tyStr, ctor->efac()), ty);
-        outs()<<" replaced by newVar: "<<*newVar<<"\n";
+        LOG(4,outs()<<" <generalize> found ind ctor: "<<*ctor<<"\n");
+        LOG(4,outs()<<"              replaced by newVar: "<<*newVar<<"\n");
         Expr newGoalQF = replaceAll(goalQF, ctor, newVar);
 
         bool replaceSuccess = true;
@@ -1066,7 +997,7 @@ namespace ufo
           insertUniqueGoal(newGoalQF, candidates);
         else
         {
-          outs()<<"(*************Term Enum preparations***********)\n\n";
+          LOG(1, outs()<<" === generalize failed, prepare term enum\n");
           assert(isOpX<EQ>(newGoalQF) && "Can only deal with equalities");
           Expr LHS = newGoalQF->first();
 
@@ -1088,7 +1019,7 @@ namespace ufo
             vector<pair<int, Expr>> sortedFnApps;
             for (Expr e: fnApps){
               int sz = dagSize(e);
-              outs()<<"found function application size "<<sz<<" "<<*e<<"\n";
+              LOG(4, outs()<<" <gen-fapp> found function application size "<<sz<<" "<<*e<<"\n");
               sortedFnApps.emplace_back(sz, e);
             } 
             std::sort(sortedFnApps.begin(), sortedFnApps.end(), 
@@ -1107,8 +1038,6 @@ namespace ufo
             }
             LHS = LHSchoices[0];
           }
-
-          outs()<<"template LHS: "<<*LHS<<"\n";
           Expr lhsTy = bind::typeOf(LHS);
           ExprSet lhsVars;
           filter(LHS, [this](Expr e){return isVarFn(e);}, inserter(lhsVars, lhsVars.end()));
@@ -1120,12 +1049,13 @@ namespace ufo
           tEnum.getTerms();
           ExprVector &tList = tEnum.allTerms[lhsTy];
           int validCnt = tList.size();
-          outs()<<"==== # terms "<<validCnt<<"\n";
+          LOG(2, outs()<<" === # terms "<<validCnt<<"\n");
           if (cfg.lemmaTmpl == 1) {
           /* TEMPLATE 1
            * LHS fixed = <???>
            * fill RHS
            */
+            LOG(1, outs()<<" using template 1\n");
             for (int i = 0; i < validCnt; i ++) {
               ExprSet rhsVars;
               filter(tList[i], [this](Expr e){return isVarFn(e);}, inserter(rhsVars, rhsVars.end()));
@@ -1138,6 +1068,7 @@ namespace ufo
            * LHS fixed = <???> + <???> for Int
            * fill RHS x 2
            */
+            LOG(1, outs()<<" using template 2\n");
             assert(isOpX<INT_TY>(lhsTy) && "must be INT");
             for (int i = 0; i < validCnt; i ++)
               for (int j = i; j < validCnt; j++) {
@@ -1158,7 +1089,7 @@ namespace ufo
       }
       
       if (ctorApps.empty()) {
-        outs()<<"*** attempt rewrite ITE and simplify arithmetic\n";
+        LOG(1, outs()<<" *** attempt rewrite ITE and simplify arithmetic\n");
         goalQF = replace(goalQF, mk_fn_map(SimplifyAdd0()));
         Expr simplGoal = rewriteITE(goalQF);
         if (simplGoal) insertUniqueGoal(simplGoal, candidates);
@@ -1227,7 +1158,7 @@ namespace ufo
     bool tryLemmas(Expr originaGoal, ExprVector assm, bool tryAgain = true)
     {
       if (failures.empty()) {
-        outs()<<"ATTENTION!!! max search depth not enough to reach failure points!!\n";
+        LOG(0, outs()<<"ATTENTION!!! max search depth not enough to reach failure points!!\n");
         return false;
       }
       ExprVector candidates;
@@ -1242,13 +1173,12 @@ namespace ufo
       for (auto x : sortedF)
       {
         Expr f = x.second;
-        outs()<<";failure      "<<*f<<"\n";
+        LOG(1, outs()<<"** lemma synth on failure "<<*f<<"\n");
         ExprVector vars;
         ExprVector renamedVars;
         filter(f, [this](Expr e){return isVarFn(e);}, back_inserter(vars));
         for (Expr v: vars)
         {
-          outs()<<" "<<*v;
           Expr varDecl = v->left();
           auto nameStr = "_lm" + getTerm<string>(varDecl->left());
           Expr newName = mkTerm<string>(nameStr, v->efac());
@@ -1258,12 +1188,11 @@ namespace ufo
         if (cfg.tryAssoc) tryAssociativity(goalQF, candidates);
         generalize(goalQF, renamedVars, candidates);
         //break;
-        outs()<<"\n";
       }
       vector<int> basenums;
       vector<int> indnums;
       bool res;
-      outs()<<"\n\n======== # of lemma candidates"<<candidates.size()<< "\n\n";
+      LOG(1, outs()<<"\n\n======== # of lemma candidates "<<candidates.size()<< "\n\n");
 
       ExprVector filteredCandidates;
 
@@ -1284,43 +1213,43 @@ namespace ufo
 
         // some test failed
         if (nTest != -1) continue;
-        outs()<<"\nlemma is prolly good:"<<*lemma<<"\n";
+        LOG(3, outs()<<" lemma passes tests: "<<*lemma<<"\n");
         filteredCandidates.push_back(lemma);
         if (filteredCandidates.size() >= cfg.tryCandidates) break;
       }
 
-      outs()<<"\n\n======== # of FILTERED lemma candidates"<<filteredCandidates.size()<< "\n\n";
+      LOG(1, outs()<<"======== # of FILTERED lemma candidates "<<filteredCandidates.size()<< "\n");
 
       for (Expr lemma : filteredCandidates)
       {
-        outs()<<"\n\n======={ try proving lemma\n\n";
+        LOG(1, outs()<<"======={ try proving lemma\n");
         ADTSolver solLemma (lemma, assm, constructors, cfg);
         res = solLemma.solve (basenums, indnums);
         if (!res) {
 
-          outs()<<" ****** not solved. attempt lemma synth on proposed lemma\n***\n***\n";
+          LOG(1, outs()<<" ****** not solved. attempt lemma synth on proposed lemma\n");
           solLemma.tryLemmas(lemma, assumptions, false);
 
-          outs()<<"\n\n======= lemma is invalid / not proved }\n\n";
+          LOG(1, outs()<<"\n======= lemma is invalid / not proved }\n");
           continue;
         }
 
         
-        outs()<<"\n\n========lemma is valid and proved}\n\n";
+        LOG(1, outs()<<"========lemma is valid and proved}\n");
         assm.push_back(lemma);
         if (getTerm<string>(lemma->first()->left()).substr(0, 9) == "_assoc_x_") continue;
         ADTSolver sol (originaGoal, assm, constructors, cfg);
-        outs()<<"\n\n======={ try original goal with lemma\n\n";
+        LOG(1, outs()<<"======={ try original goal with lemma\n");
         res = sol.solve (basenums, indnums);
         if (res) {
-          outs()<<"===========Solved with new lemma: "<< *lemma <<"}\n";
+          LOG(1, outs()<<"===========Solved with new lemma: "<< *lemma <<"}\n");
           return true;
         }else {
-          outs()<<"===========Not solved with new lemma: "<< *lemma <<"}\n";
+          LOG(1, outs()<<"===========Not solved with new lemma: "<< *lemma <<"}\n");
           if (tryAgain) {
-            outs()<<"===========tryLemmas 2nd attempt begin{\n";
+            LOG(1, outs()<<"===========tryLemmas 2nd attempt begin{\n");
             res = sol.tryLemmas(originaGoal, assm, false);
-            outs()<<"===========tryLemmas 2nd attempt end}\n";
+            LOG(1, outs()<<"===========tryLemmas 2nd attempt end}\n");
             if (res) return true;
           }
         }
@@ -1338,7 +1267,7 @@ namespace ufo
       {
         if (simplifyGoal())
         {
-          outs () << "Trivially Proved\n";
+          LOG(1, outs () << "Trivially Proved\n");
           return true;
         }
       }
@@ -1360,7 +1289,7 @@ namespace ufo
       if (toRollback) goal = rewriteHistory[0];*/
       if (treeSize(goal) >= treeSize(rewriteHistory[0])) goal = rewriteHistory[0];
 
-      outs () << "Simplified goal: " << *goal << "\n\n";
+      LOG(1, outs () << "Simplified goal: " << *goal << "\n");
 
       for (int i = 0; i < goal->arity() - 1; i++)
       {
@@ -1369,12 +1298,12 @@ namespace ufo
         {
           if (induction(i, basenums, indnums))
           {
-            outs () << "                 Proved\n";
+            LOG(1, outs () << "                 Proved with induction\n");
             return true;
           }
           else
           {
-            outs () << "                 Failed\n";
+            LOG(1, outs () << "                 Failed\n");
             return false;
           }
 
@@ -1408,7 +1337,7 @@ namespace ufo
     nums.push_back(atoi(substr));
   }
 
-  void adtSolve(EZ3& z3, Expr s, char* basecheck, char *indcheck, Config cfg)
+  bool adtSolve(EZ3& z3, Expr s, char* basecheck, char *indcheck, Config cfg)
   {
     vector<int> basenums;
     vector<int> indnums;
@@ -1442,16 +1371,17 @@ namespace ufo
 
     if (goal == NULL)
     {
-      outs () << "Unable to parse the query\n";
-      return;
+      LOG(1, outs () << "Unable to parse the query\n");
+      return false;
     }
     ADTSolver sol (goal, assumptions, constructors, cfg);
 
     bool res = sol.solve (basenums, indnums);
     if (!res){
-      outs()<<" *** not solved. attempt lemma synth\n";
-      sol.tryLemmas(goal, assumptions, true);
+      LOG(1, outs()<<" *** not solved. attempt lemma synth\n");
+      res = sol.tryLemmas(goal, assumptions, true);
     }
+    return res;
   }
 }
 

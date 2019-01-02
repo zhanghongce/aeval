@@ -18,4 +18,4 @@
 
 
 
-;RUN "--candidates 5 --try-assoc"
+;RUN "--template 1 --try-assoc"

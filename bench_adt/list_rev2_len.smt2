@@ -18,4 +18,4 @@
 (check-sat)
 
 
-;RUN "--template 2 --candidates 5"
+;RUN "--template 2"

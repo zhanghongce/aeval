@@ -17,3 +17,4 @@
 (check-sat)
 
 ;RUN  "--try-assoc"
+; no term-enum

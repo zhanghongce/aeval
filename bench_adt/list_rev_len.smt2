@@ -28,5 +28,5 @@
 (check-sat)
 
 
-;RUN "--template 2 --candidates 5 --gen-fapp"
+;RUN "--template 2 --gen-fapp"
 

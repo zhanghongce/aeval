@@ -35,4 +35,4 @@
 (check-sat)
 
 
-;RUN  "--template 2 --gen-fapp --candidates 5 --timeout 3"
+;RUN  "--template 2 --gen-fapp"
