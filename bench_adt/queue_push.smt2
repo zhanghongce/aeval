@@ -35,4 +35,4 @@
 (check-sat)
 
 
-;RUN  "--template 2 --gen-fapp"
+;RUN  "--template 2 --max-search 20 --gen-fapp"

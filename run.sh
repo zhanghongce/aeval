@@ -20,7 +20,7 @@ lemma_synth_cfg=(
 	"--template 2 --gen-fapp"
 	"--template 2"
 	"--template 2 --gen-fapp"
-	"--template 2 --gen-fapp"
+	"--template 2 --max-search 20 --gen-fapp"
 	)
 files_path="bench_adt/"
 solver_bin="build/tools/adt/ind"
