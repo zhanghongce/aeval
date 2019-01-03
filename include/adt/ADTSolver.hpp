@@ -336,6 +336,8 @@ namespace ufo
     ExprSet indCtorDecls;
     ExprMap valueMap;
 
+    ExprVector newLemmas;
+
 
     int _nextInt;
     std::chrono::duration<int> maxTime;
@@ -1229,15 +1231,19 @@ namespace ufo
         if (!res) {
 
           LOG(1, outs()<<" ****** not solved. attempt lemma synth on proposed lemma\n");
-          solLemma.tryLemmas(lemma, assumptions, false);
-
-          LOG(1, outs()<<"\n======= lemma is invalid / not proved }\n");
-          continue;
+          res = solLemma.tryLemmas(lemma, assumptions, false);
+          if (!res) {
+            LOG(1, outs()<<"\n======= lemma is invalid / not proved }\n");
+            continue;
+          }else{
+            for (Expr l : solLemma.newLemmas) assm.push_back(l);
+          }
         }
 
         
         LOG(1, outs()<<"========lemma is valid and proved}\n");
         assm.push_back(lemma);
+        newLemmas.push_back(lemma);
         if (getTerm<string>(lemma->first()->left()).substr(0, 9) == "_assoc_x_") continue;
         ADTSolver sol (originaGoal, assm, constructors, cfg);
         LOG(1, outs()<<"======={ try original goal with lemma\n");

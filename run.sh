@@ -9,6 +9,7 @@ lemma_synth_files=(
 	"list_rev_len.smt2"
 	"list_rev2_len.smt2"
 	"queue_push.smt2"
+	"queue_len.smt2"
 	)
 
 lemma_synth_cfg=(
@@ -18,6 +19,7 @@ lemma_synth_cfg=(
 	"--try-assoc"
 	"--template 2 --gen-fapp"
 	"--template 2"
+	"--template 2 --gen-fapp"
 	"--template 2 --gen-fapp"
 	)
 files_path="bench_adt/"
