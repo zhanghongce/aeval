@@ -1244,7 +1244,7 @@ namespace ufo
         LOG(1, outs()<<"========lemma is valid and proved}\n");
         assm.push_back(lemma);
         newLemmas.push_back(lemma);
-        if (getTerm<string>(lemma->first()->left()).substr(0, 9) == "_assoc_x_") continue;
+        if (getTerm<string>(lemma->first()->left()).substr(0, 9) == "_assoc_x_" && filteredCandidates.size() > 1) continue;
         ADTSolver sol (originaGoal, assm, constructors, cfg);
         LOG(1, outs()<<"======={ try original goal with lemma\n");
         res = sol.solve (basenums, indnums);
