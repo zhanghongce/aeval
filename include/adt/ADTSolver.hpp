@@ -1157,10 +1157,6 @@ namespace ufo
     }
     bool tryLemmas(Expr originaGoal, ExprVector assm, bool tryAgain = true)
     {
-      if (failures.empty()) {
-        LOG(0, outs()<<"ATTENTION!!! max search depth not enough to reach failure points!!\n");
-        return false;
-      }
       ExprVector candidates;
 
       // rank failures. less functions the better
@@ -1188,6 +1184,11 @@ namespace ufo
         if (cfg.tryAssoc) tryAssociativity(goalQF, candidates);
         generalize(goalQF, renamedVars, candidates);
         //break;
+      }
+
+      if (failures.empty()) {
+        LOG(0, outs()<<"ATTENTION!!! max search depth not enough to reach failure points!!\n");
+        if (cfg.tryAssoc) tryAssociativity(originaGoal, candidates);
       }
       vector<int> basenums;
       vector<int> indnums;

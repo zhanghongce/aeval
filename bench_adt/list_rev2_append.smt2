@@ -14,4 +14,5 @@
 (assert (not (forall ((x Lst) (a Lst)) (= (rev2 x a) (append (rev2 x nil) a)))))
 (check-sat)
 
+;RUN "--try-assoc"
 ; NOTE failure point lost because max-same-assm kicked in

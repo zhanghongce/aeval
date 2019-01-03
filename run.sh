@@ -5,6 +5,7 @@ lemma_synth_files=(
 	"list_rev.smt2" 
 	"list_rev2.smt2"
 	"list_rev_append.smt2"
+	"list_rev2_append.smt2"
 	"list_rev_len.smt2"
 	"list_rev2_len.smt2"
 	"queue_push.smt2"
@@ -14,19 +15,13 @@ lemma_synth_cfg=(
 	"--template 1 --try-assoc"
 	"--try-assoc"
 	"--try-assoc"
+	"--try-assoc"
 	"--template 2 --gen-fapp"
 	"--template 2"
 	"--template 2 --gen-fapp"
 	)
 files_path="bench_adt/"
 solver_bin="build/tools/adt/ind"
-
-
-
-# ret=$(build/tools/adt/ind  --try-assoc bench_adt/list_rev.smt2)
-# echo ${ret}
-
-
 
 red=`tput setaf 1`
 green=`tput setaf 2`
