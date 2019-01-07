@@ -10,5 +10,5 @@
 (assert (forall ((x Int) (y Lst)) (= (len (cons x y)) (+ 1 (len y)))))
 
 
-(assert (not (forall ((x Lst) (y Lst)) (= (+ (len x) (len y)) (len (append x y))))))
+(assert (not (forall ((x Lst) (y Lst)) (= (len (append x y)) (+ (len x) (len y))))))
 (check-sat)

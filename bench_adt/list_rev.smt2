@@ -9,9 +9,8 @@
 (assert (= (rev nil) nil))
 (assert (forall ((x Int) (y Lst)) (= (rev (cons x y)) (append (rev y) (cons x nil)))))
 
-;(assert (forall ((x Lst) (y Lst) (z Lst)) (= (append (append x y) z) (append x (append y z)))))
-
 ; extra lemmas
+;(assert (forall ((x Lst) (y Lst) (z Lst)) (= (append (append x y) z) (append x (append y z)))))
 ;(assert (forall ((x Lst) (y Lst)) (= (rev (append x y)) (append (rev y) (rev x)))))
 
 (assert (not (forall ((x Lst)) (= (rev (rev x)) x))))

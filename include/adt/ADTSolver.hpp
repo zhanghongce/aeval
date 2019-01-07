@@ -29,7 +29,7 @@ namespace ufo
     int maxSameAssm = 5;
     int maxTermDepth = 3;
     int refuteTests = 3;
-    int refuteSimpl = 25;
+    int refuteSimpl = 30;
     int timeoutSecs = 3;
     int tryCandidates = 5;
     int presolveTimes = 8;
@@ -382,12 +382,18 @@ namespace ufo
     }
     bool testNotEQ(Expr eq){
       if (!isOpX<EQ>(eq)) return false;
-      ExprVector funcs;
-      filter(eq, [](Expr e){return isOpX<FDECL> (e) && e->arity () >= 3;}, back_inserter(funcs));
-      // expr has only indCtor, so "=" is literal comparison 
-      if (funcs.size() == 1 && (find(indCtorDecls.begin(), indCtorDecls.end(),funcs[0]) != indCtorDecls.end()))
-        return eq->left() != eq->right();
-      return false;
+      Expr lhs = eq->first();
+      Expr rhs = eq->last();
+      ExprVector lF, rF;
+      auto isF = [](Expr e){return isOpX<FDECL> (e) && e->arity () >= 3;}; 
+      filter(lhs, isF, back_inserter(lF));
+      filter(rhs, isF, back_inserter(rF));
+
+      bool lSimple = lF.size() == 1 && (find(indCtorDecls.begin(), indCtorDecls.end(), lF[0]) != indCtorDecls.end());
+      bool rSimple = rF.size() == 1 && (find(indCtorDecls.begin(), indCtorDecls.end(), rF[0]) != indCtorDecls.end());
+      if (lSimple && rSimple) return lhs != rhs;
+      else if (lSimple != rSimple) return true;
+      else return false;
     }
     bool refuteGoal(Expr goalQF, int nTimes)
     {
@@ -967,6 +973,31 @@ namespace ufo
       if (u.isEquiv(elseBr, mk<TRUE>(efac))) return thenBr;
       else return NULL;
     }
+    Expr genFapp(Expr eq) 
+    {
+      assert(isOpX<EQ>(eq) && "must be equality");
+      Expr lhs = eq->first(), rhs = eq->last();
+      auto isFapp = [](Expr e){return isOpX<FAPP>(e) && e->arity() > 1;};
+
+      ExprSet lFapp, rFapp;
+      ExprVector fnApps;
+      recFilter(lhs, isFapp, inserter(lFapp, lFapp.end()));
+      recFilter(rhs, isFapp, inserter(rFapp, rFapp.end()));
+
+      set_intersection(lFapp.begin(), lFapp.end(), rFapp.begin(), rFapp.end(), back_inserter(fnApps));
+      Expr result = eq;
+      if (!fnApps.empty())
+      {
+        Expr fapp = fnApps[0];
+        Expr ty = bind::typeOf(fapp);
+        string tyStr;
+        if (isOpX<INT_TY>(ty)) tyStr = "INT";
+        else tyStr = getTerm<string>(ty->first());
+        Expr newVar = bind::mkConst(mkTerm<string>("_lm_fapp_" + tyStr, fapp->efac()), ty);
+        result = replaceAll(eq, fapp, newVar);
+      }
+      return result;
+    }
     void generalize(Expr goalQF, ExprVector &qVars, ExprVector &candidates)
     {
       ExprVector ctorApps;
@@ -1094,8 +1125,9 @@ namespace ufo
         LOG(1, outs()<<" *** attempt rewrite ITE and simplify arithmetic\n");
         goalQF = replace(goalQF, mk_fn_map(SimplifyAdd0()));
         Expr simplGoal = rewriteITE(goalQF);
-        if (simplGoal) insertUniqueGoal(simplGoal, candidates);
-        else insertUniqueGoal(goalQF, candidates);
+        if (simplGoal) goalQF = simplGoal;
+        goalQF = genFapp(goalQF);
+        insertUniqueGoal(goalQF, candidates);
       }
     }
     int cntFuncFn(Expr e){
@@ -1197,8 +1229,6 @@ namespace ufo
       bool res;
       LOG(1, outs()<<"\n\n======== # of lemma candidates "<<candidates.size()<< "\n\n");
 
-      ExprVector filteredCandidates;
-
       for (Expr lemma: candidates) {
         int nQVars = lemma->arity() - 1;
         int nTest = cfg.refuteTests;
@@ -1217,14 +1247,7 @@ namespace ufo
         // some test failed
         if (nTest != -1) continue;
         LOG(3, outs()<<" lemma passes tests: "<<*lemma<<"\n");
-        filteredCandidates.push_back(lemma);
-        if (filteredCandidates.size() >= cfg.tryCandidates) break;
-      }
-
-      LOG(1, outs()<<"======== # of FILTERED lemma candidates "<<filteredCandidates.size()<< "\n");
-
-      for (Expr lemma : filteredCandidates)
-      {
+        
         LOG(1, outs()<<"======={ try proving lemma\n");
         ADTSolver solLemma (lemma, assm, constructors, cfg);
         res = solLemma.solve (basenums, indnums);
@@ -1244,7 +1267,8 @@ namespace ufo
         LOG(1, outs()<<"========lemma is valid and proved}\n");
         assm.push_back(lemma);
         newLemmas.push_back(lemma);
-        if (getTerm<string>(lemma->first()->left()).substr(0, 9) == "_assoc_x_" && filteredCandidates.size() > 1) continue;
+        Expr firstV = lemma->first();
+        if (getTerm<string>(firstV->left()).substr(0, 9) == "_assoc_x_" && candidates.size() > 1) continue;
         ADTSolver sol (originaGoal, assm, constructors, cfg);
         LOG(1, outs()<<"======={ try original goal with lemma\n");
         res = sol.solve (basenums, indnums);
