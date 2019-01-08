@@ -13,9 +13,9 @@ echo "hello"
 
 lemma_synth_files=(
 	"list_rev.smt2" 
-	"list_rev2.smt2"
 	"list_rev_append.smt2"
 	"list_rev2_append.smt2"
+	"list_rev2.smt2" # 2 minutes without --try-assoc
 	"list_rev_len.smt2"
 	"list_rev2_len.smt2"
 	"queue_push.smt2"
@@ -23,14 +23,14 @@ lemma_synth_files=(
 	)
 
 lemma_synth_cfg=(
-	"--template 1 --try-assoc"
 	"--try-assoc"
 	"--try-assoc"
 	"--try-assoc"
-	"--template 2 --gen-fapp"
-	"--template 2"
-	"--template 2 --max-search 20 --gen-fapp"
-	"--template 2 --gen-fapp"
+	""
+	"--gen-fapp"
+	""
+	"--gen-fapp" # default is 15
+	"--gen-fapp"
 	)
 files_path="bench_adt/"
 solver_bin="build/tools/adt/ind"

@@ -1000,9 +1000,15 @@ namespace ufo
     }
     void generalize(Expr goalQF, ExprVector &qVars, ExprVector &candidates)
     {
+      if (treeSize(goalQF->first()) < treeSize(goalQF->last())){
+        LOG(1, outs()<<"switch sides\n";);
+        goalQF = mk<EQ>(goalQF->last(), goalQF->first());
+      }
       ExprVector ctorApps;
       filter(goalQF, [this](Expr e){return isIndCtorFn(e);}, back_inserter(ctorApps));
-      for (Expr ctor: ctorApps){
+      if (!ctorApps.empty())
+      {
+        Expr ctor = ctorApps[0];
         ExprVector ctorArgs;
         filter(ctor, [this](Expr e){return isVarFn(e);}, back_inserter(ctorArgs));
         Expr ty = bind::typeOf(ctor);
@@ -1033,7 +1039,6 @@ namespace ufo
           LOG(1, outs()<<" === generalize failed, prepare term enum\n");
           assert(isOpX<EQ>(newGoalQF) && "Can only deal with equalities");
           Expr LHS = newGoalQF->first();
-
           // replace base ctor
           ExprVector baseCtors;
           filter(LHS, [this](Expr e){return isBaseCtorFn(e);}, back_inserter(baseCtors));
@@ -1072,6 +1077,11 @@ namespace ufo
             LHS = LHSchoices[0];
           }
           Expr lhsTy = bind::typeOf(LHS);
+          
+          // use <??>+<??> for Int
+          if (isOpX<INT_TY>(lhsTy)) cfg.lemmaTmpl = 2;
+          else cfg.lemmaTmpl = 1;
+
           ExprSet lhsVars;
           filter(LHS, [this](Expr e){return isVarFn(e);}, inserter(lhsVars, lhsVars.end()));
 
@@ -1117,7 +1127,6 @@ namespace ufo
             assert(0 && "unsurported lemma template");
           }
           // usually once is enough
-          break;
         }
       }
       
@@ -1191,6 +1200,20 @@ namespace ufo
     }
     bool tryLemmas(Expr originaGoal, ExprVector assm, bool tryAgain = true)
     {
+
+      vector<int> basenums;
+      vector<int> indnums;
+
+      if (failures.empty()) {
+        LOG(0, outs()<<"ATTENTION!!! max search depth not enough to reach failure points!!\n");
+        cfg.maxSearchD += 5;
+        
+        ADTSolver deeperSol (originaGoal, assm, constructors, cfg);
+        bool result = deeperSol.solve(basenums, indnums);
+        if (result) return true;
+        else return deeperSol.tryLemmas(originaGoal, assm, tryAgain);
+        // if (cfg.tryAssoc) tryAssociativity(originaGoal, candidates);
+      }
       ExprVector candidates;
 
       // rank failures. less functions the better
@@ -1220,12 +1243,6 @@ namespace ufo
         //break;
       }
 
-      if (failures.empty()) {
-        LOG(0, outs()<<"ATTENTION!!! max search depth not enough to reach failure points!!\n");
-        if (cfg.tryAssoc) tryAssociativity(originaGoal, candidates);
-      }
-      vector<int> basenums;
-      vector<int> indnums;
       bool res;
       LOG(1, outs()<<"\n\n======== # of lemma candidates "<<candidates.size()<< "\n\n");
 
