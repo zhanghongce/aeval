@@ -330,6 +330,7 @@ namespace ufo
 
     int maxDepthCnt;
     int failureCnt;
+    int btCnt;
 
     ExprSet failures;
 
@@ -406,7 +407,7 @@ namespace ufo
       }
       // if (u.isEquiv(goalQF, mk<FALSE>(efac))){
       if (u.isFalse(goalQF) || testNotEQ(goalQF)){
-        LOG(4, outs()<<" *** REFUTED!!!\n");
+        LOG(2, outs()<<" *** REFUTED!!!\n");
         return false;
       } 
       if (u.isTrue(goalQF)){
@@ -647,7 +648,7 @@ namespace ufo
         }
       }
       // failure node, stuck here, have to backtrack
-
+      btCnt++;
       if (noMoreRewriting){
         int fcnt = failures.size();
         failures.insert(subgoal);
@@ -791,6 +792,7 @@ namespace ufo
       rewriteHistory.clear();
       maxDepthCnt = 0;
       failureCnt = 0;
+      btCnt = 0;
       failures.clear();
 
       baseOrInd = false;
@@ -803,7 +805,7 @@ namespace ufo
       // remove baseSubgoal
       failures.erase(baseSubgoal);
       LOG(2, outs()<<"======== base # of leaves at max depth: "<<maxDepthCnt<<"\n");
-      LOG(2, outs()<<"======== base # of failure nodes: "<<failureCnt<<"\n");
+      LOG(2, outs()<<"======== base # of failure nodes: "<<failureCnt<<"("<<btCnt<<")\n");
       LOG(2, outs()<<"======== base # of unique failure nodes: "<<failures.size()<<"\n");
       
       if (!baseres)
@@ -884,6 +886,7 @@ namespace ufo
       rewriteHistory.clear(); // TODO: use it during the base case proving
       maxDepthCnt = 0;
       failureCnt = 0;
+      btCnt = 0;
       failures.clear();
       baseOrInd = true;
       begin = std::chrono::system_clock::now();
@@ -892,7 +895,7 @@ namespace ufo
                tryStrategy(indSubgoal, indnums);
       failures.erase(indSubgoal);
       LOG(2, outs()<<"======== ind # of leaves at max depth: "<<maxDepthCnt<<"\n");
-      LOG(2, outs()<<"======== ind # of failure nodes: "<<failureCnt<<"\n");
+      LOG(2, outs()<<"======== ind # of failure nodes: "<<failureCnt<<"("<<btCnt<<")\n");
       LOG(2, outs()<<"======== ind # of unique failure nodes: "<<failures.size()<<"\n");
 
       if (indres) return true;
@@ -1203,16 +1206,16 @@ namespace ufo
 
       vector<int> basenums;
       vector<int> indnums;
-
       if (failures.empty()) {
         LOG(0, outs()<<"ATTENTION!!! max search depth not enough to reach failure points!!\n");
         cfg.maxSearchD += 5;
-        
-        ADTSolver deeperSol (originaGoal, assm, constructors, cfg);
-        bool result = deeperSol.solve(basenums, indnums);
-        if (result) return true;
-        else return deeperSol.tryLemmas(originaGoal, assm, tryAgain);
-        // if (cfg.tryAssoc) tryAssociativity(originaGoal, candidates);
+        if (cfg.maxSearchD < 30)
+        {
+          ADTSolver deeperSol (originaGoal, assm, constructors, cfg);
+          bool result = deeperSol.solve(basenums, indnums);
+          if (result) return true;
+          else return deeperSol.tryLemmas(originaGoal, assm, tryAgain);
+        }
       }
       ExprVector candidates;
 
@@ -1242,6 +1245,11 @@ namespace ufo
         generalize(goalQF, renamedVars, candidates);
         //break;
       }
+      if (failures.empty()) {
+        LOG(0, outs()<<"ATTENTION!!! max search depth not enough to reach failure points!!\n");
+        if (cfg.tryAssoc) tryAssociativity(originaGoal, candidates);
+      }
+      
 
       bool res;
       LOG(1, outs()<<"\n\n======== # of lemma candidates "<<candidates.size()<< "\n\n");

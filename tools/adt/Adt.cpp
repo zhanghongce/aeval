@@ -39,6 +39,7 @@ bool PrintExpr(Expr e)
 
 int main (int argc, char ** argv)
 {
+  // std::chrono::system_clock::time_point begin;
   ExprFactory efac;
   EZ3 z3(efac);
   char *infile = getSmtFileName(1, argc, argv);
@@ -49,6 +50,10 @@ int main (int argc, char ** argv)
   
   Expr e = z3_from_smtlib_file (z3, infile);
   bool res = adtSolve(z3, e, basecheck, indcheck, cfg);
+
+  // auto elapsed = std::chrono::system_clock::now() - begin;
+  // using seconds = std::chrono::duration<double, std::ratio<1, 1> >;
+  // cout<<"Time elapsed: "<< seconds(elapsed).count() <<"seconds\n";
   if (res) return 0;
   else return 1;
 }

@@ -1,0 +1,104 @@
+ACL2 !>(defun rev (x)
+  (if (endp x)
+      nil
+    (append (rev (cdr x))
+            (list (car x)))))
+
+The admission of REV is trivial, using the relation O< (which is known
+to be well-founded on the domain recognized by O-P) and the measure
+(ACL2-COUNT X).  We observe that the type of REV is described by the
+theorem (TRUE-LISTP (REV X)).  We used primitive type reasoning and
+the :type-prescription rules BINARY-APPEND and TRUE-LISTP-APPEND.
+
+Summary
+Form:  ( DEFUN REV ...)
+Rules: ((:FAKE-RUNE-FOR-TYPE-SET NIL)
+        (:TYPE-PRESCRIPTION BINARY-APPEND)
+        (:TYPE-PRESCRIPTION TRUE-LISTP-APPEND))
+Time:  0.01 seconds (prove: 0.00, print: 0.00, other: 0.01)
+ REV
+ACL2 !>(defthm rev-append
+  (equal (rev (append x y))
+         (append (rev y) (rev x))))
+
+*1 (the initial Goal, a key checkpoint) is pushed for proof by induction.
+
+Perhaps we can prove *1 by induction.  Three induction schemes are
+suggested by this conjecture.  Subsumption reduces that number to two.
+However, one of these is flawed and so we are left with one viable
+candidate.  
+
+We will induct according to a scheme suggested by (APPEND X Y).  This
+suggestion was produced using the :induction rules BINARY-APPEND and
+REV.  If we let (:P X Y) denote *1 above then the induction scheme
+we'll use is
+(AND (IMPLIES (AND (NOT (ENDP X)) (:P (CDR X) Y))
+              (:P X Y))
+     (IMPLIES (ENDP X) (:P X Y))).
+This induction is justified by the same argument used to admit BINARY-APPEND.
+When applied to the goal at hand the above induction scheme produces
+two nontautological subgoals.
+Subgoal *1/2
+Subgoal *1/2'
+Subgoal *1/2''
+Subgoal *1/2'''
+Subgoal *1/2'4'
+Subgoal *1/2'5'
+Subgoal *1/2'6'
+
+([ A key checkpoint while proving *1 (descended from Goal):
+
+Subgoal *1/2''
+(IMPLIES (AND (CONSP X)
+              (EQUAL (REV (APPEND (CDR X) Y))
+                     (APPEND (REV Y) (REV (CDR X)))))
+         (EQUAL (APPEND (REV (APPEND (CDR X) Y))
+                        (LIST (CAR X)))
+                (APPEND (REV Y)
+                        (REV (CDR X))
+                        (LIST (CAR X)))))
+
+*1.1 (Subgoal *1/2'6') is pushed for proof by induction.
+
+])
+Subgoal *1/1
+Subgoal *1/1'
+
+So we now return to *1.1, which is
+
+(IMPLIES (AND (TRUE-LISTP RV) (TRUE-LISTP RV0))
+         (EQUAL (APPEND (APPEND RV0 RV) (LIST X1))
+                (APPEND RV0 RV (LIST X1)))).
+Subgoal *1.1/3
+Subgoal *1.1/3'
+Subgoal *1.1/2
+Subgoal *1.1/1
+Subgoal *1.1/1'
+
+*1.1 and *1 are COMPLETED!
+Thus key checkpoints Subgoal *1/2'' and Goal are COMPLETED!
+
+Q.E.D.
+
+Summary
+Form:  ( DEFTHM REV-APPEND ...)
+Rules: ((:DEFINITION BINARY-APPEND)
+        (:DEFINITION ENDP)
+        (:DEFINITION NOT)
+        (:DEFINITION REV)
+        (:DEFINITION TRUE-LISTP)
+        (:ELIM CAR-CDR-ELIM)
+        (:EXECUTABLE-COUNTERPART CONSP)
+        (:FAKE-RUNE-FOR-TYPE-SET NIL)
+        (:INDUCTION BINARY-APPEND)
+        (:INDUCTION REV)
+        (:INDUCTION TRUE-LISTP)
+        (:REWRITE APPEND-TO-NIL)
+        (:REWRITE CAR-CONS)
+        (:REWRITE CDR-CONS)
+        (:TYPE-PRESCRIPTION REV)
+        (:TYPE-PRESCRIPTION TRUE-LISTP-APPEND))
+Time:  0.01 seconds (prove: 0.01, print: 0.00, other: 0.00)
+Prover steps counted:  2624
+ REV-APPEND
+ACL2 !>

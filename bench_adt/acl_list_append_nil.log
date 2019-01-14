@@ -1,0 +1,74 @@
+ACL2 !>(defthm append-nil (equal (append x nil) x))    
+
+ACL2 Warning [Subsume] in ( DEFTHM APPEND-NIL ...):  A newly proposed
+:REWRITE rule generated from APPEND-NIL probably subsumes the previously
+added :REWRITE rule APPEND-TO-NIL, in the sense that the new rule will
+now probably be applied whenever the old rule would have been.
+
+
+*1 (the initial Goal, a key checkpoint) is pushed for proof by induction.
+
+Perhaps we can prove *1 by induction.  One induction scheme is suggested
+by this conjecture.  
+
+We will induct according to a scheme suggested by (APPEND X NIL). 
+This suggestion was produced using the :induction rule BINARY-APPEND.
+If we let (:P X) denote *1 above then the induction scheme we'll use
+is
+(AND (IMPLIES (AND (NOT (ENDP X)) (:P (CDR X)))
+              (:P X))
+     (IMPLIES (ENDP X) (:P X))).
+This induction is justified by the same argument used to admit BINARY-APPEND.
+When applied to the goal at hand the above induction scheme produces
+two nontautological subgoals.
+Subgoal *1/2
+Subgoal *1/2'
+Subgoal *1/1
+Subgoal *1/1'
+Subgoal *1/1''
+Subgoal *1/1'''
+
+([ A key checkpoint while proving *1 (descended from Goal):
+
+Subgoal *1/1''
+(IMPLIES (NOT (CONSP X)) (NOT X))
+
+A goal of NIL, Subgoal *1/1''', has been generated!  Obviously, the
+proof attempt has failed.
+
+])
+
+Summary
+Form:  ( DEFTHM APPEND-NIL ...)
+Rules: ((:DEFINITION BINARY-APPEND)
+        (:DEFINITION ENDP)
+        (:DEFINITION NOT)
+        (:DEFINITION TRUE-LISTP)
+        (:EXECUTABLE-COUNTERPART TRUE-LISTP)
+        (:FAKE-RUNE-FOR-TYPE-SET NIL)
+        (:INDUCTION BINARY-APPEND)
+        (:REWRITE APPEND-TO-NIL)
+        (:TYPE-PRESCRIPTION TRUE-LISTP-APPEND))
+Warnings:  Subsume
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  250
+
+---
+The key checkpoint goals, below, may help you to debug this failure.
+See :DOC failure and see :DOC set-checkpoint-summary-limit.
+---
+
+*** Key checkpoint at the top level: ***
+
+Goal
+(EQUAL (APPEND X NIL) X)
+
+*** Key checkpoint under a top-level induction
+    before generating a goal of NIL (see :DOC nil-goal): ***
+
+Subgoal *1/1''
+(IMPLIES (NOT (CONSP X)) (NOT X))
+
+ACL2 Error in ( DEFTHM APPEND-NIL ...):  See :DOC failure.
+
+******** FAILED ********

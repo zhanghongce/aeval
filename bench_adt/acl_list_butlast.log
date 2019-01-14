@@ -1,0 +1,180 @@
+ACL2 !>(defthm len-butlast (equal (+ 1 (len (butlast (cons n x) 1)))  (len (cons n x)) ))
+
+ACL2 Warning [Non-rec] in ( DEFTHM LEN-BUTLAST ...):  A :REWRITE rule
+generated from LEN-BUTLAST will be triggered only by terms containing
+the non-recursive function symbol BUTLAST.  Unless this function is
+disabled, this rule is unlikely ever to be used.
+
+
+ACL2 Warning [Subsume] in ( DEFTHM LEN-BUTLAST ...):  The previously
+added rule COMMUTATIVITY-OF-+ subsumes a newly proposed :REWRITE rule
+generated from LEN-BUTLAST, in the sense that the old rule rewrites
+a more general target.  Because the new rule will be tried first, it
+may nonetheless find application.
+
+
+Splitter note (see :DOC splitter) for Goal (2 subgoals).
+  if-intro: ((:DEFINITION BUTLAST))
+
+Subgoal 2
+
+([ A key checkpoint:
+
+Subgoal 2
+(IMPLIES (< 1 (+ 1 (LEN X)))
+         (EQUAL (+ 1
+                   (LEN (FIRST-N-AC (LEN X) (CONS N X) NIL)))
+                (+ 1 (LEN X))))
+
+*1 (Subgoal 2) is pushed for proof by induction.
+
+])
+Subgoal 1
+
+Perhaps we can prove *1 by induction.  Three induction schemes are
+suggested by this conjecture.  Subsumption reduces that number to one.
+
+We will induct according to a scheme suggested by (LEN X).  This suggestion
+was produced using the :induction rule LEN.  If we let (:P N X) denote
+*1 above then the induction scheme we'll use is
+(AND (IMPLIES (NOT (CONSP X)) (:P N X))
+     (IMPLIES (AND (CONSP X) (:P N (CDR X)))
+              (:P N X))).
+This induction is justified by the same argument used to admit LEN.
+When applied to the goal at hand the above induction scheme produces
+three nontautological subgoals.
+Subgoal *1/3
+Subgoal *1/2
+Subgoal *1/2'
+Subgoal *1/2''
+Subgoal *1/2'''
+Subgoal *1/2'4'
+Subgoal *1/2'5'
+Subgoal *1/2'6'
+
+([ A key checkpoint while proving *1 (descended from Subgoal 2):
+
+Subgoal *1/2'
+(IMPLIES (AND (CONSP X)
+              (EQUAL (+ 1
+                        (LEN (FIRST-N-AC (LEN (CDR X))
+                                         (CONS N (CDR X))
+                                         NIL)))
+                     (+ 1 (LEN (CDR X))))
+              (< 1 (+ 2 (LEN (CDR X)))))
+         (EQUAL (+ 1
+                   (LEN (FIRST-N-AC (LEN (CDR X)) X (LIST N))))
+                (+ 2 (LEN (CDR X)))))
+
+*1.1 (Subgoal *1/2'6') is pushed for proof by induction.
+
+])
+Subgoal *1/1
+Subgoal *1/1'
+Subgoal *1/1''
+Subgoal *1/1'''
+Subgoal *1/1'4'
+
+([ A key checkpoint while proving *1 (descended from Subgoal 2):
+
+Subgoal *1/1''
+(IMPLIES (AND (EQUAL (LEN (CDR X)) 0) (CONSP X))
+         (EQUAL (+ 1 (LEN (FIRST-N-AC 1 (CONS N X) NIL)))
+                2))
+
+*1.2 (Subgoal *1/1'4') is pushed for proof by induction.
+
+])
+
+So we now return to *1.2, which is
+
+(IMPLIES (EQUAL (LEN X2) 0)
+         (EQUAL (+ 1
+                   (LEN (FIRST-N-AC 1 (LIST* N X1 X2) NIL)))
+                2)).
+Subgoal *1.2/3
+Subgoal *1.2/3'
+
+*1.2.1 (Subgoal *1.2/3') is pushed for proof by induction.
+Subgoal *1.2/2
+Subgoal *1.2/1
+
+So we now return to *1.2.1, which is
+
+(IMPLIES (NOT (CONSP X2))
+         (EQUAL (+ 1
+                   (LEN (FIRST-N-AC 1 (LIST* N X1 X2) NIL)))
+                2)).
+
+No induction schemes are suggested by *1.2.1.  Consequently, the proof
+attempt has failed.
+
+Summary
+Form:  ( DEFTHM LEN-BUTLAST ...)
+Rules: ((:COMPOUND-RECOGNIZER ZP-COMPOUND-RECOGNIZER)
+        (:DEFINITION BUTLAST)
+        (:DEFINITION FIRST-N-AC)
+        (:DEFINITION FIX)
+        (:DEFINITION LEN)
+        (:DEFINITION NOT)
+        (:DEFINITION SYNP)
+        (:DEFINITION TAKE)
+        (:ELIM CAR-CDR-ELIM)
+        (:EXECUTABLE-COUNTERPART <)
+        (:EXECUTABLE-COUNTERPART BINARY-+)
+        (:EXECUTABLE-COUNTERPART EQUAL)
+        (:EXECUTABLE-COUNTERPART LEN)
+        (:EXECUTABLE-COUNTERPART NFIX)
+        (:EXECUTABLE-COUNTERPART TAU-SYSTEM)
+        (:EXECUTABLE-COUNTERPART UNARY--)
+        (:FAKE-RUNE-FOR-LINEAR NIL)
+        (:FAKE-RUNE-FOR-TYPE-SET NIL)
+        (:INDUCTION LEN)
+        (:REWRITE CAR-CONS)
+        (:REWRITE CDR-CONS)
+        (:REWRITE COMMUTATIVITY-OF-+)
+        (:REWRITE FOLD-CONSTS-IN-+)
+        (:REWRITE UNICITY-OF-0)
+        (:TYPE-PRESCRIPTION LEN))
+Splitter rules (see :DOC splitter):
+  if-intro: ((:DEFINITION BUTLAST))
+Warnings:  Subsume and Non-rec
+Time:  0.02 seconds (prove: 0.02, print: 0.00, other: 0.00)
+Prover steps counted:  3164
+
+---
+The key checkpoint goals, below, may help you to debug this failure.
+See :DOC failure and see :DOC set-checkpoint-summary-limit.
+---
+
+*** Key checkpoint at the top level: ***
+
+Subgoal 2
+(IMPLIES (< 1 (+ 1 (LEN X)))
+         (EQUAL (+ 1
+                   (LEN (FIRST-N-AC (LEN X) (CONS N X) NIL)))
+                (+ 1 (LEN X))))
+
+*** Key checkpoints under a top-level induction: ***
+
+Subgoal *1/2'
+(IMPLIES (AND (CONSP X)
+              (EQUAL (+ 1
+                        (LEN (FIRST-N-AC (LEN (CDR X))
+                                         (CONS N (CDR X))
+                                         NIL)))
+                     (+ 1 (LEN (CDR X))))
+              (< 1 (+ 2 (LEN (CDR X)))))
+         (EQUAL (+ 1
+                   (LEN (FIRST-N-AC (LEN (CDR X)) X (LIST N))))
+                (+ 2 (LEN (CDR X)))))
+
+Subgoal *1/1''
+(IMPLIES (AND (EQUAL (LEN (CDR X)) 0) (CONSP X))
+         (EQUAL (+ 1 (LEN (FIRST-N-AC 1 (CONS N X) NIL)))
+                2))
+
+ACL2 Error in ( DEFTHM LEN-BUTLAST ...):  See :DOC failure.
+
+******** FAILED ********
+ACL2 !>

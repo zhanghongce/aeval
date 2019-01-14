@@ -1,0 +1,46 @@
+ACL2 !>(defthm append-len 
+  (equal 
+    (len (append x y)) 
+    (+ (len x) (len y))))
+
+*1 (the initial Goal, a key checkpoint) is pushed for proof by induction.
+
+Perhaps we can prove *1 by induction.  Three induction schemes are
+suggested by this conjecture.  These merge into two derived induction
+schemes.  However, one of these is flawed and so we are left with one
+viable candidate.  
+
+We will induct according to a scheme suggested by (LEN X), but modified
+to accommodate (APPEND X Y).  These suggestions were produced using
+the :induction rules BINARY-APPEND and LEN.  If we let (:P X Y) denote
+*1 above then the induction scheme we'll use is
+(AND (IMPLIES (NOT (CONSP X)) (:P X Y))
+     (IMPLIES (AND (CONSP X) (:P (CDR X) Y))
+              (:P X Y))).
+This induction is justified by the same argument used to admit LEN.
+When applied to the goal at hand the above induction scheme produces
+two nontautological subgoals.
+Subgoal *1/2
+Subgoal *1/1
+
+*1 is COMPLETED!
+Thus key checkpoint Goal is COMPLETED!
+
+Q.E.D.
+
+Summary
+Form:  ( DEFTHM APPEND-LEN ...)
+Rules: ((:DEFINITION BINARY-APPEND)
+        (:DEFINITION FIX)
+        (:DEFINITION LEN)
+        (:FAKE-RUNE-FOR-TYPE-SET NIL)
+        (:INDUCTION BINARY-APPEND)
+        (:INDUCTION LEN)
+        (:REWRITE CDR-CONS)
+        (:REWRITE COMMUTATIVITY-2-OF-+)
+        (:REWRITE COMMUTATIVITY-OF-+)
+        (:REWRITE UNICITY-OF-0)
+        (:TYPE-PRESCRIPTION LEN))
+Time:  0.01 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  316
+ APPEND-LEN

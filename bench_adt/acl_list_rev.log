@@ -1,0 +1,111 @@
+ACL2 !>(defun rev (x)
+  (if (endp x)
+      nil
+    (append (rev (cdr x))
+            (list (car x)))))
+
+The admission of REV is trivial, using the relation O< (which is known
+to be well-founded on the domain recognized by O-P) and the measure
+(ACL2-COUNT X).  We observe that the type of REV is described by the
+theorem (TRUE-LISTP (REV X)).  We used primitive type reasoning and
+the :type-prescription rules BINARY-APPEND and TRUE-LISTP-APPEND.
+
+Summary
+Form:  ( DEFUN REV ...)
+Rules: ((:FAKE-RUNE-FOR-TYPE-SET NIL)
+        (:TYPE-PRESCRIPTION BINARY-APPEND)
+        (:TYPE-PRESCRIPTION TRUE-LISTP-APPEND))
+Time:  0.01 seconds (prove: 0.00, print: 0.00, other: 0.01)
+ REV
+ACL2 !>(defthm rev-rev ; fails -> to do list:  (rev-rev rev-is-rev3)
+  (equal (rev (rev x))
+         x))
+
+*1 (the initial Goal, a key checkpoint) is pushed for proof by induction.
+
+Perhaps we can prove *1 by induction.  One induction scheme is suggested
+by this conjecture.  
+
+We will induct according to a scheme suggested by (REV X).  This suggestion
+was produced using the :induction rule REV.  If we let (:P X) denote
+*1 above then the induction scheme we'll use is
+(AND (IMPLIES (AND (NOT (ENDP X)) (:P (CDR X)))
+              (:P X))
+     (IMPLIES (ENDP X) (:P X))).
+This induction is justified by the same argument used to admit REV.
+When applied to the goal at hand the above induction scheme produces
+two nontautological subgoals.
+Subgoal *1/2
+Subgoal *1/2'
+Subgoal *1/2''
+Subgoal *1/2'''
+Subgoal *1/2'4'
+Subgoal *1/2'5'
+Subgoal *1/2'6'
+Subgoal *1/2'7'
+
+([ A key checkpoint while proving *1 (descended from Goal):
+
+Subgoal *1/2''
+(IMPLIES (AND (CONSP X)
+              (EQUAL (REV (REV (CDR X))) (CDR X)))
+         (EQUAL (REV (APPEND (REV (CDR X)) (LIST (CAR X))))
+                X))
+
+*1.1 (Subgoal *1/2'7') is pushed for proof by induction.
+
+])
+Subgoal *1/1
+Subgoal *1/1'
+Subgoal *1/1''
+Subgoal *1/1'''
+
+([ A key checkpoint while proving *1 (descended from Goal):
+
+Subgoal *1/1''
+(IMPLIES (NOT (CONSP X)) (NOT X))
+
+A goal of NIL, Subgoal *1/1''', has been generated!  Obviously, the
+proof attempt has failed.
+
+])
+
+Summary
+Form:  ( DEFTHM REV-REV ...)
+Rules: ((:DEFINITION ENDP)
+        (:DEFINITION NOT)
+        (:DEFINITION REV)
+        (:ELIM CAR-CDR-ELIM)
+        (:EXECUTABLE-COUNTERPART REV)
+        (:FAKE-RUNE-FOR-TYPE-SET NIL)
+        (:INDUCTION REV)
+        (:TYPE-PRESCRIPTION REV))
+Time:  0.01 seconds (prove: 0.01, print: 0.00, other: 0.00)
+Prover steps counted:  1351
+
+---
+The key checkpoint goals, below, may help you to debug this failure.
+See :DOC failure and see :DOC set-checkpoint-summary-limit.
+---
+
+*** Key checkpoint at the top level: ***
+
+Goal
+(EQUAL (REV (REV X)) X)
+
+*** Key checkpoints under a top-level induction
+    before generating a goal of NIL (see :DOC nil-goal): ***
+
+Subgoal *1/2''
+(IMPLIES (AND (CONSP X)
+              (EQUAL (REV (REV (CDR X))) (CDR X)))
+         (EQUAL (REV (APPEND (REV (CDR X)) (LIST (CAR X))))
+                X))
+
+Subgoal *1/1''
+(IMPLIES (NOT (CONSP X)) (NOT X))
+
+ACL2 Error in ( DEFTHM REV-REV ...):  See :DOC failure.
+
+******** FAILED ********
+ACL2 !>
