@@ -1206,7 +1206,7 @@ namespace ufo
 
       vector<int> basenums;
       vector<int> indnums;
-      if (failures.empty()) {
+      /*if (failures.empty()) {
         LOG(0, outs()<<"ATTENTION!!! max search depth not enough to reach failure points!!\n");
         cfg.maxSearchD += 5;
         if (cfg.maxSearchD < 30)
@@ -1216,7 +1216,7 @@ namespace ufo
           if (result) return true;
           else return deeperSol.tryLemmas(originaGoal, assm, tryAgain);
         }
-      }
+      }*/
       ExprVector candidates;
 
       // rank failures. less functions the better
@@ -1245,9 +1245,11 @@ namespace ufo
         generalize(goalQF, renamedVars, candidates);
         //break;
       }
+      bool assoc_only = false;
       if (failures.empty()) {
         LOG(0, outs()<<"ATTENTION!!! max search depth not enough to reach failure points!!\n");
         if (cfg.tryAssoc) tryAssociativity(originaGoal, candidates);
+        assoc_only = true;
       }
       
 
@@ -1293,7 +1295,7 @@ namespace ufo
         assm.push_back(lemma);
         newLemmas.push_back(lemma);
         Expr firstV = lemma->first();
-        if (getTerm<string>(firstV->left()).substr(0, 9) == "_assoc_x_" && candidates.size() > 1) continue;
+        if (getTerm<string>(firstV->left()).substr(0, 9) == "_assoc_x_" && !assoc_only) continue;
         ADTSolver sol (originaGoal, assm, constructors, cfg);
         LOG(1, outs()<<"======={ try original goal with lemma\n");
         res = sol.solve (basenums, indnums);
