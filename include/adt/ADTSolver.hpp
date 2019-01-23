@@ -30,7 +30,7 @@ namespace ufo
     int maxTermDepth = 3;
     int refuteTests = 3;
     int refuteSimpl = 30;
-    int timeoutSecs = 3;
+    int timeoutSecs = 10;
     int tryCandidates = 5;
     int presolveTimes = 8;
 
@@ -601,7 +601,7 @@ namespace ufo
 
       auto elapsed = std::chrono::system_clock::now() - begin;
       if (elapsed > maxTime){
-        LOG(5, outs()<<"  TIME OUT!!!!\n");
+        LOG(2, outs()<<"  TIME OUT!!!!\n");
         return false;
       }
 

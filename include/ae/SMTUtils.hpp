@@ -25,57 +25,75 @@ namespace ufo
     smt (z3)
     {}
 
-    Expr getModel(ExprVector& vars)
+    template <typename T> Expr getModel(T& vars)
     {
       ExprVector eqs;
       ZSolver<EZ3>::Model m = smt.getModel();
+      smt.toSmtLib (outs());
+      outs().flush ();
       for (auto & v : vars) if (v != m.eval(v))
       {
+        Expr eval = m.eval(v);
         eqs.push_back(mk<EQ>(v, m.eval(v)));
       }
       return conjoin (eqs, efac);
     }
 
+    template <typename T> bool isSat(T& cnjs, bool reset=true)
+    {
+      if (reset) smt.reset();
+      for (auto & c : cnjs)
+      {
+        if (isOpX<FORALL>(c))
+        {
+          ExprVector varz;
+          for (int i = 0; i < c->arity() - 1; i++)
+          {
+            varz.push_back(bind::fapp(c->arg(i)));
+          }
+          smt.assertForallExpr(varz, c->last());
+        }
+        else
+        {
+          assert (!containsOp<FORALL>(c));
+          smt.assertExpr(c);
+        }
+      }
+
+//       GF: to uncomment for smt-logs
+
+//      smt.toSmtLib (outs());
+//      outs().flush ();
+
+      boost::tribool b = smt.solve ();
+      // if (b) {
+      //   outs() << "SAT\n";
+      // } else if (!b) {
+      //   outs() << "UNSAT\n";
+      // } else {
+      //   outs() << "unknown\n";
+      // }
+      return b;
+    }
     /**
      * SMT-check
      */
-    bool isSat(Expr a, Expr b)
+    bool isSat(Expr a, Expr b, bool reset=true)
     {
-      smt.reset();
-      smt.assertExpr (a);
-      smt.assertExpr (b);
-      if (!smt.solve ()) {
-        return false;
-      }
-      return true;
+      ExprSet cnjs;
+      getConj(a, cnjs);
+      getConj(b, cnjs);
+      return isSat(cnjs, reset);
     }
-
-    /**
-     * SMT-check
-     */
-    bool isSat(Expr a, Expr b, Expr c)
-    {
-      smt.reset();
-      smt.assertExpr (a);
-      smt.assertExpr (b);
-      smt.assertExpr (c);
-      if (!smt.solve ()) {
-        return false;
-      }
-      return true;
-    }
-
+    
     /**
      * SMT-check
      */
     bool isSat(Expr a, bool reset=true)
     {
-      if (reset) smt.reset();
-      smt.assertExpr (a);
-      if (!smt.solve ()) {
-        return false;
-      }
-      return true;
+      ExprSet cnjs;
+      getConj(a, cnjs);
+      return isSat(cnjs, reset);
     }
 
     /**
@@ -93,7 +111,7 @@ namespace ufo
     {
       if (isOpX<TRUE>(b)) return true;
       if (isOpX<FALSE>(a)) return true;
-      return ! isSat(a, mk<NEG>(b));
+      return ! isSat(a, mkNeg(b));
     }
     
     /**
@@ -101,7 +119,7 @@ namespace ufo
      */
     bool isTrue(Expr a){
       if (isOpX<TRUE>(a)) return true;
-      return !isSat(mk<NEG>(a));
+      return !isSat(mkNeg(a));
     }
     
     /**
@@ -143,11 +161,11 @@ namespace ufo
         
         Expr updCond1 = mk<AND>(upLevelCond, mk<NEG>(cond));
         Expr updCond2 = mk<AND>(mk<NEG>(upLevelCond), cond);
-
+        
         if (!isSat(updCond1)) return br1;
-
+        
         if (!isSat(updCond2)) return br2;
-
+        
         return mk<ITE>(cond,
                        simplifyITE(br1, updCond1),
                        simplifyITE(br2, updCond2));
@@ -155,7 +173,7 @@ namespace ufo
         return ex;
       }
     }
-
+    
     /**
      * ITE-simplifier (prt 1)
      */
@@ -209,10 +227,10 @@ namespace ufo
           newCnjs.erase(cnj);
           continue;
         }
-
+        
         ExprSet newCnjsTry = newCnjs;
         newCnjsTry.erase(cnj);
-
+        
         if (implies (conjoin(newCnjsTry, efac), cnj)) newCnjs.erase(cnj);
       }
       conjs = newCnjs;
@@ -243,7 +261,7 @@ namespace ufo
       getDisj(exp, disjs);
       
       if (disjs.size() < 2) return exp;
-
+      
       for (auto & disj : disjs)      // GF: todo: incremental solving
       {
         if (isFalse (disj)) continue;
@@ -255,7 +273,8 @@ namespace ufo
       
       return disjoin(newDisj, efac);
     }
-
+    
+    
     /**
      * Model-based simplification of a formula with 1 (one only) variable
      */
@@ -279,6 +298,7 @@ namespace ufo
     {
       smt.reset();
       smt.assertExpr(form);
+
       smt.toSmtLib (outs());
       outs().flush ();
     }
