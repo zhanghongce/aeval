@@ -1005,7 +1005,8 @@ namespace ufo
     {
       if (treeSize(goalQF->first()) < treeSize(goalQF->last())){
         LOG(1, outs()<<"switch sides\n";);
-        goalQF = mk<EQ>(goalQF->last(), goalQF->first());
+        // fix: do not change operator
+        goalQF = efac.mkBin(goalQF->op(), goalQF->last(), goalQF->first());
       }
       ExprVector ctorApps;
       filter(goalQF, [this](Expr e){return isIndCtorFn(e);}, back_inserter(ctorApps));
@@ -1135,11 +1136,85 @@ namespace ufo
       
       if (ctorApps.empty()) {
         LOG(1, outs()<<" *** attempt rewrite ITE and simplify arithmetic\n");
-        goalQF = replace(goalQF, mk_fn_map(SimplifyAdd0()));
-        Expr simplGoal = rewriteITE(goalQF);
-        if (simplGoal) goalQF = simplGoal;
-        goalQF = genFapp(goalQF);
-        insertUniqueGoal(goalQF, candidates);
+        if (!isOpX<EQ>(goalQF)) 
+        {
+          Expr LHS = goalQF->left(); 
+          ExprSet fnApps;
+          Expr fapp;
+          recFilter(LHS, [this](Expr e){return isOpX<FAPP>(e) && e->arity() > 1;}, inserter(fnApps, fnApps.end()));
+          int minSz = -1;
+          for (Expr e: fnApps){
+            int sz = dagSize(e);
+            LOG(4, outs()<<" <gen-fapp> found function application size "<<sz<<" "<<*e<<"\n");
+            if (minSz == -1 || sz < minSz) {
+              fapp = e;
+              minSz = sz;
+            }
+          }
+          Expr fappTy = bind::typeOf(fapp); 
+          string tyStr;
+          if (isOpX<INT_TY>(fappTy)) tyStr = "INT";
+          else tyStr = getTerm<string>(fappTy->first());
+          Expr newVar = bind::mkConst(mkTerm<string>("_lm_fapp_" + tyStr, fapp->efac()), fappTy);
+          LHS = replaceAll(LHS, fapp, newVar);
+          Expr lhsTy = bind::typeOf(LHS);
+          // use <??>+<??> for Int
+          if (isOpX<INT_TY>(lhsTy)) cfg.lemmaTmpl = 2;
+          else cfg.lemmaTmpl = 1;
+
+          ExprSet lhsVars;
+          filter(LHS, [this](Expr e){return isVarFn(e);}, inserter(lhsVars, lhsVars.end()));
+          TermEnumerator tEnum(LHS, baseConstructors, indConstructors, cfg.maxTermDepth);
+          tEnum.getTerms();
+          ExprVector &tList = tEnum.allTerms[lhsTy];
+          int validCnt = tList.size();
+          LOG(2, outs()<<" === # terms "<<validCnt<<"\n");
+          if (cfg.lemmaTmpl == 1) {
+          /* TEMPLATE 1
+           * LHS fixed = <???>
+           * fill RHS
+           */
+            LOG(1, outs()<<" using template 1\n");
+            for (int i = 0; i < validCnt; i ++) {
+              ExprSet rhsVars;
+              filter(tList[i], [this](Expr e){return isVarFn(e);}, inserter(rhsVars, rhsVars.end()));
+              // same set of vars, not the same expr
+              if (rhsVars == lhsVars && LHS != tList[i])
+                insertUniqueGoal(mk<EQ>(LHS, tList[i]), candidates);
+            }
+          }else if (cfg.lemmaTmpl == 2) {
+          /* TEMPLATE 2
+           * LHS fixed = <???> + <???> for Int
+           * fill RHS x 2
+           */
+            LOG(1, outs()<<" using template 2\n");
+            assert(isOpX<INT_TY>(lhsTy) && "must be INT");
+            for (int i = 0; i < validCnt; i ++){
+              Expr RHS = mk<PLUS>(tList[i], mkTerm<mpz_class>(1, efac));
+              insertUniqueGoal(mk<EQ>(LHS, RHS), candidates);
+            }
+            for (int i = 0; i < validCnt; i ++)
+              for (int j = i; j < validCnt; j++) {
+                Expr RHS = mk<PLUS>(tList[i], tList[j]);
+                ExprSet rhsVars;
+                filter(RHS, [this](Expr e){return isVarFn(e);}, inserter(rhsVars, rhsVars.end()));
+                // same set of vars, not the same expr
+                if (rhsVars == lhsVars && RHS != LHS)
+                  insertUniqueGoal(mk<EQ>(LHS, RHS), candidates);
+              }
+
+          }
+          else {
+            assert(0 && "unsurported lemma template");
+          }
+        }else{
+          goalQF = replace(goalQF, mk_fn_map(SimplifyAdd0()));
+          Expr simplGoal = rewriteITE(goalQF);
+          if (simplGoal) goalQF = simplGoal;
+          goalQF = genFapp(goalQF);
+          insertUniqueGoal(goalQF, candidates);
+        }
+
       }
     }
     int cntFuncFn(Expr e){
