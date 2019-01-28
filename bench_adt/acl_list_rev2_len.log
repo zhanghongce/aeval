@@ -1,0 +1,153 @@
+ACL2 !>(defun rev2 (x a)
+  (if (endp x)
+      a
+    (rev2 (cdr x) (cons (car x) a) )))
+
+The admission of REV2 is trivial, using the relation O< (which is known
+to be well-founded on the domain recognized by O-P) and the measure
+(ACL2-COUNT X).  We observe that the type of REV2 is described by the
+theorem (OR (CONSP (REV2 X A)) (EQUAL (REV2 X A) A)).  We used primitive
+type reasoning.
+
+Summary
+Form:  ( DEFUN REV2 ...)
+Rules: ((:FAKE-RUNE-FOR-TYPE-SET NIL))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+ REV2
+ACL2 !>(defthm rev-len (equal (len x) (len (rev2 x nil))))   
+
+ACL2 Warning [Subsume] in ( DEFTHM REV-LEN ...):  A newly proposed
+:REWRITE rule generated from REV-LEN probably subsumes the previously
+added :REWRITE rule LEN-UPDATE-NTH, in the sense that the new rule
+will now probably be applied whenever the old rule would have been.
+
+
+*1 (the initial Goal, a key checkpoint) is pushed for proof by induction.
+
+Perhaps we can prove *1 by induction.  Two induction schemes are suggested
+by this conjecture.  These merge into one derived induction scheme.
+
+We will induct according to a scheme suggested by (REV2 X NIL).  This
+suggestion was produced using the :induction rules LEN and REV2.  If
+we let (:P X) denote *1 above then the induction scheme we'll use is
+(AND (IMPLIES (AND (NOT (ENDP X)) (:P (CDR X)))
+              (:P X))
+     (IMPLIES (ENDP X) (:P X))).
+This induction is justified by the same argument used to admit REV2.
+When applied to the goal at hand the above induction scheme produces
+two nontautological subgoals.
+Subgoal *1/2
+Subgoal *1/2'
+Subgoal *1/2''
+Subgoal *1/2'''
+Subgoal *1/2'4'
+Subgoal *1/2'5'
+
+([ A key checkpoint while proving *1 (descended from Goal):
+
+Subgoal *1/2''
+(IMPLIES (AND (CONSP X)
+              (EQUAL (LEN (CDR X))
+                     (LEN (REV2 (CDR X) NIL))))
+         (EQUAL (+ 1 (LEN (CDR X)))
+                (LEN (REV2 (CDR X) (LIST (CAR X))))))
+
+*1.1 (Subgoal *1/2'5') is pushed for proof by induction.
+
+])
+Subgoal *1/1
+Subgoal *1/1'
+
+So we now return to *1.1, which is
+
+(EQUAL (+ 1 (LEN (REV2 X2 NIL)))
+       (LEN (REV2 X2 (LIST X1)))).
+Subgoal *1.1/2
+Subgoal *1.1/2'
+Subgoal *1.1/2''
+Subgoal *1.1/2'''
+Subgoal *1.1/2'4'
+
+*1.1.1 (Subgoal *1.1/2'4') is pushed for proof by induction.
+Subgoal *1.1/1
+Subgoal *1.1/1'
+
+So we now return to *1.1.1, which is
+
+(IMPLIES (EQUAL (+ 1 (LEN (REV2 X4 NIL)))
+                (LEN (REV2 X4 (LIST X1))))
+         (EQUAL (+ 1 (LEN (REV2 X4 (LIST X3))))
+                (LEN (REV2 X4 (LIST X3 X1))))).
+Subgoal *1.1.1/3
+Subgoal *1.1.1/3'
+Subgoal *1.1.1/3''
+Subgoal *1.1.1/3'''
+Subgoal *1.1.1/3'4'
+
+*1.1.1.1 (Subgoal *1.1.1/3'4') is pushed for proof by induction.
+Subgoal *1.1.1/2
+Subgoal *1.1.1/2'
+Subgoal *1.1.1/2''
+Subgoal *1.1.1/2'''
+Subgoal *1.1.1/2'4'
+
+*1.1.1.2 (Subgoal *1.1.1/2'4') is pushed for proof by induction.
+Subgoal *1.1.1/1
+Subgoal *1.1.1/1'
+
+So we now return to *1.1.1.2, which is
+
+(IMPLIES (AND (NOT (EQUAL (+ 1 (LEN (REV2 X6 NIL)))
+                          (LEN (REV2 X6 (LIST X1)))))
+              (EQUAL (+ 1 (LEN (REV2 X6 (LIST X5))))
+                     (LEN (REV2 X6 (LIST X5 X1)))))
+         (EQUAL (+ 1 (LEN (REV2 X6 (LIST X5 X3))))
+                (LEN (REV2 X6 (LIST X5 X3 X1))))).
+
+The formula above is subsumed by one of its parents, *1.1, which we're
+in the process of trying to prove by induction.  When an inductive
+proof pushes a subgoal for induction that is less general than the
+original goal, it may be a sign that either an inappropriate induction
+was chosen or that the original goal is insufficiently general.  In
+any case, our proof attempt has failed.
+
+Summary
+Form:  ( DEFTHM REV-LEN ...)
+Rules: ((:DEFINITION ENDP)
+        (:DEFINITION LEN)
+        (:DEFINITION NOT)
+        (:DEFINITION REV2)
+        (:ELIM CAR-CDR-ELIM)
+        (:EXECUTABLE-COUNTERPART BINARY-+)
+        (:EXECUTABLE-COUNTERPART EQUAL)
+        (:EXECUTABLE-COUNTERPART LEN)
+        (:FAKE-RUNE-FOR-TYPE-SET NIL)
+        (:INDUCTION LEN)
+        (:INDUCTION REV2)
+        (:REWRITE CDR-CONS))
+Warnings:  Subsume
+Time:  0.02 seconds (prove: 0.02, print: 0.00, other: 0.00)
+Prover steps counted:  5062
+
+---
+The key checkpoint goals, below, may help you to debug this failure.
+See :DOC failure and see :DOC set-checkpoint-summary-limit.
+---
+
+*** Key checkpoint at the top level: ***
+
+Goal
+(EQUAL (LEN X) (LEN (REV2 X NIL)))
+
+*** Key checkpoint under a top-level induction: ***
+
+Subgoal *1/2''
+(IMPLIES (AND (CONSP X)
+              (EQUAL (LEN (CDR X))
+                     (LEN (REV2 (CDR X) NIL))))
+         (EQUAL (+ 1 (LEN (CDR X)))
+                (LEN (REV2 (CDR X) (LIST (CAR X))))))
+
+ACL2 Error in ( DEFTHM REV-LEN ...):  See :DOC failure.
+
+******** FAILED ********

@@ -1,0 +1,226 @@
+ACL2 !>(defun rev (x)
+  (if (endp x)
+      nil
+    (append (rev (cdr x))
+            (list (car x)))))
+
+The admission of REV is trivial, using the relation O< (which is known
+to be well-founded on the domain recognized by O-P) and the measure
+(ACL2-COUNT X).  We observe that the type of REV is described by the
+theorem (TRUE-LISTP (REV X)).  We used primitive type reasoning and
+the :type-prescription rules BINARY-APPEND and TRUE-LISTP-APPEND.
+
+Summary
+Form:  ( DEFUN REV ...)
+Rules: ((:FAKE-RUNE-FOR-TYPE-SET NIL)
+        (:TYPE-PRESCRIPTION BINARY-APPEND)
+        (:TYPE-PRESCRIPTION TRUE-LISTP-APPEND))
+Time:  0.01 seconds (prove: 0.00, print: 0.00, other: 0.01)
+ REV
+ACL2 !>(defthm qlen 
+  (equal 
+    (+ (len x) (len y)) 
+    (if (<= (len y) (len x)) 
+      (+ (len x) (len y)) 
+      (+ (len (append x (rev y))) (len nil))
+    )))
+
+ACL2 Warning [Subsume] in ( DEFTHM QLEN ...):  The previously added
+rule COMMUTATIVITY-OF-+ subsumes a newly proposed :REWRITE rule generated
+from QLEN, in the sense that the old rule rewrites a more general target.
+Because the new rule will be tried first, it may nonetheless find application.
+
+Goal'
+Goal''
+
+([ A key checkpoint:
+
+Goal''
+(IMPLIES (< (LEN X) (LEN Y))
+         (EQUAL (+ (LEN X) (LEN Y))
+                (LEN (APPEND X (REV Y)))))
+
+*1 (Goal'') is pushed for proof by induction.
+
+])
+
+Perhaps we can prove *1 by induction.  Six induction schemes are suggested
+by this conjecture.  Subsumption reduces that number to four.  These
+merge into two derived induction schemes.  One of these has a score
+higher than the other.  
+
+We will induct according to a scheme suggested by (REV Y).  This suggestion
+was produced using the :induction rules LEN and REV.  If we let (:P X Y)
+denote *1 above then the induction scheme we'll use is
+(AND (IMPLIES (AND (NOT (ENDP Y)) (:P X (CDR Y)))
+              (:P X Y))
+     (IMPLIES (ENDP Y) (:P X Y))).
+This induction is justified by the same argument used to admit REV.
+When applied to the goal at hand the above induction scheme produces
+three nontautological subgoals.
+Subgoal *1/3
+Subgoal *1/3'
+Subgoal *1/3''
+Subgoal *1/3'''
+Subgoal *1/3'4'
+Subgoal *1/3'5'
+Subgoal *1/3'6'
+
+([ A key checkpoint while proving *1 (descended from Goal''):
+
+Subgoal *1/3''
+(IMPLIES (AND (CONSP Y)
+              (EQUAL (+ (LEN X) (LEN (CDR Y)))
+                     (LEN (APPEND X (REV (CDR Y)))))
+              (< (LEN X) (+ 1 (LEN (CDR Y)))))
+         (EQUAL (+ 1 (LEN X) (LEN (CDR Y)))
+                (LEN (APPEND X (REV (CDR Y))
+                             (LIST (CAR Y))))))
+
+*1.1 (Subgoal *1/3'6') is pushed for proof by induction.
+
+])
+Subgoal *1/2
+Subgoal *1/2'
+Subgoal *1/2''
+Subgoal *1/2'''
+Subgoal *1/2'4'
+Subgoal *1/2'5'
+Subgoal *1/2'6'
+Subgoal *1/2'7'
+Subgoal *1/2'8'
+Subgoal *1/2'9'
+
+([ A key checkpoint while proving *1 (descended from Goal''):
+
+Subgoal *1/2'4'
+(IMPLIES (AND (EQUAL (LEN (CDR Y)) (LEN X))
+              (CONSP Y)
+              (<= (LEN X) (LEN X))
+              (< (LEN X) (+ 1 (LEN X))))
+         (EQUAL (+ 1 (LEN X) (LEN X))
+                (LEN (APPEND X (REV (CDR Y))
+                             (LIST (CAR Y))))))
+
+*1.2 (Subgoal *1/2'9') is pushed for proof by induction.
+
+])
+Subgoal *1/1
+Subgoal *1/1'
+
+So we now return to *1.2, which is
+
+(IMPLIES (AND (INTEGERP I)
+              (<= 0 I)
+              (<= I I)
+              (< I (+ 1 I)))
+         (EQUAL (+ 1 I I)
+                (LEN (APPEND X (REV Y2) (LIST Y1))))).
+Subgoal *1.2/2
+Subgoal *1.2/2'
+Subgoal *1.2/2''
+Subgoal *1.2/2'''
+Subgoal *1.2/2'4'
+Subgoal *1.2/2'5'
+Subgoal *1.2/2'6'
+Subgoal *1.2/2'7'
+
+*1.2.1 (Subgoal *1.2/2'7') is pushed for proof by induction.
+Subgoal *1.2/1
+Subgoal *1.2/1'
+Subgoal *1.2/1''
+Subgoal *1.2/1'''
+
+*1.2.2 (Subgoal *1.2/1''') is pushed for proof by induction.
+
+So we now return to *1.2.2, which is
+
+(IMPLIES (AND (INTEGERP I)
+              (<= 0 I)
+              (<= I I)
+              (< I (+ 1 I)))
+         (EQUAL (+ 1 I I)
+                (LEN (APPEND X (LIST Y1))))).
+Subgoal *1.2.2/2
+Subgoal *1.2.2/2'
+Subgoal *1.2.2/2''
+Subgoal *1.2.2/2'''
+Subgoal *1.2.2/2'4'
+Subgoal *1.2.2/2'5'
+
+*1.2.2.1 (Subgoal *1.2.2/2'5') is pushed for proof by induction.
+Subgoal *1.2.2/1
+Subgoal *1.2.2/1'
+Subgoal *1.2.2/1''
+Subgoal *1.2.2/1'''
+
+A goal of NIL, Subgoal *1.2.2/1''', has been generated!  Obviously,
+the proof attempt has failed.
+
+Summary
+Form:  ( DEFTHM QLEN ...)
+Rules: ((:DEFINITION BINARY-APPEND)
+        (:DEFINITION ENDP)
+        (:DEFINITION FIX)
+        (:DEFINITION LEN)
+        (:DEFINITION NOT)
+        (:DEFINITION REV)
+        (:DEFINITION SYNP)
+        (:ELIM CAR-CDR-ELIM)
+        (:EXECUTABLE-COUNTERPART BINARY-+)
+        (:EXECUTABLE-COUNTERPART CONSP)
+        (:EXECUTABLE-COUNTERPART LEN)
+        (:FAKE-RUNE-FOR-LINEAR NIL)
+        (:FAKE-RUNE-FOR-TYPE-SET NIL)
+        (:INDUCTION BINARY-APPEND)
+        (:INDUCTION LEN)
+        (:INDUCTION REV)
+        (:REWRITE CDR-CONS)
+        (:REWRITE COMMUTATIVITY-2-OF-+)
+        (:REWRITE COMMUTATIVITY-OF-+)
+        (:REWRITE FOLD-CONSTS-IN-+)
+        (:REWRITE UNICITY-OF-0)
+        (:TYPE-PRESCRIPTION BINARY-APPEND)
+        (:TYPE-PRESCRIPTION LEN)
+        (:TYPE-PRESCRIPTION REV)
+        (:TYPE-PRESCRIPTION TRUE-LISTP-APPEND))
+Warnings:  Subsume
+Time:  0.04 seconds (prove: 0.04, print: 0.00, other: 0.00)
+Prover steps counted:  7581
+
+---
+The key checkpoint goals, below, may help you to debug this failure.
+See :DOC failure and see :DOC set-checkpoint-summary-limit.
+---
+
+*** Key checkpoint at the top level: ***
+
+Goal''
+(IMPLIES (< (LEN X) (LEN Y))
+         (EQUAL (+ (LEN X) (LEN Y))
+                (LEN (APPEND X (REV Y)))))
+
+*** Key checkpoints under a top-level induction
+    before generating a goal of NIL (see :DOC nil-goal): ***
+
+Subgoal *1/3''
+(IMPLIES (AND (CONSP Y)
+              (EQUAL (+ (LEN X) (LEN (CDR Y)))
+                     (LEN (APPEND X (REV (CDR Y)))))
+              (< (LEN X) (+ 1 (LEN (CDR Y)))))
+         (EQUAL (+ 1 (LEN X) (LEN (CDR Y)))
+                (LEN (APPEND X (REV (CDR Y))
+                             (LIST (CAR Y))))))
+
+Subgoal *1/2'4'
+(IMPLIES (AND (EQUAL (LEN (CDR Y)) (LEN X))
+              (CONSP Y)
+              (<= (LEN X) (LEN X))
+              (< (LEN X) (+ 1 (LEN X))))
+         (EQUAL (+ 1 (LEN X) (LEN X))
+                (LEN (APPEND X (REV (CDR Y))
+                             (LIST (CAR Y))))))
+
+ACL2 Error in ( DEFTHM QLEN ...):  See :DOC failure.
+
+******** FAILED ********

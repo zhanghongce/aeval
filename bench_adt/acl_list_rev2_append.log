@@ -1,0 +1,201 @@
+ACL2 !>(defun rev2 (x a)
+  (if (endp x)
+      a
+    (rev2 (cdr x) (cons (car x) a) )))
+
+The admission of REV2 is trivial, using the relation O< (which is known
+to be well-founded on the domain recognized by O-P) and the measure
+(ACL2-COUNT X).  We observe that the type of REV2 is described by the
+theorem (OR (CONSP (REV2 X A)) (EQUAL (REV2 X A) A)).  We used primitive
+type reasoning.
+
+Summary
+Form:  ( DEFUN REV2 ...)
+Rules: ((:FAKE-RUNE-FOR-TYPE-SET NIL))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+ REV2
+ACL2 !>
+
+(defthm append-assoc
+  (equal (append x (append y z))
+         (append (append x y) z)))
+
+*1 (the initial Goal, a key checkpoint) is pushed for proof by induction.
+
+Perhaps we can prove *1 by induction.  Three induction schemes are
+suggested by this conjecture.  Subsumption reduces that number to two.
+However, one of these is flawed and so we are left with one viable
+candidate.  
+
+We will induct according to a scheme suggested by (APPEND X Y).  This
+suggestion was produced using the :induction rule BINARY-APPEND.  If
+we let (:P X Y Z) denote *1 above then the induction scheme we'll use
+is
+(AND (IMPLIES (AND (NOT (ENDP X)) (:P (CDR X) Y Z))
+              (:P X Y Z))
+     (IMPLIES (ENDP X) (:P X Y Z))).
+This induction is justified by the same argument used to admit BINARY-APPEND.
+When applied to the goal at hand the above induction scheme produces
+two nontautological subgoals.
+Subgoal *1/2
+Subgoal *1/2'
+Subgoal *1/1
+Subgoal *1/1'
+
+*1 is COMPLETED!
+Thus key checkpoint Goal is COMPLETED!
+
+Q.E.D.
+
+Summary
+Form:  ( DEFTHM APPEND-ASSOC ...)
+Rules: ((:DEFINITION BINARY-APPEND)
+        (:DEFINITION ENDP)
+        (:DEFINITION NOT)
+        (:FAKE-RUNE-FOR-TYPE-SET NIL)
+        (:INDUCTION BINARY-APPEND)
+        (:REWRITE CAR-CONS)
+        (:REWRITE CDR-CONS))
+Time:  0.01 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  435
+ APPEND-ASSOC
+ACL2 !>
+(defthm rev2-append
+  (equal (rev2 x a)
+         (append (rev2 x nil) a)))
+
+*1 (the initial Goal, a key checkpoint) is pushed for proof by induction.
+
+Perhaps we can prove *1 by induction.  Two induction schemes are suggested
+by this conjecture.  Subsumption reduces that number to one.  
+
+We will induct according to a scheme suggested by (REV2 X A).  This
+suggestion was produced using the :induction rule REV2.  If we let
+(:P A X) denote *1 above then the induction scheme we'll use is
+(AND (IMPLIES (AND (NOT (ENDP X))
+                   (:P (CONS (CAR X) A) (CDR X)))
+              (:P A X))
+     (IMPLIES (ENDP X) (:P A X))).
+This induction is justified by the same argument used to admit REV2.
+Note, however, that the unmeasured variable A is being instantiated.
+When applied to the goal at hand the above induction scheme produces
+two nontautological subgoals.
+Subgoal *1/2
+Subgoal *1/2'
+Subgoal *1/2''
+Subgoal *1/2'''
+Subgoal *1/2'4'
+Subgoal *1/2'5'
+
+([ A key checkpoint while proving *1 (descended from Goal):
+
+Subgoal *1/2''
+(IMPLIES (AND (CONSP X)
+              (EQUAL (REV2 (CDR X) (CONS (CAR X) A))
+                     (APPEND (REV2 (CDR X) NIL)
+                             (CONS (CAR X) A))))
+         (EQUAL (REV2 (CDR X) (CONS (CAR X) A))
+                (APPEND (REV2 (CDR X) (LIST (CAR X)))
+                        A)))
+
+*1.1 (Subgoal *1/2'5') is pushed for proof by induction.
+
+])
+Subgoal *1/1
+Subgoal *1/1'
+
+So we now return to *1.1, which is
+
+(EQUAL (APPEND (REV2 X2 NIL) (CONS X1 A))
+       (APPEND (REV2 X2 (LIST X1)) A)).
+Subgoal *1.1/2
+Subgoal *1.1/2'
+Subgoal *1.1/2''
+Subgoal *1.1/2'''
+Subgoal *1.1/2'4'
+
+*1.1.1 (Subgoal *1.1/2'4') is pushed for proof by induction.
+Subgoal *1.1/1
+Subgoal *1.1/1'
+
+So we now return to *1.1.1, which is
+
+(IMPLIES (EQUAL (APPEND (REV2 X4 NIL) (CONS X1 A))
+                (APPEND (REV2 X4 (LIST X1)) A))
+         (EQUAL (APPEND (REV2 X4 (LIST X3)) (CONS X1 A))
+                (APPEND (REV2 X4 (LIST X3 X1)) A))).
+Subgoal *1.1.1/3
+Subgoal *1.1.1/3'
+Subgoal *1.1.1/3''
+Subgoal *1.1.1/3'''
+Subgoal *1.1.1/3'4'
+
+*1.1.1.1 (Subgoal *1.1.1/3'4') is pushed for proof by induction.
+Subgoal *1.1.1/2
+Subgoal *1.1.1/2'
+Subgoal *1.1.1/2''
+Subgoal *1.1.1/2'''
+Subgoal *1.1.1/2'4'
+
+*1.1.1.2 (Subgoal *1.1.1/2'4') is pushed for proof by induction.
+Subgoal *1.1.1/1
+Subgoal *1.1.1/1'
+
+So we now return to *1.1.1.2, which is
+
+(IMPLIES (AND (NOT (EQUAL (APPEND (REV2 X6 NIL) (CONS X1 A))
+                          (APPEND (REV2 X6 (LIST X1)) A)))
+              (EQUAL (APPEND (REV2 X6 (LIST X5)) (CONS X1 A))
+                     (APPEND (REV2 X6 (LIST X5 X1)) A)))
+         (EQUAL (APPEND (REV2 X6 (LIST X5 X3))
+                        (CONS X1 A))
+                (APPEND (REV2 X6 (LIST X5 X3 X1)) A))).
+
+The formula above is subsumed by one of its parents, *1.1, which we're
+in the process of trying to prove by induction.  When an inductive
+proof pushes a subgoal for induction that is less general than the
+original goal, it may be a sign that either an inappropriate induction
+was chosen or that the original goal is insufficiently general.  In
+any case, our proof attempt has failed.
+
+Summary
+Form:  ( DEFTHM REV2-APPEND ...)
+Rules: ((:DEFINITION BINARY-APPEND)
+        (:DEFINITION ENDP)
+        (:DEFINITION NOT)
+        (:DEFINITION REV2)
+        (:ELIM CAR-CDR-ELIM)
+        (:EXECUTABLE-COUNTERPART CONSP)
+        (:FAKE-RUNE-FOR-TYPE-SET NIL)
+        (:INDUCTION REV2)
+        (:REWRITE CAR-CONS)
+        (:REWRITE CDR-CONS))
+Time:  0.03 seconds (prove: 0.02, print: 0.00, other: 0.00)
+Prover steps counted:  5784
+
+---
+The key checkpoint goals, below, may help you to debug this failure.
+See :DOC failure and see :DOC set-checkpoint-summary-limit.
+---
+
+*** Key checkpoint at the top level: ***
+
+Goal
+(EQUAL (REV2 X A)
+       (APPEND (REV2 X NIL) A))
+
+*** Key checkpoint under a top-level induction: ***
+
+Subgoal *1/2''
+(IMPLIES (AND (CONSP X)
+              (EQUAL (REV2 (CDR X) (CONS (CAR X) A))
+                     (APPEND (REV2 (CDR X) NIL)
+                             (CONS (CAR X) A))))
+         (EQUAL (REV2 (CDR X) (CONS (CAR X) A))
+                (APPEND (REV2 (CDR X) (LIST (CAR X)))
+                        A)))
+
+ACL2 Error in ( DEFTHM REV2-APPEND ...):  See :DOC failure.
+
+******** FAILED ********
+ACL2 !>Bye.
