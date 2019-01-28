@@ -41,7 +41,7 @@
 (assert (forall ((h Heap) (n Int) (l Lst)) (= (hinsert-all (cons n l) h) (hinsert (hinsert-all l h) n))))
 
 ; extra lemmas
-;(assert (forall ((x Heap) (n Int)) (=> (hasLeftistProperty x) (hasLeftistProperty (hinsert x n)))))
+(assert (forall ((x Heap) (n Int)) (=> (hasLeftistProperty x) (hasLeftistProperty (hinsert x n)))))
 
-(assert (not (forall ((l Lst) (x Heap) (y Heap)) (=> (hasLeftistProperty x) (hasLeftistProperty (hinsert-all (cons (rightHeight x) l) (merge x y)))))))
+(assert (not (forall ((l Lst) (h Heap)) (=> (hasLeftistProperty h) (hasLeftistProperty (hinsert-all l h))))))
 (check-sat)

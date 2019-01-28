@@ -12,6 +12,7 @@ echo "hello"
 #	"heap_insert.smt2"
 
 lemma_synth_files=(
+	"tree_insert_all_size.smt2"
 	"list_rev.smt2" 
 	"list_rev_append.smt2"
 	"list_rev2_append.smt2"
@@ -23,6 +24,7 @@ lemma_synth_files=(
 	)
 
 lemma_synth_cfg=(
+	""
 	"--try-assoc"
 	"--try-assoc"
 	"--try-assoc"
