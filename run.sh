@@ -12,7 +12,7 @@ echo "hello"
 #	"heap_insert.smt2"
 
 lemma_synth_files=(
-	"tree_insert_all_size.smt2"
+	"tree_insert_all.smt2"
 	"list_rev.smt2" 
 	"list_rev_append.smt2"
 	"list_rev2_append.smt2"
