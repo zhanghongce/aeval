@@ -1,0 +1,289 @@
+ACL2 !>(defun root (tr)
+  (first tr))
+(defun left (tr)
+  (if (endp tr)
+    NIL
+  (second tr)))
+(defun right (tr)
+  (if (endp tr)
+  NIL
+  (third tr)))
+(defun insert (a tr)
+  (if (endp tr)
+    (list a NIL NIL)
+    (if (<= a (root tr))
+      (list (root tr) (insert a (left tr)) (right tr))
+      (list (root tr) (left tr) (insert a (right tr))))))
+(defun insert-all (l tr)
+  (if (endp l)
+    tr
+    (insert-all (cdr l) (insert (car l) tr))))
+(defun tsize (tr) 
+  (if (endp tr) 0 
+    (+ 1 (tsize (left tr)) (tsize (left tr)))))
+Since ROOT is non-recursive, its admission is trivial.  We could deduce
+no constraints on the type of ROOT.
+
+Summary
+Form:  ( DEFUN ROOT ...)
+Rules: NIL
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+ ROOT
+ACL2 !>
+Since LEFT is non-recursive, its admission is trivial.  We could deduce
+no constraints on the type of LEFT.
+
+Summary
+Form:  ( DEFUN LEFT ...)
+Rules: NIL
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+ LEFT
+ACL2 !>
+Since RIGHT is non-recursive, its admission is trivial.  We could deduce
+no constraints on the type of RIGHT.
+
+Summary
+Form:  ( DEFUN RIGHT ...)
+Rules: NIL
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+ RIGHT
+ACL2 !>
+For the admission of INSERT we will use the relation O< (which is known
+to be well-founded on the domain recognized by O-P) and the measure
+(ACL2-COUNT TR).  The non-trivial part of the measure conjecture is
+
+Goal
+(AND (IMPLIES (AND (NOT (ENDP TR)) (< (ROOT TR) A))
+              (O< (ACL2-COUNT (RIGHT TR))
+                  (ACL2-COUNT TR)))
+     (IMPLIES (AND (NOT (ENDP TR)) (<= A (ROOT TR)))
+              (O< (ACL2-COUNT (LEFT TR))
+                  (ACL2-COUNT TR)))).
+Subgoal 2
+Subgoal 2'
+Subgoal 2''
+Subgoal 2.3
+Subgoal 2.3'
+Subgoal 2.2
+Subgoal 2.2'
+Subgoal 2.1
+Subgoal 2.1'
+Subgoal 1
+Subgoal 1'
+Subgoal 1''
+Subgoal 1.2
+Subgoal 1.2'
+Subgoal 1.1
+Subgoal 1.1'
+
+Q.E.D.
+
+That completes the proof of the measure theorem for INSERT.  Thus,
+we admit this function under the principle of definition.  We observe
+that the type of INSERT is described by the theorem 
+(AND (CONSP (INSERT A TR)) (TRUE-LISTP (INSERT A TR))).  We used primitive
+type reasoning.
+
+Summary
+Form:  ( DEFUN INSERT ...)
+Rules: ((:DEFINITION ACL2-COUNT)
+        (:DEFINITION ENDP)
+        (:DEFINITION LEFT)
+        (:DEFINITION NOT)
+        (:DEFINITION O-FINP)
+        (:DEFINITION O<)
+        (:DEFINITION RIGHT)
+        (:DEFINITION ROOT)
+        (:DEFINITION SYNP)
+        (:ELIM CAR-CDR-ELIM)
+        (:EXECUTABLE-COUNTERPART ACL2-COUNT)
+        (:EXECUTABLE-COUNTERPART BINARY-+)
+        (:EXECUTABLE-COUNTERPART CAR)
+        (:FAKE-RUNE-FOR-LINEAR NIL)
+        (:FAKE-RUNE-FOR-TYPE-SET NIL)
+        (:REWRITE CAR-CONS)
+        (:REWRITE CDR-CONS)
+        (:REWRITE COMMUTATIVITY-2-OF-+)
+        (:REWRITE DEFAULT-CAR)
+        (:REWRITE DEFAULT-CDR)
+        (:REWRITE FOLD-CONSTS-IN-+)
+        (:TYPE-PRESCRIPTION ACL2-COUNT))
+Time:  0.02 seconds (prove: 0.01, print: 0.00, other: 0.00)
+Prover steps counted:  4385
+ INSERT
+ACL2 !>
+The admission of INSERT-ALL is trivial, using the relation O< (which
+is known to be well-founded on the domain recognized by O-P) and the
+measure (ACL2-COUNT L).  We observe that the type of INSERT-ALL is
+described by the theorem 
+(OR (AND (CONSP (INSERT-ALL L TR))
+         (TRUE-LISTP (INSERT-ALL L TR)))
+    (EQUAL (INSERT-ALL L TR) TR)).
+We used the :type-prescription rule INSERT.
+
+Summary
+Form:  ( DEFUN INSERT-ALL ...)
+Rules: ((:TYPE-PRESCRIPTION INSERT))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+ INSERT-ALL
+ACL2 !>(defthm tinsert-all (>= (tsize (insert-all l tr)) (tsize tr)))
+
+*1 (the initial Goal, a key checkpoint) is pushed for proof by induction.
+
+Perhaps we can prove *1 by induction.  Two induction schemes are suggested
+by this conjecture.  However, one of these is flawed and so we are
+left with one viable candidate.  
+
+We will induct according to a scheme suggested by (INSERT-ALL L TR).
+This suggestion was produced using the :induction rule INSERT-ALL.
+If we let (:P L TR) denote *1 above then the induction scheme we'll
+use is
+(AND (IMPLIES (AND (NOT (ENDP L))
+                   (:P (CDR L) (INSERT (CAR L) TR)))
+              (:P L TR))
+     (IMPLIES (ENDP L) (:P L TR))).
+This induction is justified by the same argument used to admit INSERT-ALL.
+Note, however, that the unmeasured variable TR is being instantiated.
+When applied to the goal at hand the above induction scheme produces
+two nontautological subgoals.
+Subgoal *1/2
+Subgoal *1/2'
+Subgoal *1/2''
+Subgoal *1/2'''
+Subgoal *1/2'4'
+Subgoal *1/2'5'
+Subgoal *1/2'6'
+Subgoal *1/2'7'
+Subgoal *1/2'8'
+Subgoal *1/2'9'
+
+([ A key checkpoint while proving *1 (descended from Goal):
+
+Subgoal *1/2''
+(IMPLIES (AND (CONSP L)
+              (<= (TSIZE (INSERT (CAR L) TR))
+                  (TSIZE (INSERT-ALL (CDR L)
+                                     (INSERT (CAR L) TR)))))
+         (<= (TSIZE TR)
+             (TSIZE (INSERT-ALL (CDR L)
+                                (INSERT (CAR L) TR)))))
+
+*1.1 (Subgoal *1/2'9') is pushed for proof by induction.
+
+])
+Subgoal *1/1
+Subgoal *1/1'
+Subgoal *1/1''
+
+So we now return to *1.1, which is
+
+(IMPLIES (AND (INTEGERP I)
+              (<= 0 I)
+              (CONSP L)
+              (TRUE-LISTP L)
+              (<= (TSIZE L) I))
+         (<= (TSIZE TR) I)).
+Subgoal *1.1/2
+Subgoal *1.1/2'
+Subgoal *1.1/2''
+Subgoal *1.1/2'''
+Subgoal *1.1/2.2
+Subgoal *1.1/2.2'
+Subgoal *1.1/2.2''
+Subgoal *1.1/2.2'''
+Subgoal *1.1/2.2'4'
+
+*1.1.1 (Subgoal *1.1/2.2'4') is pushed for proof by induction.
+Subgoal *1.1/2.1
+Subgoal *1.1/2.1'
+Subgoal *1.1/2.1''
+Subgoal *1.1/2.1'''
+
+*1.1.2 (Subgoal *1.1/2.1''') is pushed for proof by induction.
+Subgoal *1.1/1
+Subgoal *1.1/1'
+
+So we now return to *1.1.2, which is
+
+(IMPLIES (AND (INTEGERP J)
+              (<= 0 J)
+              (<= J I)
+              (INTEGERP I)
+              (<= 0 I)
+              (CONSP L)
+              (TRUE-LISTP L)
+              (<= (TSIZE L) I))
+         (<= (+ 1 J J) I)).
+Subgoal *1.1.2/3
+Subgoal *1.1.2/3'
+Subgoal *1.1.2/3''
+Subgoal *1.1.2/3'''
+
+*1.1.2.1 (Subgoal *1.1.2/3''') is pushed for proof by induction.
+Subgoal *1.1.2/2
+Subgoal *1.1.2/1
+Subgoal *1.1.2/1'
+Subgoal *1.1.2/1''
+Subgoal *1.1.2/1'''
+Subgoal *1.1.2/1'4'
+Subgoal *1.1.2/1'5'
+Subgoal *1.1.2/1'6'
+
+A goal of NIL, Subgoal *1.1.2/1'6', has been generated!  Obviously,
+the proof attempt has failed.
+
+Summary
+Form:  ( DEFTHM TINSERT-ALL ...)
+Rules: ((:DEFINITION ENDP)
+        (:DEFINITION INSERT-ALL)
+        (:DEFINITION LEFT)
+        (:DEFINITION NOT)
+        (:DEFINITION TRUE-LISTP)
+        (:DEFINITION TSIZE)
+        (:ELIM CAR-CDR-ELIM)
+        (:EXECUTABLE-COUNTERPART <)
+        (:EXECUTABLE-COUNTERPART BINARY-+)
+        (:EXECUTABLE-COUNTERPART CAR)
+        (:EXECUTABLE-COUNTERPART CONSP)
+        (:EXECUTABLE-COUNTERPART INTEGERP)
+        (:EXECUTABLE-COUNTERPART NOT)
+        (:EXECUTABLE-COUNTERPART TAU-SYSTEM)
+        (:EXECUTABLE-COUNTERPART TSIZE)
+        (:FAKE-RUNE-FOR-LINEAR NIL)
+        (:FAKE-RUNE-FOR-TYPE-SET NIL)
+        (:INDUCTION INSERT-ALL)
+        (:INDUCTION TRUE-LISTP)
+        (:INDUCTION TSIZE)
+        (:REWRITE DEFAULT-CAR)
+        (:TYPE-PRESCRIPTION INSERT)
+        (:TYPE-PRESCRIPTION INSERT-ALL)
+        (:TYPE-PRESCRIPTION TSIZE))
+Time:  0.04 seconds (prove: 0.03, print: 0.00, other: 0.00)
+Prover steps counted:  8314
+
+---
+The key checkpoint goals, below, may help you to debug this failure.
+See :DOC failure and see :DOC set-checkpoint-summary-limit.
+---
+
+*** Key checkpoint at the top level: ***
+
+Goal
+(<= (TSIZE TR)
+    (TSIZE (INSERT-ALL L TR)))
+
+*** Key checkpoint under a top-level induction
+    before generating a goal of NIL (see :DOC nil-goal): ***
+
+Subgoal *1/2''
+(IMPLIES (AND (CONSP L)
+              (<= (TSIZE (INSERT (CAR L) TR))
+                  (TSIZE (INSERT-ALL (CDR L)
+                                     (INSERT (CAR L) TR)))))
+         (<= (TSIZE TR)
+             (TSIZE (INSERT-ALL (CDR L)
+                                (INSERT (CAR L) TR)))))
+
+ACL2 Error in ( DEFTHM TINSERT-ALL ...):  See :DOC failure.
+
+******** FAILED ********
