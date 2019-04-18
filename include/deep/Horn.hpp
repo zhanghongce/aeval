@@ -85,6 +85,7 @@ namespace ufo
     vector<vector<int>> prefixes;  // for cycles
     vector<vector<int>> cycles;
     bool hasArrays = false;
+    bool hasBV = false;
 
     CHCs(ExprFactory &efac, EZ3 &z3) : m_efac(efac), m_z3(z3)  {};
 
@@ -158,6 +159,8 @@ namespace ufo
                   (mk<INT_TY> (m_efac), mk<INT_TY> (m_efac)));
             hasArrays = true;
           }
+          else if (isOpX<BVSORT> (a->arg(i)))
+            var = bv::bvConst(new_name, bv::width(a->arg(i)));
           invVars[a->arg(0)].push_back(var);
         }
       }
@@ -216,7 +219,8 @@ namespace ufo
           }
 
           ExprVector actual_vars;
-          expr::filter (rule, bind::IsVar(), std::inserter (actual_vars, actual_vars.begin ()));
+          expr::filter (r, bind::IsVVar(), std::inserter (actual_vars, actual_vars.begin ()));
+          //expr::filter (rule, bind::IsVar(), std::inserter (actual_vars, actual_vars.begin ()));
           if (actual_vars.size() == 0)
           {
             chcs.pop_back();
@@ -229,8 +233,21 @@ namespace ufo
           for (int i = 0; i < actual_vars.size(); i++)
           {
             string a1 = lexical_cast<string>(bind::name(actual_vars[i]));
-            int ind = hr.locVars.size() - 1 - atoi(a1.substr(1).c_str());
-            repl_vars.push_back(hr.locVars[ind]);
+            bool found = false;
+            for (auto & x : hr.locVars)
+            {
+              if (lexical_cast<string>(x) == a1)
+              {
+                found = true;
+                repl_vars.push_back(x);
+                break;
+              }
+            }
+            if (!found)
+            {
+              int ind = hr.locVars.size() - 1 - atoi(a1.substr(1).c_str());
+              repl_vars.push_back(hr.locVars[ind]);
+            }
           }
           rule = replaceAll(rule, actual_vars, repl_vars);
         }
@@ -317,7 +334,7 @@ namespace ufo
         Expr tmp = chcs[i].body;
 
          // current limitations
-        if (findNonlin(tmp) || containsOp<IDIV>(tmp) || containsOp<MOD>(tmp)) return false;
+        if (findNonlin(tmp) || containsOp<IDIV>(tmp) || containsOp<MOD>(tmp) || containsOp<BVSORT>(tmp)) return false;
 
         if (quantified.size() > 0)
         {

@@ -1372,6 +1372,8 @@ namespace ufo
       return bind::mkConst(new_name, mk<ARRAY_TY> (
              mk<INT_TY> (new_name->getFactory()),
              mk<INT_TY> (new_name->getFactory()))); // GF: currently, only Arrays over Ints
+    else if (bv::is_bvconst(var))
+      return bv::bvConst(new_name, bv::width(var->first()->arg(1)));
 
     else return NULL;
   }
