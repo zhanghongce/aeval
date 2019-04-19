@@ -134,7 +134,7 @@ namespace ufo
       if (bv::is_bvconst(a)) bvVars.push_back(a);
       else if (bind::isBoolConst(a)) cands.insert(a);
     }
-
+    // test commit
     for (int i = 0; i < bvVars.size(); i++)
       for (int j = i + 1; j < bvVars.size(); j++)
         cands.insert(mk<EQ>(bvVars[i], bvVars[j]));
