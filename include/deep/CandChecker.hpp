@@ -104,10 +104,40 @@ namespace ufo
 
       return !smt_solver.solve ();
     }
+
+    void serializeInvars()
+    {
+      Expr lms = getlearnedLemmas();
+      for (auto & a : qr->origNames) lms = replaceAll(lms, a.first, a.second);
+
+      smt_solver.reset();
+      smt_solver.assertExpr(lms);
+
+      smt_solver.toSmtLib (errs());
+      errs().flush ();
+    }
+
   };
   
-  inline void simpleCheck(const char * chcfile)
+  inline void simpleCheck(const char * chcfile, unsigned bw_bound, unsigned bval_bound, bool enable_eqs, bool enable_adds, bool enable_bvnot, bool enable_extract, bool enable_concr, bool enable_concr_impl, bool enable_or)
   {
+
+    if (!enable_eqs) // currently, `enable_adds` and `enable_extract` depend on `enable_eqs`
+    {
+      enable_adds = 0;
+      enable_extract = 0;
+    }
+
+    outs () << "Max bitwidth considered: " << bw_bound << "\n"
+            << "Max concrete values considered: " << bval_bound << "\n"
+            << "Equalities (between variables) enabled: " << enable_eqs << "\n"
+            << "Bitwise additions enabled: " << enable_adds << "\n"
+            << "Bitwise negations enabled: " << enable_bvnot << "\n"
+            << "Bit extraction enabled (in equalities): " << enable_extract << "\n"
+            << "Concrete values enabled (in equalities): " << enable_concr << "\n"
+            << "Implications using equalities and concrete values enabled: " << enable_concr_impl << "\n"
+            << "Disjunctions among (subsets of) various equalities enabled: " << enable_or << "\n";
+
     ExprFactory efac;
     EZ3 z3(efac);
     CHCs ruleManager(efac, z3);
@@ -128,27 +158,115 @@ namespace ufo
     ExprSet cands;
 
     // get inv vars
-    ExprVector bvVars;
+    map<int, ExprVector> bvVars;
+    map<int, Expr> bitwidths;
+    set<int> bitwidths_int;
     for (auto & a: tr->srcVars)
     {
-      if (bv::is_bvconst(a)) bvVars.push_back(a);
-      else if (bind::isBoolConst(a)) cands.insert(a);
+      if (bv::is_bvconst(a))
+      {
+        unsigned bw = bv::width(a->first()->arg(1));
+        bitwidths_int.insert(bw);
+        bitwidths[bw] = a->first()->arg(1);
+        bvVars[bw].push_back(a);
+      }
     }
 
-    for (int i = 0; i < bvVars.size(); i++)
-      for (int j = i + 1; j < bvVars.size(); j++)
-        cands.insert(mk<EQ>(bvVars[i], bvVars[j]));
+    ExprVector eqs1;
+    ExprVector eqs2;
 
+    if (enable_eqs)
+    {
+      for (int i : bitwidths_int)
+      {
+        if (i > bw_bound) continue; // limit
+        for (int j = 0; j < bvVars[i].size(); j++)
+        {
+          for (int k = j + 1; k < bvVars[i].size(); k++)
+          {
+            Expr tmp = mk<EQ>(bvVars[i][j], bvVars[i][k]);
+            eqs1.push_back(tmp);
+            if (enable_bvnot)
+            {
+              eqs1.push_back(tmp);
+              eqs1.push_back(mk<EQ>(bvVars[i][j], mk<BNOT>(bvVars[i][k])));
+            }
+            if (enable_adds)
+            {
+              for (int l = 0; l < bvVars[i].size(); l++)
+              {
+                if (l == k || l == j) continue;
+                Expr tmp = mk<EQ>(bvVars[i][l], mk<BADD>(bvVars[i][j], bvVars[i][k]));
+                eqs1.push_back(tmp);
+              }
+            }
+          }
+          if (enable_extract)
+          {
+            for (int i1 = i + 1; i1 <= bw_bound; i1++)
+            {
+              for (int j1 = 0; j1 < bvVars[i1].size(); j1++)
+              {
+                eqs1.push_back(mk<EQ>(bvVars[i][j], bv::extract(i-1, 0, bvVars[i1][j1])));
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (enable_concr)
+    {
+      for (int i : bitwidths_int)
+      {
+        if (i > bw_bound) continue; // limit
+        for (auto & a : bvVars[i])
+        {
+          for (int j = 0; j <= bval_bound && j < pow(2, i); j++)
+          {
+            Expr tmp = bv::bvnum(j, bv::width(bitwidths[i]), efac);
+            eqs2.push_back(mk<EQ>(a, tmp));
+            if (enable_bvnot)
+              eqs2.push_back(mk<EQ>(mk<BNOT>(a), tmp));
+          }
+        }
+      }
+
+      if (enable_concr_impl)
+        for (auto & a : eqs2)
+          for (auto & b : eqs2)
+            if (a->left() != b->left())
+              cands.insert(mk<IMPL>(a, b));
+
+    }
+
+    if (enable_or)
+      for (auto & c : eqs1)
+        for (auto & d : eqs2)
+          if (c != d)
+            cands.insert(mk<OR>(c, d));
+
+    if (cands.empty())
+    {
+      cands.insert(eqs1.begin(), eqs1.end());
+      cands.insert(eqs2.begin(), eqs2.end());
+    }
+
+    int iter = 0;
     for (auto & cand : cands)
     {
+      iter++;
       if (cc.checkInitiation(cand) &&
           cc.checkInductiveness(cand) &&
           cc.checkSafety())
       {
-        outs() << "done\n";
+        outs () << "proved\n";
+        outs () << "iter: " << iter << " / " << cands.size() << "\n";
+        cc.serializeInvars();
         return;
       }
     }
+    outs () << "unknown\n";
   }
 }
 

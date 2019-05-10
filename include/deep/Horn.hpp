@@ -44,6 +44,8 @@ namespace ufo
     bool isQuery;
     bool isInductive;
 
+    ExprMap origNames;
+
     void assignVarsAndRewrite (ExprVector& _srcVars, ExprVector& invVarsSrc,
                                ExprVector& _dstVars, ExprVector& invVarsDst)
     {
@@ -51,6 +53,7 @@ namespace ufo
       {
         srcVars.push_back(invVarsSrc[i]);
         body = mk<AND>(body, mk<EQ>(_srcVars[i], srcVars[i]));
+        origNames[srcVars[i]] = _srcVars[i];
       }
 
       for (int i = 0; i < _dstVars.size(); i++)
@@ -304,20 +307,20 @@ namespace ufo
       }
 
       // remove useless rules
-      if (failShrink(failDecl))
-        for (auto rit = indeces.rbegin(); rit != indeces.rend(); ++rit)
-          chcs.erase(chcs.begin() + *rit);
-
-      indeces.clear();
-      chcSliceBwd(failDecl);
-      vector<HornRuleExt> tmpChcs;
-      for (auto i : indeces) tmpChcs.push_back(chcs[i]);
-      chcs = tmpChcs;
-      for (int i = 0; i < chcs.size(); i++)
-        outgs[chcs[i].srcRelation].push_back(i);
-
-      // sort rules
-      wtoSort();
+//      if (failShrink(failDecl))
+//        for (auto rit = indeces.rbegin(); rit != indeces.rend(); ++rit)
+//          chcs.erase(chcs.begin() + *rit);
+//
+//      indeces.clear();
+//      chcSliceBwd(failDecl);
+//      vector<HornRuleExt> tmpChcs;
+//      for (auto i : indeces) tmpChcs.push_back(chcs[i]);
+//      chcs = tmpChcs;
+//      for (int i = 0; i < chcs.size(); i++)
+//        outgs[chcs[i].srcRelation].push_back(i);
+//
+//      // sort rules
+//      wtoSort();
     }
 
     bool failShrink (Expr dstRel)
