@@ -186,6 +186,7 @@ namespace ufo
           {
             Expr tmp = mk<EQ>(bvVars[i][j], bvVars[i][k]);
             eqs1.push_back(tmp);
+            eqs1.push_back(mk<NEQ>(bvVars[i][j], bvVars[i][k]));
             if (enable_bvnot)
             {
               eqs1.push_back(tmp);
@@ -226,6 +227,7 @@ namespace ufo
           {
             Expr tmp = bv::bvnum(j, bv::width(bitwidths[i]), efac);
             eqs2.push_back(mk<EQ>(a, tmp));
+            eqs2.push_back(mk<NEQ>(a,tmp));
             if (enable_bvnot)
               eqs2.push_back(mk<EQ>(mk<BNOT>(a), tmp));
           }
@@ -240,11 +242,32 @@ namespace ufo
 
     }
 
-    if (enable_or)
+    if (enable_or) {
+      ExprVector eqsOr;
       for (auto & c : eqs1)
         for (auto & d : eqs2)
-          if (c != d)
+          if (c != d) {
+            eqsOr.push_back(mk<OR>(c, d));
             cands.insert(mk<OR>(c, d));
+          }
+      
+      for (auto & c : eqs2)
+        for (auto & d : eqs2)
+          if (c != d) {
+            eqsOr.push_back(mk<OR>(c, d));
+            cands.insert(mk<OR>(c, d));
+          }
+
+      ExprVector eqsOrImply;
+      bool enable_concr_impl_or = true;
+      if (enable_concr_impl_or) {
+        for (auto & v_c : eqs2 )
+          for (auto & v_v_or_vc : eqsOr ) {
+            cands.insert(mk<IMPL>(v_c, v_v_or_vc));
+            eqsOrImply.push_back(mk<IMPL>(v_c, v_v_or_vc));
+          }
+      }
+    }
 
     if (cands.empty())
     {
