@@ -105,6 +105,19 @@ namespace ufo
       return !smt_solver.solve ();
     }
 
+    bool isSimplifyToConst(Expr c) {
+      smt_solver.reset();
+      smt_solver.assertExpr(c);
+      bool possible_to_be_true = smt_solver.solve ();
+
+      smt_solver.reset();
+      smt_solver.assertExpr(mk<NEG>(c));
+      bool possible_to_be_false = smt_solver.solve ();
+      if (! (possible_to_be_true && possible_to_be_false) )
+        return true; // if it cannot be true or cannot be false then it is const
+      return false;
+    }
+
     void serializeInvars()
     {
       Expr lms = getlearnedLemmas();
@@ -119,7 +132,9 @@ namespace ufo
 
   };
   
-  inline void simpleCheck(const char * chcfile, unsigned bw_bound, unsigned bval_bound, bool enable_eqs, bool enable_adds, bool enable_bvnot, bool enable_extract, bool enable_concr, bool enable_concr_impl, bool enable_or)
+  inline void simpleCheck(const char * chcfile, unsigned bw_bound, unsigned bval_bound, bool enable_eqs, bool enable_adds, bool enable_bvnot, bool enable_extract, bool enable_concr, bool enable_concr_impl, bool enable_or,
+    bool enable_concr_impl_or, bool keep_dot_name_only, bool enable_inequality,
+    bool enable_simplify_imply_or)
   {
 
     if (!enable_eqs) // currently, `enable_adds` and `enable_extract` depend on `enable_eqs`
@@ -133,10 +148,14 @@ namespace ufo
             << "Equalities (between variables) enabled: " << enable_eqs << "\n"
             << "Bitwise additions enabled: " << enable_adds << "\n"
             << "Bitwise negations enabled: " << enable_bvnot << "\n"
+            << "Inequality: " << enable_inequality << "\n"
             << "Bit extraction enabled (in equalities): " << enable_extract << "\n"
             << "Concrete values enabled (in equalities): " << enable_concr << "\n"
             << "Implications using equalities and concrete values enabled: " << enable_concr_impl << "\n"
-            << "Disjunctions among (subsets of) various equalities enabled: " << enable_or << "\n";
+            << "Disjunctions among (subsets of) various equalities enabled: " << enable_or << "\n"
+            << "Implications using disjunctions of equalities and concrete values enabled: " << enable_concr_impl_or << "\n"
+            << "Simplification of implications using disjunctions of equalities and concrete values enabled: " << enable_simplify_imply_or << "\n"
+            << "Filter variable names with dot: " << keep_dot_name_only << "\n";
 
     ExprFactory efac;
     EZ3 z3(efac);
@@ -165,6 +184,12 @@ namespace ufo
     {
       if (bv::is_bvconst(a))
       {
+        if(keep_dot_name_only) { // check name
+          std::stringstream sbuf;
+          sbuf << *qr->origNames[a];
+          if (sbuf.str().find(".") == std::string::npos)
+            continue; // ignore those that do not contain dot
+        }
         unsigned bw = bv::width(a->first()->arg(1));
         bitwidths_int.insert(bw);
         bitwidths[bw] = a->first()->arg(1);
@@ -186,7 +211,8 @@ namespace ufo
           {
             Expr tmp = mk<EQ>(bvVars[i][j], bvVars[i][k]);
             eqs1.push_back(tmp);
-            eqs1.push_back(mk<NEQ>(bvVars[i][j], bvVars[i][k]));
+            if(enable_inequality)
+              eqs1.push_back(mk<NEQ>(bvVars[i][j], bvVars[i][k]));
             if (enable_bvnot)
             {
               eqs1.push_back(tmp);
@@ -227,7 +253,8 @@ namespace ufo
           {
             Expr tmp = bv::bvnum(j, bv::width(bitwidths[i]), efac);
             eqs2.push_back(mk<EQ>(a, tmp));
-            eqs2.push_back(mk<NEQ>(a,tmp));
+            if(enable_inequality)
+              eqs2.push_back(mk<NEQ>(a,tmp));
             if (enable_bvnot)
               eqs2.push_back(mk<EQ>(mk<BNOT>(a), tmp));
           }
@@ -259,10 +286,12 @@ namespace ufo
           }
 
       ExprVector eqsOrImply;
-      bool enable_concr_impl_or = true;
       if (enable_concr_impl_or) {
         for (auto & v_c : eqs2 )
           for (auto & v_v_or_vc : eqsOr ) {
+            auto impl_cd = mk<IMPL>(v_c, v_v_or_vc);
+            if ( enable_simplify_imply_or && cc.isSimplifyToConst(impl_cd) )
+              continue;
             cands.insert(mk<IMPL>(v_c, v_v_or_vc));
             eqsOrImply.push_back(mk<IMPL>(v_c, v_v_or_vc));
           }

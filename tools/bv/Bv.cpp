@@ -32,6 +32,8 @@ int main (int argc, char ** argv)
               getIntValue("--val", 1, argc, argv), getBoolValue("--eqs", 0, argc, argv),
               getBoolValue("--adds", 0, argc, argv), getBoolValue("--bvnot", 0, argc, argv),
               getBoolValue("--ext", 0, argc, argv), getBoolValue("--conc", 0, argc, argv),
-              getBoolValue("--impl", 0, argc, argv), getBoolValue("--or", 0, argc, argv));
+              getBoolValue("--impl", 0, argc, argv), getBoolValue("--or", 0, argc, argv),
+              getBoolValue("--impl-or", 0, argc, argv), getBoolValue("--dot-name", 0, argc, argv),
+              getBoolValue("--neqs", 0, argc, argv), getBoolValue("--impl-or-simple", 0, argc, argv));
   return 0;
 }
