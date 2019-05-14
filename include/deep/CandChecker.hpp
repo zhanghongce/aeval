@@ -134,7 +134,8 @@ namespace ufo
   
   inline void simpleCheck(const char * chcfile, unsigned bw_bound, unsigned bval_bound, bool enable_eqs, bool enable_adds, bool enable_bvnot, bool enable_extract, bool enable_concr, bool enable_concr_impl, bool enable_or,
     bool enable_concr_impl_or, bool keep_dot_name_only, bool enable_inequality,
-    bool enable_simplify_imply_or)
+    bool enable_simplify_imply_or, const std::string & set_module_name,
+    bool enable_conj_imply_concr, bool enable_conj_imply_disj, const std::set<std::string> & variable_name_set)
   {
 
     if (!enable_eqs) // currently, `enable_adds` and `enable_extract` depend on `enable_eqs`
@@ -155,7 +156,12 @@ namespace ufo
             << "Disjunctions among (subsets of) various equalities enabled: " << enable_or << "\n"
             << "Implications using disjunctions of equalities and concrete values enabled: " << enable_concr_impl_or << "\n"
             << "Simplification of implications using disjunctions of equalities and concrete values enabled: " << enable_simplify_imply_or << "\n"
-            << "Filter variable names with dot: " << keep_dot_name_only << "\n";
+            << "Filter variable names with dot: " << keep_dot_name_only << "\n"
+            << "Only keep variable names under module: " << (set_module_name.empty() ? "(none)" : set_module_name  )<< "\n"
+            << "Restricting variables to be in a set of size : " << (variable_name_set.empty() ? "(none)" :  std::to_string(variable_name_set.size())  )<< "\n"
+            << "(v == v/c && v == c) --> (v == c) : " << enable_conj_imply_concr << "\n"
+            << "(v == v/c && v == c) --> (v == v/c || v == c)) : " << enable_conj_imply_disj << "\n"
+            ;
 
     ExprFactory efac;
     EZ3 z3(efac);
@@ -184,11 +190,16 @@ namespace ufo
     {
       if (bv::is_bvconst(a))
       {
-        if(keep_dot_name_only) { // check name
+        if(keep_dot_name_only || !set_module_name.empty()) { // check name
           std::stringstream sbuf;
           sbuf << *qr->origNames[a];
-          if (sbuf.str().find(".") == std::string::npos)
+          const std::string & state_name = sbuf.str();
+          if (state_name.find(".") == std::string::npos)
             continue; // ignore those that do not contain dot
+          if (!set_module_name.empty() && state_name.find("S_" + set_module_name+".") == 0)
+            continue;
+          if ( !variable_name_set.empty() && variable_name_set.find(state_name) == variable_name_set.end() )
+            continue;
         }
         unsigned bw = bv::width(a->first()->arg(1));
         bitwidths_int.insert(bw);
@@ -242,7 +253,7 @@ namespace ufo
       }
     }
 
-    if (enable_concr)
+    if (enable_concr || enable_concr_impl)
     {
       for (int i : bitwidths_int)
       {
@@ -269,20 +280,22 @@ namespace ufo
 
     }
 
-    if (enable_or) {
-      ExprVector eqsOr;
+    ExprVector eqsOr;
+    if (enable_or || enable_concr_impl_or || enable_conj_imply_disj) {
       for (auto & c : eqs1)
         for (auto & d : eqs2)
           if (c != d) {
             eqsOr.push_back(mk<OR>(c, d));
-            cands.insert(mk<OR>(c, d));
+            if (enable_or) // otherwise, we are just providing pieces
+              cands.insert(mk<OR>(c, d));
           }
       
       for (auto & c : eqs2)
         for (auto & d : eqs2)
           if (c != d) {
             eqsOr.push_back(mk<OR>(c, d));
-            cands.insert(mk<OR>(c, d));
+            if (enable_or) // otherwise, we are just providing pieces
+              cands.insert(mk<OR>(c, d));
           }
 
       ExprVector eqsOrImply;
@@ -296,6 +309,35 @@ namespace ufo
             eqsOrImply.push_back(mk<IMPL>(v_c, v_v_or_vc));
           }
       }
+    }
+
+    ExprVector eqsAnd;
+    if (enable_conj_imply_concr || enable_conj_imply_disj){
+      // preparation steps 
+      for (auto & c : eqs1)
+        for (auto & d : eqs2)
+          if (c != d) {
+            eqsAnd.push_back(mk<AND>(c, d));
+          }
+      
+      for (auto & c : eqs2)
+        for (auto & d : eqs2)
+          if (c != d) {
+            eqsAnd.push_back(mk<AND>(c, d));
+          }
+
+      if (enable_conj_imply_concr) // otherwise we just don't insert
+        for (auto & precond : eqsAnd)
+          for (auto & c : eqs2) {
+            cands.insert(mk<IMPL>(precond, c));
+          }
+    }
+
+    if (enable_or && enable_conj_imply_concr && enable_conj_imply_disj) {
+      for (auto & precond : eqsAnd)
+        for (auto & poscond : eqsOr) {
+          cands.insert(mk<IMPL>(precond, poscond));
+        }
     }
 
     if (cands.empty())
