@@ -196,7 +196,7 @@ namespace ufo
           const std::string & state_name = sbuf.str();
           if (state_name.find(".") == std::string::npos)
             continue; // ignore those that do not contain dot
-          if (!set_module_name.empty() && state_name.find("S_" + set_module_name+".") == 0)
+          if (!set_module_name.empty() && state_name.find("S_" + set_module_name+".") != 0)
             continue;
           if ( !variable_name_set.empty() && variable_name_set.find(state_name) == variable_name_set.end() )
             continue;

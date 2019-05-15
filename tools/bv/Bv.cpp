@@ -57,7 +57,8 @@ int main (int argc, char ** argv)
 
   { // load variable name if it is specified
     std::string fname;
-    if (! ( fname = getStringValue("--vnames-file", "", argc,argv) ).empty() )
+    fname = getStringValue("--vnames-file", "", argc,argv);
+    if (!fname.empty() )
       loadVariableNamesFromFile(fname, variable_name_set);
   }
 
