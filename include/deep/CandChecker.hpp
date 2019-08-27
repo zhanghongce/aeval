@@ -4,10 +4,267 @@
 #include "ae/SMTUtils.hpp"
 #include "Horn.hpp"
 
+#include <fstream>
+#include <map>
+#include <unordered_map>
+
 using namespace std;
 using namespace boost;
 namespace ufo
 {
+
+
+  // ------------------------------------ GRAMMAR PART ----------------------------------------- //
+
+
+  static int OP_CONJ = 1;
+  static int OP_DISJ = 2;
+
+  void enumConstPredForEachVar(ExprVector& vars, unsigned bw_bound, vector<ExprVector>& lol, bool shift_extract){
+    for (Expr v : vars){
+      ExprVector preds;
+      
+      unsigned bw = bv::width(v->first()->arg(1));
+      // std::stringstream sbuf;
+      // sbuf<<"BV name: "<<v<<" width:"<<real_bw<<"\n";
+      // outs() <<sbuf.str();
+      // unsigned bw = real_bw;
+      ExprVector evs;
+      if (bw > bw_bound)
+      {
+        if (shift_extract) {
+          for (unsigned l = 0; l <= bw - bw_bound; ++l )
+            evs.push_back(bv::extract(bw_bound-1 + l,l, v));
+        }
+        else
+          evs.push_back(bv::extract(bw_bound-1, 0, v));
+        bw = bw_bound;
+      } else
+        evs.push_back(v);
+
+      for (Expr & ev : evs)
+        for (unsigned i = 0; i < (1ul<<bw); i++){
+          Expr pred = mk<EQ>(ev, bv::bvnum(i, bw, v->efac()));
+          preds.push_back(pred);
+          if (bw > 1){
+            pred = mk<NEQ>(ev, bv::bvnum(i, bw, v->efac()));
+            preds.push_back(pred);
+          }
+        }
+      lol.push_back(preds);
+    }
+  }
+  void enumDataPredForEachVar(ExprVector& LHSvars, unsigned bw_bound, ExprVector& RHSvars, vector<ExprVector>& lol, bool shift_extract, bool use_add){
+    for (Expr v : LHSvars){
+      ExprVector preds;
+      Expr ev = v;
+      unsigned bw = bv::width(v->first()->arg(1));
+
+      ExprVector evs;
+      if (bw > bw_bound) {
+        bw = bw_bound;
+        
+        if (shift_extract) {
+          for (unsigned l = 0; l <= bw - bw_bound; ++l )
+            evs.push_back(bv::extract(bw_bound-1 + l,l, v));
+        }
+        else
+          evs.push_back(bv::extract(bw_bound-1, 0, v));
+        bw = bw_bound;
+      }else
+        evs.push_back(v);
+
+      for (auto && ev : evs)
+        for (unsigned i = 0; i < (1ul<<bw); i++){
+          Expr pred = mk<EQ>(ev, bv::bvnum(i, bw, v->efac()));
+          preds.push_back(pred);
+          if (bw > 1){
+            pred = mk<NEQ>(ev, bv::bvnum(i, bw, v->efac()));
+            preds.push_back(pred);
+          }
+        }
+      // X = Y
+      bw = bv::width(v->first()->arg(1));
+      for (Expr rhs: RHSvars) {
+        unsigned rbw = bv::width(rhs->first()->arg(1));
+        if (bw == rbw)
+          preds.push_back(mk<EQ>(v, rhs));
+        else if (bw > rbw) {
+          if (shift_extract) {
+            for (unsigned l = 0; l <= bw - rbw; ++l )
+              preds.push_back(mk<EQ>(bv::extract(rbw-1 + l,l, v), rhs));
+          } else
+            preds.push_back(mk<EQ>(bv::extract(rbw-1, 0, v), rhs));
+        }
+        else if (bw < rbw) {
+          if (shift_extract) {
+            for (unsigned l = 0; l <= rbw - bw; ++l )
+              preds.push_back(mk<EQ>(v, bv::extract(bw-1 + l, l, rhs)));
+          } else
+          preds.push_back(mk<EQ>(v, bv::extract(bw-1, 0, rhs)));
+        }
+      }
+      // X = Y1 ADD Y2
+      if (use_add) {
+        for (int i = 0; i < RHSvars.size(); i++){
+          unsigned rbw1 = bv::width(RHSvars[i]->first()->arg(1));
+          for (int j = i + 1; j < RHSvars.size(); j++){
+            
+            unsigned min_bw = bw; if (min_bw > rbw1) min_bw = rbw1;
+            
+            unsigned rbw2 = bv::width(RHSvars[j]->first()->arg(1));
+            if (min_bw > rbw2) min_bw = rbw2;
+
+            Expr X = bw == min_bw? v: bv::extract(min_bw-1, 0, v);
+            Expr Y1 = rbw1 == min_bw? RHSvars[i]: bv::extract(min_bw-1, 0, RHSvars[i]);
+            Expr Y2 = rbw2 == min_bw? RHSvars[j]: bv::extract(min_bw-1, 0, RHSvars[j]);
+
+            preds.push_back(mk<EQ>(X, mk<BADD>(Y1, Y2)));
+            preds.push_back(mk<EQ>(X, mk<BSUB>(Y1, Y2)));
+          }
+        }
+      }
+      // can have more operations
+
+      lol.push_back(preds);
+    }
+  }
+  Expr combineListExpr(ExprVector selection, int op){
+    Expr e;
+    if (selection.size() == 1) e = selection[0];
+    else if (selection.size() == 2){
+      if (op == OP_CONJ) e = mk<AND>(selection[0], selection[1]);
+      else if (op == OP_DISJ) e = mk<OR>(selection[0], selection[1]);
+    }
+    else{
+      if (op == OP_CONJ) e = mknary<AND>(selection);
+      else if (op == OP_DISJ) e = mknary<OR>(selection);
+    }
+    return e;
+  }
+  
+
+  void enumSelectFromLoLImplPart2(vector<ExprVector>& lol, int start, vector<int>& list_selection, ExprVector& selection, ExprVector& output, int op)
+  {
+    if (start == list_selection.size()){
+      assert(selection.size() == list_selection.size());
+      
+      output.push_back(combineListExpr(selection, op));
+      return;
+    }
+    for (Expr e: lol[list_selection[start]]) {
+      selection.push_back(e);
+      enumSelectFromLoLImplPart2(lol, start+1, list_selection, selection, output, op);
+      selection.pop_back();
+    }
+  }
+
+  void enumSelectFromLoLImpl(vector<ExprVector>& lol, int start, unsigned k, vector<int>& list_selection, ExprVector& output, int op)
+  {
+    if (k == 0){
+      ExprVector selection;
+      enumSelectFromLoLImplPart2(lol, 0, list_selection, selection, output, op);
+      return;
+    }
+    for (int i = start; i <= lol.size() - k; ++i) {
+      list_selection.push_back(i);
+      enumSelectFromLoLImpl(lol, i+1, k-1, list_selection, output, op);
+      list_selection.pop_back();
+    }
+  }
+  
+  void enumSelectKFromListofList(vector<ExprVector>& lol, unsigned k, ExprVector& output, int op){
+    vector<int> list_selection;
+    for (int i = 1; i <= k; i++)
+      enumSelectFromLoLImpl(lol, 0, i, list_selection, output, op);
+  }
+
+  void enumSelectFromListImpl(ExprVector& list, int start, unsigned k, ExprVector& selection, ExprVector& output, int op){
+    if (k == 0){
+      output.push_back(combineListExpr(selection, op));
+      return;
+    }
+    for (int i = start; i <= list.size() - k; ++i) {
+      selection.push_back(list[i]);
+      enumSelectFromListImpl(list, i+1, k-1, selection, output, op);
+      selection.pop_back();
+    }
+  }
+
+  void enumSelectKFromList(ExprVector& list, unsigned k, ExprVector& output, int op) {
+    ExprVector selection;
+    for (int i = 1; i <= k; i++)
+      enumSelectFromListImpl(list, 0, i, selection, output, op);
+  }
+
+  // ------------------------------------ END OF GRAMMAR PART ----------------------------------------- //
+
+
+  /// \brief Class of CNF
+  struct InvariantInCnf {
+  public:
+    // Type definitions
+    /// literal : complement, var, bit-idx
+    typedef std::tuple<std::string, unsigned, bool> literal;
+    /// clause : string(state name) -> literals
+    typedef std::map<std::string, std::vector<literal>> clause;
+    /// the var names need to collect
+    typedef std::unordered_set<std::string> vars_t;
+    /// inv : clauses ~(c1 | c2 | c3) : clause_hash -> clause
+    typedef std::vector<clause> clauses;
+    /// the var -> z3var map
+    typedef std::unordered_map<std::string, Expr> named_vars_t;
+
+  public:
+    // members
+    /// the invariant in CNF form
+    clauses _cnf_;
+    vars_t _vars_;
+
+    void LoadFromFile(const std::string & fn) {
+      std::ifstream fin(fn);
+      if (!fin.is_open()) {
+        outs () << "Error reading " << fn << "\n";
+        return;
+      }
+      unsigned num_clause;
+      fin >> num_clause;
+      for (unsigned idx = 0; idx < num_clause; ++ idx) {
+        unsigned num_literal;
+        fin >> num_literal;
+        _cnf_.push_back(clause()); // put a clause
+        auto & back = _cnf_.back();
+        for (unsigned lidx = 0; lidx < num_literal; ++ lidx){
+          std::string s_name;
+          unsigned bitslice;
+          bool complemented;
+          fin >> s_name >> bitslice >> complemented;
+          back[s_name].push_back(
+            std::make_tuple(s_name, bitslice, complemented));
+          _vars_.insert(s_name);
+        } // for each literal
+      } // for each clause
+    } // LoadFromFile
+
+    static Expr clause_to_expression(const clause & cl, const named_vars_t & vars) {
+      ExprVector z3_lits;
+      for (auto && vn_liters : cl) { // for each
+        for (auto && l : vn_liters.second) {
+          const auto & name = std::get<0>(l);
+          unsigned bitslice = std::get<1>(l);
+          bool complemented = std::get<2>(l);
+          auto pos = vars.find(name);
+          assert(pos != vars.end());
+          int n = complemented ? 0 : 1;
+          auto ltexp = 
+            mk<EQ>(bv::extract(bitslice,bitslice,pos->second), bv::bvnum(n, 1, pos->second->efac()) );
+          z3_lits.push_back(ltexp);
+        } // for each literal in that name
+      } // for each name
+      return combineListExpr(z3_lits, OP_CONJ );
+    } // clause_to_expression
+  }; // class InvariantInCnf
+
   class CandChecker
   {
     private:
@@ -130,44 +387,45 @@ namespace ufo
       errs().flush ();
     }
 
-  };
-  
-  inline void simpleCheck(const char * chcfile, unsigned bw_bound, unsigned bval_bound, bool enable_eqs, bool enable_adds, bool enable_bvnot, bool enable_extract, bool enable_concr, bool enable_concr_impl, bool enable_or,
-    bool enable_concr_impl_or, bool keep_dot_name_only, bool enable_inequality,
-    bool enable_simplify_imply_or, const std::string & set_module_name,
-    bool enable_conj_imply_concr, bool enable_conj_imply_disj, const std::set<std::string> & variable_name_set)
-  {
+    size_t getLearnedLemmansSize() const { return learnedExprs.size(); }
 
-    if (!enable_eqs) // currently, `enable_adds` and `enable_extract` depend on `enable_eqs`
+    string printExpr(Expr e)
     {
-      enable_adds = 0;
-      enable_extract = 0;
+      for (auto & a : qr->origNames) e = replaceAll(e, a.first, a.second);
+      std::stringstream sbuf;
+      sbuf << e;
+      return sbuf.str();
     }
 
+  };
+  
+
+  inline void simpleCheck(const char * chcfile, unsigned bw_bound, int ANTE_Size, int CONSQ_Size,
+    const std::string &clauses_fn, bool skip_original, bool skip_const_check, bool shift_ranges,
+    bool use_add_sub,
+    bool debug)
+  {
+
     outs () << "Max bitwidth considered: " << bw_bound << "\n"
-            << "Max concrete values considered: " << bval_bound << "\n"
-            << "Equalities (between variables) enabled: " << enable_eqs << "\n"
-            << "Bitwise additions enabled: " << enable_adds << "\n"
-            << "Bitwise negations enabled: " << enable_bvnot << "\n"
-            << "Inequality: " << enable_inequality << "\n"
-            << "Bit extraction enabled (in equalities): " << enable_extract << "\n"
-            << "Concrete values enabled (in equalities): " << enable_concr << "\n"
-            << "Implications using equalities and concrete values enabled: " << enable_concr_impl << "\n"
-            << "Disjunctions among (subsets of) various equalities enabled: " << enable_or << "\n"
-            << "Implications using disjunctions of equalities and concrete values enabled: " << enable_concr_impl_or << "\n"
-            << "Simplification of implications using disjunctions of equalities and concrete values enabled: " << enable_simplify_imply_or << "\n"
-            << "Filter variable names with dot: " << keep_dot_name_only << "\n"
-            << "Only keep variable names under module: " << (set_module_name.empty() ? "(none)" : set_module_name  )<< "\n"
-            << "Restricting variables to be in a set of size : " << (variable_name_set.empty() ? "(none)" :  std::to_string(variable_name_set.size())  )<< "\n"
-            << "(v == v/c && v == c) --> (v == c) : " << enable_conj_imply_concr << "\n"
-            << "(v == v/c && v == c) --> (v == v/c || v == c)) : " << enable_conj_imply_disj << "\n"
+            << "(" << ANTE_Size << ") ==> (" << CONSQ_Size << ")"  << "\n"
+            << "Skip original cnf: " <<  skip_original  << "\n"
+            << "Skip const check: "  <<  skip_const_check  << "\n"
+            << "Shift extraction: "  <<  shift_ranges  << "\n"
+            << "Add/sub: "  <<  use_add_sub  << "\n"
             ;
+
+    // let's load clauses
+    InvariantInCnf cnf;
+    cnf.LoadFromFile(clauses_fn); // will print err msg
+    if (cnf._cnf_.empty())
+      return; // read error
 
     ExprFactory efac;
     EZ3 z3(efac);
     CHCs ruleManager(efac, z3);
     ruleManager.parse(string(chcfile));
-    Expr cand = mk<TRUE>(efac);
+
+    // create a map : cnf's state_name -> var
 
     HornRuleExt* tr;
     HornRuleExt* fc;
@@ -180,187 +438,102 @@ namespace ufo
 
     CandChecker cc(efac, fc, tr, qr);
 
-    ExprSet cands;
-
     // get inv vars
-    map<int, ExprVector> bvVars;
-    map<int, Expr> bitwidths;
-    set<int> bitwidths_int;
-    for (auto & a: tr->srcVars)
-    {
-      if (bv::is_bvconst(a))
-      {
-        if(keep_dot_name_only || !set_module_name.empty()) { // check name
-          std::stringstream sbuf;
-          sbuf << *qr->origNames[a];
-          const std::string & state_name = sbuf.str();
-          if (state_name.find(".") == std::string::npos)
-            continue; // ignore those that do not contain dot
-          if (!set_module_name.empty() && state_name.find("S_" + set_module_name+".") != 0)
-            continue;
-          if ( !variable_name_set.empty() && variable_name_set.find(state_name) == variable_name_set.end() )
-            continue;
-        }
-        unsigned bw = bv::width(a->first()->arg(1));
-        bitwidths_int.insert(bw);
-        bitwidths[bw] = a->first()->arg(1);
-        bvVars[bw].push_back(a);
-      }
+    InvariantInCnf::named_vars_t named_vars;
+    for (auto & a: tr->srcVars) {
+      if (!bv::is_bvconst(a))
+        continue;
+      std::stringstream sbuf;
+      sbuf << *qr->origNames[a];
+      const std::string & state_name = sbuf.str();
+      if (state_name.length()<3)
+        continue; // too short
+      if (state_name.substr(0,2) != "S_")
+        continue;
+      std::string sn = state_name.substr(2); // S_...
+      if (cnf._vars_.find(sn) != cnf._vars_.end())
+        named_vars.insert(std::make_pair(sn,a));
     }
 
-    ExprVector eqs1;
-    ExprVector eqs2;
+    
+    ExprVector cls_list;
+    for (auto && cl : cnf._cnf_)
+      cls_list.push_back ( InvariantInCnf::clause_to_expression(cl,named_vars) );
 
-    if (enable_eqs)
-    {
-      for (int i : bitwidths_int)
-      {
-        if (i > bw_bound) continue; // limit
-        for (int j = 0; j < bvVars[i].size(); j++)
-        {
-          for (int k = j + 1; k < bvVars[i].size(); k++)
-          {
-            Expr tmp = mk<EQ>(bvVars[i][j], bvVars[i][k]);
-            eqs1.push_back(tmp);
-            if(enable_inequality)
-              eqs1.push_back(mk<NEQ>(bvVars[i][j], bvVars[i][k]));
-            if (enable_bvnot)
-            {
-              eqs1.push_back(tmp);
-              eqs1.push_back(mk<EQ>(bvVars[i][j], mk<BNOT>(bvVars[i][k])));
-            }
-            if (enable_adds)
-            {
-              for (int l = 0; l < bvVars[i].size(); l++)
-              {
-                if (l == k || l == j) continue;
-                Expr tmp = mk<EQ>(bvVars[i][l], mk<BADD>(bvVars[i][j], bvVars[i][k]));
-                eqs1.push_back(tmp);
-              }
-            }
-          }
-          if (enable_extract)
-          {
-            for (int i1 = i + 1; i1 <= bw_bound; i1++)
-            {
-              for (int j1 = 0; j1 < bvVars[i1].size(); j1++)
-              {
-                eqs1.push_back(mk<EQ>(bvVars[i][j], bv::extract(i-1, 0, bvVars[i1][j1])));
-              }
-            }
-          }
-        }
-      }
-    }
+    Expr InputIndInv = mk<NEG>(combineListExpr(cls_list, OP_DISJ));
+    if (skip_original) 
+      outs()  << "Skip sanity check\n";
+    else{
+      outs() <<"Testing Candidate: "<<cc.printExpr(InputIndInv) << "\n";
 
-    if (enable_concr || enable_concr_impl)
-    {
-      for (int i : bitwidths_int)
-      {
-        if (i > bw_bound) continue; // limit
-        for (auto & a : bvVars[i])
-        {
-          for (int j = 0; j <= bval_bound && j < pow(2, i); j++)
-          {
-            Expr tmp = bv::bvnum(j, bv::width(bitwidths[i]), efac);
-            eqs2.push_back(mk<EQ>(a, tmp));
-            if(enable_inequality)
-              eqs2.push_back(mk<NEQ>(a,tmp));
-            if (enable_bvnot)
-              eqs2.push_back(mk<EQ>(mk<BNOT>(a), tmp));
-          }
-        }
-      }
-
-      if (enable_concr_impl)
-        for (auto & a : eqs2)
-          for (auto & b : eqs2)
-            if (a->left() != b->left())
-              cands.insert(mk<IMPL>(a, b));
-
-    }
-
-    ExprVector eqsOr;
-    if (enable_or || enable_concr_impl_or || enable_conj_imply_disj) {
-      for (auto & c : eqs1)
-        for (auto & d : eqs2)
-          if (c != d) {
-            eqsOr.push_back(mk<OR>(c, d));
-            if (enable_or) // otherwise, we are just providing pieces
-              cands.insert(mk<OR>(c, d));
-          }
-      
-      for (auto & c : eqs2)
-        for (auto & d : eqs2)
-          if (c != d) {
-            eqsOr.push_back(mk<OR>(c, d));
-            if (enable_or) // otherwise, we are just providing pieces
-              cands.insert(mk<OR>(c, d));
-          }
-
-      ExprVector eqsOrImply;
-      if (enable_concr_impl_or) {
-        for (auto & v_c : eqs2 )
-          for (auto & v_v_or_vc : eqsOr ) {
-            auto impl_cd = mk<IMPL>(v_c, v_v_or_vc);
-            if ( enable_simplify_imply_or && cc.isSimplifyToConst(impl_cd) )
-              continue;
-            cands.insert(mk<IMPL>(v_c, v_v_or_vc));
-            eqsOrImply.push_back(mk<IMPL>(v_c, v_v_or_vc));
-          }
-      }
-    }
-
-    ExprVector eqsAnd;
-    if (enable_conj_imply_concr || enable_conj_imply_disj){
-      // preparation steps 
-      for (auto & c : eqs1)
-        for (auto & d : eqs2)
-          if (c != d) {
-            eqsAnd.push_back(mk<AND>(c, d));
-          }
-      
-      for (auto & c : eqs2)
-        for (auto & d : eqs2)
-          if (c != d) {
-            eqsAnd.push_back(mk<AND>(c, d));
-          }
-
-      if (enable_conj_imply_concr) // otherwise we just don't insert
-        for (auto & precond : eqsAnd)
-          for (auto & c : eqs2) {
-            cands.insert(mk<IMPL>(precond, c));
-          }
-    }
-
-    if (enable_or && enable_conj_imply_concr && enable_conj_imply_disj) {
-      for (auto & precond : eqsAnd)
-        for (auto & poscond : eqsOr) {
-          cands.insert(mk<IMPL>(precond, poscond));
-        }
-    }
-
-    if (cands.empty())
-    {
-      cands.insert(eqs1.begin(), eqs1.end());
-      cands.insert(eqs2.begin(), eqs2.end());
-    }
-
-    int iter = 0;
-    for (auto & cand : cands)
-    {
-      iter++;
-      if (cc.checkInitiation(cand) &&
-          cc.checkInductiveness(cand) &&
-          cc.checkSafety())
-      {
-        outs () << "proved\n";
-        outs () << "iter: " << iter << " / " << cands.size() << "\n";
-        cc.serializeInvars();
+      if (!(cc.checkInitiation(InputIndInv) &&
+            cc.checkInductiveness(InputIndInv) &&
+            cc.checkSafety())) {
+        outs() << "The provided CNF is not inductive invariant!\n";
         return;
       }
+      outs() << "Sanity check passed!\n";
     }
-    outs () << "unknown\n";
+
+    // ------------ let's try enhancement here --------------- //
+    
+
+    // 1. test the cnf is truly a solution
+    // 2. for each clause, try enhance it
+    // 3. output clauses that get extended (for on clause, they could be more than one)
+    //          clause idx, results :n
+    //          (define-fun ?) ... for every? (end with (check-sat), so search and clip
+
+    int iter = 0;
+    int found = 0;
+    int clause_no = 0;
+    for (auto && cl : cnf._cnf_) {
+      ExprVector cands;
+      ExprVector vars_in_this_clause;
+      for (auto && var_name : cl) {
+        assert (named_vars.find(var_name.first) != named_vars.end());
+        vars_in_this_clause.push_back( named_vars[ var_name.first ] );
+      }
+
+      ExprVector Ante;
+      ExprVector Conseq;
+      vector<ExprVector> CSpredList; // {cs1: [cs1=0, cs1=1 , cs1=2 ...], cs2: [cs2=0, cs2=1 ...]}
+      //enumConstPredForEachVar(vars_in_this_clause, bw_bound, CSpredList, shift_ranges);
+      enumDataPredForEachVar(vars_in_this_clause, bw_bound, vars_in_this_clause, CSpredList, shift_ranges, use_add_sub);
+
+      enumSelectKFromListofList(CSpredList, ANTE_Size, Ante, OP_CONJ);
+      enumSelectKFromListofList(CSpredList, CONSQ_Size, Conseq, OP_DISJ);
+
+      for (Expr a : Ante) {
+        if (skip_const_check || !cc.isSimplifyToConst(a))
+          cands.push_back(a);
+        for (Expr b: Conseq) {
+          auto cand = mk<IMPL>(a, b);
+          if (skip_const_check || !cc.isSimplifyToConst(cand))
+            cands.push_back(cand);
+        }
+      }
+      
+      outs() << "Cands : " << cands.size() << "\n";
+      for (auto & cand : cands)
+      {
+        iter++;
+        if (debug)
+          outs() <<"Testing Candidate: "<<cc.printExpr(cand) << "\n";
+        if (cc.checkInitiation(cand) &&
+            cc.checkInductiveness(cand) &&
+            cc.checkSafety())
+        {
+          found ++;
+        }
+      }
+      outs () << "Status @ iter: " << iter << " @ clause " << clause_no << " found :" << found << "\n";
+      clause_no ++;
+    }
+
+    outs() << "Total iter:" << iter << ", found: " << found  << " learned lemmas: " << cc.getLearnedLemmansSize() << "\n";
+    // finally print out what we learned (at least the one given)
+    cc.serializeInvars();
   }
 }
 

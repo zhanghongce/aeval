@@ -1,6 +1,5 @@
 #include "deep/CandChecker.hpp"
 
-#include <fstream>
 
 using namespace ufo;
 using namespace std;
@@ -63,14 +62,16 @@ int main (int argc, char ** argv)
   }
 
   simpleCheck(argv[argc-1], getIntValue("--bw", 128, argc, argv),
-              getIntValue("--val", 1, argc, argv), getBoolValue("--eqs", 0, argc, argv),
-              getBoolValue("--adds", 0, argc, argv), getBoolValue("--bvnot", 0, argc, argv),
-              getBoolValue("--ext", 0, argc, argv), getBoolValue("--conc", 0, argc, argv),
-              getBoolValue("--impl", 0, argc, argv), getBoolValue("--or", 0, argc, argv),
-              getBoolValue("--impl-or", 0, argc, argv), getBoolValue("--dot-name", 0, argc, argv),
-              getBoolValue("--neqs", 0, argc, argv), getBoolValue("--impl-or-simple", 0, argc, argv),
-              getStringValue("--mod", "", argc, argv),
-              getBoolValue("--conj-impl", 0, argc, argv), getBoolValue("--conj-impl-or", 0, argc, argv),
-              variable_name_set);
+              getIntValue("--ante-size", 4, argc, argv),
+              getIntValue("--conseq-size", 4, argc, argv),
+              getStringValue("--cnf", "", argc, argv),
+              getBoolValue("--skip-cnf", false, argc, argv),
+              getBoolValue("--skip-const-check", false, argc, argv),
+              getBoolValue("--shift-extract", false, argc, argv),
+              getBoolValue("--use-arith-add-sub", false, argc, argv),
+
+
+              getBoolValue("--debug", false, argc, argv)
+              );
   return 0;
 }
