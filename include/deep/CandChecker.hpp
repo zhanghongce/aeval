@@ -425,39 +425,49 @@ namespace ufo
   } // enumDataPredForEachVar
 
 
-  void enumSelectFromLoLImplPart2(vector<ExprVector>& lol, int start, vector<int>& list_selection, ExprVector& selection, ExprVector& output, int op)
+  void enumSelectFromLoLImplPart2(vector<ExprVector>& lol, int start, vector<int>& list_selection, ExprVector& selection, ExprVector& output, int op, 
+    std::vector<std::set<int>> & per_output_selection_idxs)
   {
     if (start == list_selection.size()){
       assert(selection.size() == list_selection.size());
       
       output.push_back(combineListExpr(selection, op));
+      
+      per_output_selection_idxs.push_back(std::set<int>());
+      for (auto idx : list_selection)
+        per_output_selection_idxs.back().insert(idx);
       return;
     }
     for (Expr e: lol[list_selection[start]]) {
       selection.push_back(e);
-      enumSelectFromLoLImplPart2(lol, start+1, list_selection, selection, output, op);
+      enumSelectFromLoLImplPart2(lol, start+1, list_selection, selection, output, op, per_output_selection_idxs);
       selection.pop_back();
     }
-  }
+  } // enumSelectFromLoLImplPart2
 
-  void enumSelectFromLoLImpl(vector<ExprVector>& lol, int start, unsigned k, vector<int>& list_selection, ExprVector& output, int op)
+  void enumSelectFromLoLImpl(vector<ExprVector>& lol, int start, unsigned k, vector<int>& list_selection, ExprVector& output, int op, 
+    std::vector<std::set<int>> & per_output_selection_idxs, const std::set<int> & skip_lol_idxs)
   {
     if (k == 0){
       ExprVector selection;
-      enumSelectFromLoLImplPart2(lol, 0, list_selection, selection, output, op);
+      enumSelectFromLoLImplPart2(lol, 0, list_selection, selection, output, op, per_output_selection_idxs);
       return;
     }
-    for (int i = start; i <= lol.size() - k; ++i) {
+    for (int i = start; i <= (signed long long)(lol.size()) -  (signed long long)(k); ++i) {
+      if (skip_lol_idxs.find(i) != skip_lol_idxs.end())
+        continue;
       list_selection.push_back(i);
-      enumSelectFromLoLImpl(lol, i+1, k-1, list_selection, output, op);
+      enumSelectFromLoLImpl(lol, i+1, k-1, list_selection, output, op, per_output_selection_idxs, skip_lol_idxs);
       list_selection.pop_back();
     }
-  }
+  } // enumSelectFromLoLImpl
   
-  void enumSelectKFromListofList(vector<ExprVector>& lol, unsigned k, ExprVector& output, int op){
+  void enumSelectKFromListofList(vector<ExprVector>& lol, unsigned k, ExprVector& output, int op, 
+      std::vector<std::set<int>> & per_output_selection_idxs, const std::set<int> & skip_lol_idxs)
+  {
     vector<int> list_selection;
     for (int i = 1; i <= k; i++)
-      enumSelectFromLoLImpl(lol, 0, i, list_selection, output, op);
+      enumSelectFromLoLImpl(lol, 0, i, list_selection, output, op, per_output_selection_idxs, skip_lol_idxs);
   }
 
   void enumSelectFromListImpl(ExprVector& list, int start, unsigned k, ExprVector& selection, ExprVector& output, int op){
@@ -465,7 +475,7 @@ namespace ufo
       output.push_back(combineListExpr(selection, op));
       return;
     }
-    for (int i = start; i <= list.size() - k; ++i) {
+    for (int i = start; i <= (signed long long)(list.size()) - (signed long long)(k); ++i) {
       selection.push_back(list[i]);
       enumSelectFromListImpl(list, i+1, k-1, selection, output, op);
       selection.pop_back();
@@ -492,12 +502,16 @@ namespace ufo
     // hints
     const std::set<std::string>  & no_enum_num_name,
     const cross_bw_hints_t & bit_select_hints,
+    bool find_one,
+    bool find_on_one_clause,
 
     bool debug)
   {
 
     outs () << "Max bitwidth considered: " << bw_bound << "\n"
             << "Max bitwidth of constant: " << cw_bound << "\n"
+            << "Find one and stop: " << find_one << "\n"
+            << "Find one clause and stop: " << find_on_one_clause << "\n"
             << "(" << ANTE_Size << ") ==> (" << CONSQ_Size << ")"  << "\n"
             << "Skip original cnf: " <<  skip_original  << "\n"
             << "Skip const check: "  <<  skip_const_check  << "\n"
@@ -646,7 +660,6 @@ namespace ufo
       } // 
 
       ExprVector Ante;
-      ExprVector Conseq;
       vector<ExprVector> CSpredList; // {cs1: [cs1=0, cs1=1 , cs1=2 ...], cs2: [cs2=0, cs2=1 ...]}
       //enumConstPredForEachVar(vars_in_this_clause, bw_bound, CSpredList, shift_ranges);
       enumDataPredForEachVar(vars_in_this_clause,  varnames, bw_bound, cw_bound, var_s_const, no_enum_num_name, 
@@ -658,14 +671,46 @@ namespace ufo
           enumDataPredForEachVar(vars_in_this_clause, varnames, bitwidth_lsb_pair.first, cw_bound, var_s_const, no_enum_num_name, 
             CSpredList, 
             shift_ranges, use_add_sub, cc, cross_bw, bit_select_hints, true );
-      }
+      } // force_bitselect_hint_on_every_var
 
       outs () << "Base selection set size: " << CSpredList.size() << "\n";
 
-      enumSelectKFromListofList(CSpredList, this_clause_ANTE_Size, Ante, OP_CONJ); // --> get a list of selection
-      enumSelectKFromListofList(CSpredList, this_clause_CONSQ_Size, Conseq, OP_DISJ); // -> avoid them here (so this should be for each Ante)
-
+      std::vector<std::set<int>> per_ante_selection_idxs; 
+      enumSelectKFromListofList(CSpredList, this_clause_ANTE_Size, Ante, OP_CONJ, per_ante_selection_idxs, {} ); // --> get a list of selection
       outs () << "Ante set size: " << Ante.size() << "\n";
+
+      size_t ante_idx = 0;
+      size_t current_cand_incr_count = 0;
+      for (Expr a : Ante) {
+        assert (ante_idx < per_ante_selection_idxs.size());
+
+        if (check_cand_max != 0 && current_cand_incr_count > check_cand_max) {
+          outs () << "Skipped, " << current_cand_incr_count << " exceed cand max.\n";
+          break;
+        }
+
+        if (skip_const_check || !cc.isSimplifyToConst(a)) {
+          current_cand_incr_count ++;
+          cands.push_back(a);
+        }
+
+        std::vector<std::set<int>> no_use;
+        ExprVector Conseq;
+        enumSelectKFromListofList(CSpredList, this_clause_CONSQ_Size, Conseq, OP_DISJ, no_use , per_ante_selection_idxs.at(ante_idx) );
+
+        for (Expr b: Conseq) {
+          auto cand = mk<IMPL>(a, b);
+          if (skip_const_check || !cc.isSimplifyToConst(cand)) {
+            current_cand_incr_count ++;
+            cands.push_back(cand);
+          }
+        } // for conseq
+
+        ante_idx ++;
+      } // for each Ante
+      /*
+      enumSelectKFromListofList(CSpredList, this_clause_CONSQ_Size, Conseq, OP_DISJ); // -> avoid them here (so this should be for each)
+
       outs () << "Conseq set size: " << Conseq.size() << "\n";
       outs () .flush();
       if (check_cand_max == 0 || Ante.size() < check_cand_max) {
@@ -685,9 +730,10 @@ namespace ufo
         } // for each Ante
       } else {
         outs () << "Skipped, exceed cand max.\n";
-      }
+      }*/
       
       outs() << "Cands : " << cands.size() << "\n";
+      outs() .flush();
       for (auto & cand : cands)
       {
         iter++;
@@ -716,6 +762,9 @@ namespace ufo
             if ( ( gen_spec_only &&  is_specialization ) || cc.isAimpliesB( new_cnf , InputIndInv) )
               num_specification ++;
           }
+
+          if (find_one)
+            goto end_check;
         } // INV check
       } // for each cand
       outs () << "Status @ iter: " << iter << " @ clause " << clause_no << " found :" << found << "\n";
@@ -723,8 +772,12 @@ namespace ufo
       outs () << "Specialization:" << num_specification << "\n";
       outs () .flush();
       clause_no ++;
-    }
 
+      if (found > 0 && find_on_one_clause)
+        goto end_check;
+    } // for each clause
+
+end_check:
     outs() << "Total iter:" << iter << ", found: " << found  << " learned lemmas: " << cc.getLearnedLemmansSize() << "\n";
     outs() << "TotalGen: "<< num_generalizion << "\n";
     outs() << "TotalSpec: " << num_specification << "\n";

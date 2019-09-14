@@ -181,6 +181,8 @@ int main (int argc, char ** argv)
               
               no_enum_variable_name,
               bit_select_hints,
+              getBoolValue("--find-one", false, argc, argv),
+              getBoolValue("--find-one-clause", false, argc, argv),
               getBoolValue("--debug", false, argc, argv)
               );
   return 0;
