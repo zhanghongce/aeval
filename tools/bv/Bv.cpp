@@ -65,6 +65,39 @@ std::vector<std::string> Split(const std::string& str,
   return tokens;
 }
 
+
+std::set<std::string> Split2Set(const std::string& str,
+                               const std::string& delim) {
+  std::set<std::string> tokens;
+  size_t prev = 0, pos = 0;
+  do {
+    pos = str.find(delim, prev);
+    if (pos == std::string::npos)
+      pos = str.length();
+    std::string token = str.substr(prev, pos - prev);
+    if (!token.empty())
+      tokens.insert(token);
+    prev = pos + delim.length();
+  } while (pos < str.length() && prev < str.length());
+  return tokens;
+}
+
+
+/// Replace all occurrance of substring a by substring b
+std::string ReplaceAll(const std::string& str, const std::string& a,
+                       const std::string& b) {
+  std::string result;
+  size_t find_len = a.size();
+  size_t pos, from = 0;
+  while (std::string::npos != (pos = str.find(a, from))) {
+    result.append(str, from, pos - from);
+    result.append(b);
+    from = pos + find_len;
+  }
+  result.append(str, from, std::string::npos);
+  return result;
+}
+
 std::vector<std::string> SplitSpaceTabEnter(const std::string& str) {
   std::vector<std::string> result;
   std::istringstream iss(str);
@@ -158,6 +191,32 @@ int main (int argc, char ** argv)
     }
   }
 
+  std::set<std::string> CSvar, COvar, DIvar, DOvar;
+  { // load grammar
+    auto grammar_file = getStringValue("--grammar", "", argc,argv);
+    vector<string> ConseqPredNames, AntePredNames;
+    std::string CSnames, CInames, COnames, DInames, DOnames;
+    if (!grammar_file.empty())
+    {
+      string buf;
+      ifstream gf(grammar_file);
+      while (gf.good())
+      {
+        getline(gf, buf);
+        if (buf.substr(0, 12) == "CTRL-STATE: ") CSnames += buf.substr(12);
+        else if (buf.substr(0, 9) == "CTRL-IN: ") CInames += buf.substr(9);
+        else if (buf.substr(0, 10) == "CTRL-OUT: ") COnames += buf.substr(10);
+        else if (buf.substr(0, 9) == "DATA-IN: ") DInames += buf.substr(9);
+        else if (buf.substr(0, 10) == "DATA-OUT: ") DOnames += buf.substr(10);
+        else if (buf.substr(0, 11) == "CONS-PRED: ") ConseqPredNames.push_back(buf.substr(11));
+        else if (buf.substr(0, 11) == "ANTE-PRED: ") AntePredNames.push_back(buf.substr(11));
+      }
+    }
+    CSvar = Split2Set(replaceAll(CSnames," ", ""), ",");
+    COvar = Split2Set(replaceAll(COnames," ", ""), ",");
+    DIvar = Split2Set(replaceAll(DInames," ", ""), ",");
+    DOvar = Split2Set(replaceAll(DOnames," ", ""), ",");
+  } // end -- load grammar ile
   
   
 
@@ -181,8 +240,17 @@ int main (int argc, char ** argv)
               
               no_enum_variable_name,
               bit_select_hints,
+              getBoolValue("--cti-prune", false, argc, argv),
+              getBoolValue("--force-cti-prune", false, argc, argv),
               getBoolValue("--find-one", false, argc, argv),
               getBoolValue("--find-one-clause", false, argc, argv),
+
+              getBoolValue("--no-merge-cti", false, argc, argv),
+              getBoolValue("--no-add-cand-after-cti", false, argc, argv),
+              getBoolValue("--use-arith-bvnot", false, argc, argv),
+
+              CSvar, COvar, DIvar, DOvar,
+
               getBoolValue("--debug", false, argc, argv)
               );
   return 0;

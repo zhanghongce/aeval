@@ -81,6 +81,21 @@ namespace ufo
       } // for each clause
     } // LoadFromFile
 
+    template <class T>
+    void FromVnameContainer(const T & ctr) {
+      if (_cnf_.empty())
+        _cnf_.push_back(clause()); // put a clause
+
+      auto & back = _cnf_.back();
+      for (auto pos = ctr.begin(); pos != ctr.end() ; ++pos) {
+        const auto & s_name = *pos;
+        back[s_name].push_back(
+          std::make_tuple(s_name, bitslice, complemented));
+        _vars_.insert(s_name);
+
+      }
+    } // FromVnameContainer
+
     static Expr clause_to_expression(const clause & cl, const named_vars_t & vars) {
       ExprVector z3_lits;
       for (auto && vn_liters : cl) { // for each
@@ -137,7 +152,8 @@ namespace ufo
         assert (tr->dstVars[i] == fc->dstVars[i]);
     }
 
-    Expr getModel(ExprVector& vars)
+    // Expr getModel(ExprVector& vars)
+    Expr getModel()
     {
       // used to explain the reason why some of the check failed
       // i.e., it is supposed to be called after "smt_solver.solve()" returned SAT
@@ -190,6 +206,46 @@ namespace ufo
       if (res) learnedExprs.insert (cand);  // inductiveness check passed; so add a new lemma
 
       return res;
+    }
+
+
+    bool hasThisCTI(Expr cand, Expr cti)
+    {
+      // supposed to be called after checkInitiation
+
+      Expr candPrime = cand;
+
+      for (int j = 0; j < fc->dstVars.size(); j++)
+      {
+        candPrime = replaceAll(candPrime, vars[j], tr->dstVars[j]);
+      }
+
+      smt_solver.reset ();
+      smt_solver.assertExpr (tr->body);
+      smt_solver.assertExpr (cand);
+      smt_solver.assertExpr (cti);
+      smt_solver.assertExpr (getlearnedLemmas()); // IMPORTANT: use all lemmas learned so far
+      smt_solver.assertExpr (mk<NEG>(candPrime));
+
+      // outs()<<"*************begin IND check**************\n";
+      // smt_solver.toSmtLib(outs());
+      // outs()<<"*************end IND check**************\n";
+
+      bool res = smt_solver.solve ();
+
+      return res; // if true then it also has this cti
+    }
+
+    bool checkBlockCTI(Expr model)
+    {
+      // supposed to be called after checkInductiveness
+      // but it does not take a candidate as input since it is already in learnedExprs
+
+      smt_solver.reset();
+      smt_solver.assertExpr (model);
+      smt_solver.assertExpr (getlearnedLemmas());
+
+      return !smt_solver.solve ();
     }
 
     bool checkSafety()
@@ -297,7 +353,8 @@ namespace ufo
       // no enumerate
       const set<string> & no_const_enumerate_vars,
       vector<ExprVector>& lol, bool shift_extract, bool use_add, CandChecker & cc, bool cross_bw,
-      const cross_bw_hints_t & cross_bw_hints, bool force_cut_bit
+      const cross_bw_hints_t & cross_bw_hints, bool force_cut_bit,
+      bool bvnot
       ){
     for (int lidx = 0; lidx < vars.size() ; ++ lidx ) {
       ExprVector preds;
@@ -367,8 +424,11 @@ namespace ufo
         if ( cc.printExpr(rhs) == lhs_string )
           continue;
         unsigned rbw = bv::width(rhs->first()->arg(1));
-        if (bw == rbw)
-          preds.push_back(mk<EQ>(v, rhs));
+        if (bw == rbw) {
+            if(bvnot)
+              preds.push_back(mk<EQ>(v, mk<BNOT>(rhs)));
+            preds.push_back(mk<EQ>(v, rhs));
+        }
         else if (cross_bw) {
           if (bw > rbw) {
             if (shift_extract) {
@@ -490,6 +550,46 @@ namespace ufo
 
   // ------------------------------------ END OF GRAMMAR PART ----------------------------------------- //
 
+class CTI_manager {
+  public:
+    CandChecker & cc;
+    int indfailcnt;
+    bool no_merge_cti;
+
+  public:
+    map<Expr, ExprVector> CTImap;
+    
+    CTI_manager(CandChecker & _cc, bool _no_merge_cti) : cc(_cc), indfailcnt(0), no_merge_cti(_no_merge_cti) {}
+
+    void InsertCTIFailedCand(Expr & cand) { // right after ind check!!!
+      // for existing cti's test if it is also failing on that 
+      indfailcnt ++;
+
+      Expr cti = cc.getModel();
+      if (!no_merge_cti)
+        for (auto && model_vec_pair : CTImap) {
+          if (cc.hasThisCTI(cand, model_vec_pair.first) ) {
+            model_vec_pair.second.push_back(cand);
+            return;
+          }
+        }
+      // not found, new CTI 
+      CTImap[cti].push_back(cand);
+    } // InsertCTIFailedCand
+
+}; // class CTI_manager
+
+struct CDParameters{
+    bool shift_ranges;
+    bool use_add_sub;
+    bool cross_bw;
+    bool force_bitselect_hint_on_every_var;
+    std::map<std::string, std::set<unsigned>> var_s_const;
+    std::set<std::string>  no_enum_num_name;
+    cross_bw_hints_t bit_select_hints;
+    bool use_bv_not;
+};
+
 
   inline void simpleCheck(const char * chcfile, unsigned bw_bound, unsigned cw_bound,
     int ANTE_Size, int CONSQ_Size,
@@ -502,11 +602,24 @@ namespace ufo
     // hints
     const std::set<std::string>  & no_enum_num_name,
     const cross_bw_hints_t & bit_select_hints,
+    bool cti_prune,
+    bool force_cti_prune,
     bool find_one,
     bool find_on_one_clause,
+    bool no_merge_cti,
+    bool no_add_cand_after_cti,
+    bool use_bv_not,
+
+    const std::set<std::string> & CSvar,
+    const std::set<std::string> & COvar,
+    const std::set<std::string> & DIvar,
+    const std::set<std::string> & DOvar,
 
     bool debug)
   {
+
+    if (force_cti_prune)
+      cti_prune = true;
 
     outs () << "Max bitwidth considered: " << bw_bound << "\n"
             << "Max bitwidth of constant: " << cw_bound << "\n"
@@ -517,15 +630,27 @@ namespace ufo
             << "Skip const check: "  <<  skip_const_check  << "\n"
             << "Shift extraction: "  <<  shift_ranges  << "\n"
             << "Add/sub: "  <<  use_add_sub  << "\n"
+            << "bvnot: "  <<  use_bv_not  << "\n"
             << "EQ/NEQ across bitwidth: "  <<  cross_bw  << "\n"
+            << "CTI Prune: "  <<  cti_prune <<  (force_cti_prune ? " (forced)" : "")  << "\n"
+            << "No merge cti: "  <<  no_merge_cti  << "\n"
+            << "Not adding cand after cti: "  <<  no_add_cand_after_cti  << "\n"
             << "Force bitselection hints on every var: " << force_bitselect_hint_on_every_var << "\n"
             ;
 
     // let's load clauses
     InvariantInCnf cnf;
-    cnf.LoadFromFile(clauses_fn); // will print err msg
-    if (cnf._cnf_.empty())
-      return; // read error
+
+    if (!clauses_fn.empty()) {
+      cnf.LoadFromFile(clauses_fn); // will print err msg
+      if (cnf._cnf_.empty())
+        return; // read error
+    } else {
+      cnf.FromVnameContainer(CSvar);
+      cnf.FromVnameContainer(COvar);
+      cnf.FromVnameContainer(DIvar);
+      cnf.FromVnameContainer(DOvar);
+    }
 
     ExprFactory efac;
     EZ3 z3(efac);
@@ -544,17 +669,18 @@ namespace ufo
       else if (a.isQuery) qr = &a;
 
     CandChecker cc(efac, fc, tr, qr);
+    CTI_manager cti_manager (cc, no_merge_cti);
 
     // get inv vars
     InvariantInCnf::named_vars_t named_vars;
     for (auto & a: tr->srcVars) {
       if (!bv::is_bvconst(a)) 
       {
-      //  cout<<"not a bv var: "<<*a<<" name: "<<*qr->origNames[a]<<" \n";
+      //  outs()<<"not a bv var: "<<*a<<" name: "<<*qr->origNames[a]<<" \n";
           continue;
       } 
       // else 
-      //  cout<<"is a bv var: "<<*a<<" name: "<<*qr->origNames[a]<<" \n";
+      //  outs()<<"is a bv var: "<<*a<<" name: "<<*qr->origNames[a]<<" \n";
 
       std::stringstream sbuf;
       sbuf << *qr->origNames[a];
@@ -659,86 +785,81 @@ namespace ufo
           LocalInputIndInv = mk<NEG>(combineListExpr(local_cls_list, OP_DISJ));
       } // 
 
-      ExprVector Ante;
-      vector<ExprVector> CSpredList; // {cs1: [cs1=0, cs1=1 , cs1=2 ...], cs2: [cs2=0, cs2=1 ...]}
-      //enumConstPredForEachVar(vars_in_this_clause, bw_bound, CSpredList, shift_ranges);
-      enumDataPredForEachVar(vars_in_this_clause,  varnames, bw_bound, cw_bound, var_s_const, no_enum_num_name, 
-        CSpredList, 
-        shift_ranges, use_add_sub, cc, cross_bw, bit_select_hints, false );
-      
-      if (force_bitselect_hint_on_every_var) {
-        for (auto && bitwidth_lsb_pair : bit_select_hints)
-          enumDataPredForEachVar(vars_in_this_clause, varnames, bitwidth_lsb_pair.first, cw_bound, var_s_const, no_enum_num_name, 
-            CSpredList, 
-            shift_ranges, use_add_sub, cc, cross_bw, bit_select_hints, true );
-      } // force_bitselect_hint_on_every_var
 
-      outs () << "Base selection set size: " << CSpredList.size() << "\n";
+      // -------------------------- CANDIDATE GENERATION STAGE -------------------------------- //
 
-      std::vector<std::set<int>> per_ante_selection_idxs; 
-      enumSelectKFromListofList(CSpredList, this_clause_ANTE_Size, Ante, OP_CONJ, per_ante_selection_idxs, {} ); // --> get a list of selection
-      outs () << "Ante set size: " << Ante.size() << "\n";
-
-      size_t ante_idx = 0;
-      size_t current_cand_incr_count = 0;
-      for (Expr a : Ante) {
-        assert (ante_idx < per_ante_selection_idxs.size());
-
-        if (check_cand_max != 0 && current_cand_incr_count > check_cand_max) {
-          outs () << "Skipped, " << current_cand_incr_count << " exceed cand max.\n";
-          break;
-        }
-
-        if (skip_const_check || !cc.isSimplifyToConst(a)) {
-          current_cand_incr_count ++;
-          cands.push_back(a);
-        }
-
-        std::vector<std::set<int>> no_use;
-        ExprVector Conseq;
-        enumSelectKFromListofList(CSpredList, this_clause_CONSQ_Size, Conseq, OP_DISJ, no_use , per_ante_selection_idxs.at(ante_idx) );
-
-        for (Expr b: Conseq) {
-          auto cand = mk<IMPL>(a, b);
-          if (skip_const_check || !cc.isSimplifyToConst(cand)) {
-            current_cand_incr_count ++;
-            cands.push_back(cand);
+      // filter names according to the grammar
+      if (!CSvar.empty()) {
+        assert (vars_in_this_clause.size() == varnames.size());
+        for (size_t idx = 0 ; idx < varnames.size() ; ++ idx){
+          const auto & vn = varnames.at(idx);
+          if (CSvar.find(vn) != CSvar.end()) {
+            vars_ante.push_back(vars_in_this_clause.at(idx));
+            varnames_ante.push_back(varnames.at(idx));
           }
-        } // for conseq
+        }
+      } else { // enumerate the whole
+        ExprVector Ante;
+        vector<ExprVector> CSpredList; // {cs1: [cs1=0, cs1=1 , cs1=2 ...], cs2: [cs2=0, cs2=1 ...]}
 
-        ante_idx ++;
-      } // for each Ante
-      /*
-      enumSelectKFromListofList(CSpredList, this_clause_CONSQ_Size, Conseq, OP_DISJ); // -> avoid them here (so this should be for each)
+        //enumConstPredForEachVar(vars_in_this_clause, bw_bound, CSpredList, shift_ranges);
+        enumDataPredForEachVar(vars_in_this_clause,  varnames, bw_bound, cw_bound, var_s_const, no_enum_num_name, 
+          CSpredList, 
+          shift_ranges, false /*use_add_sub*/, cc, cross_bw, bit_select_hints, false, use_bv_not );
+      
+        if (force_bitselect_hint_on_every_var) {
+          for (auto && bitwidth_lsb_pair : bit_select_hints)
+            enumDataPredForEachVar(vars_in_this_clause, varnames, bitwidth_lsb_pair.first, cw_bound, var_s_const, no_enum_num_name, 
+              CSpredList, 
+              shift_ranges, use_add_sub, cc, cross_bw, bit_select_hints, true, use_bv_not );
+        } // force_bitselect_hint_on_every_var
 
-      outs () << "Conseq set size: " << Conseq.size() << "\n";
-      outs () .flush();
-      if (check_cand_max == 0 || Ante.size() < check_cand_max) {
-        if (check_cand_max != 0 && Ante.size() * Conseq.size() >= check_cand_max ) 
-          outs () << "Skipped conseq, exceed cand max.\n";
+        outs () << "Base selection set size: " << CSpredList.size() << "\n";
 
+        std::vector<std::set<int>> per_ante_selection_idxs; 
+        enumSelectKFromListofList(CSpredList, this_clause_ANTE_Size, Ante, OP_CONJ, per_ante_selection_idxs, {} ); // --> get a list of selection
+        outs () << "Ante set size: " << Ante.size() << "\n";
+
+        size_t ante_idx = 0;
+        size_t current_cand_incr_count = 0;
         for (Expr a : Ante) {
-          if (skip_const_check || !cc.isSimplifyToConst(a))
+          assert (ante_idx < per_ante_selection_idxs.size());
+
+          if (check_cand_max != 0 && current_cand_incr_count > check_cand_max) {
+            outs () << "Skipped, " << current_cand_incr_count << " exceed cand max.\n";
+            break;
+          }
+
+          if (skip_const_check || !cc.isSimplifyToConst(a)) {
+            current_cand_incr_count ++;
             cands.push_back(a);
-          if (check_cand_max == 0 || Ante.size() * Conseq.size() < check_cand_max ) {
-            for (Expr b: Conseq) {
-              auto cand = mk<IMPL>(a, b);
-              if (skip_const_check || !cc.isSimplifyToConst(cand))
-                cands.push_back(cand);
-            } // for each Conseq
-          } // skip Conseq 
+          }
+
+          std::vector<std::set<int>> no_use;
+          ExprVector Conseq;
+          enumSelectKFromListofList(CSpredList, this_clause_CONSQ_Size, Conseq, OP_DISJ, no_use , per_ante_selection_idxs.at(ante_idx) );
+
+          for (Expr b: Conseq) {
+            auto cand = mk<IMPL>(a, b);
+            if (skip_const_check || !cc.isSimplifyToConst(cand)) {
+              current_cand_incr_count ++;
+              cands.push_back(cand);
+            }
+          } // for conseq
+          ante_idx ++;
         } // for each Ante
-      } else {
-        outs () << "Skipped, exceed cand max.\n";
-      }*/
+      } // Enumerate as a whole
+
+      // -------------------------- ENUMERATION STAGE -------------------------------- //
       
       outs() << "Cands : " << cands.size() << "\n";
       outs() .flush();
+
       for (auto & cand : cands)
       {
         iter++;
         if (debug)
-          outs() <<"Testing Candidate: "<<cc.printExpr(cand) << "\n";
+          outs() <<"Testing Candidate: "<<cc.printExpr(cand) ;
 
         bool is_specialization, is_generalization;
         if (gen_spec_only) {
@@ -749,23 +870,43 @@ namespace ufo
               continue; // skip
         }
 
-        if (cc.checkInitiation(cand) &&
-            cc.checkInductiveness(cand) &&
-            cc.checkSafety())
-        {
-          found ++;
-          if (!skip_stat_check) {
-            Expr new_cnf = LocalInputIndInv ? mk<AND> (cand, LocalInputIndInv) : cand;
+        if (cc.checkInitiation(cand) ) {
 
-            if ( ( gen_spec_only &&  is_generalization ) || cc.isAimpliesB( InputIndInv, new_cnf ) )
-              num_generalizion ++;
-            if ( ( gen_spec_only &&  is_specialization ) || cc.isAimpliesB( new_cnf , InputIndInv) )
-              num_specification ++;
+          if (cc.checkInductiveness(cand) ) {
+            if (cc.checkSafety())
+            {
+              if (debug)
+                outs() <<" @@@@ safe\n";
+              found ++;
+              if (!skip_stat_check) {
+                Expr new_cnf = LocalInputIndInv ? mk<AND> (cand, LocalInputIndInv) : cand;
+
+                if ( ( gen_spec_only &&  is_generalization ) || cc.isAimpliesB( InputIndInv, new_cnf ) )
+                  num_generalizion ++;
+                if ( ( gen_spec_only &&  is_specialization ) || cc.isAimpliesB( new_cnf , InputIndInv) )
+                  num_specification ++;
+              }
+
+              if (find_one)
+                goto end_check;
+            } // safety check
+            else {
+              if (debug)
+                outs() <<" +++ ind\n";
+            }
+          } // ind check check
+          else {
+            if (cti_prune)
+              cti_manager.InsertCTIFailedCand(cand);
+            if (debug)
+                outs() <<" -- CTI\n";
           }
+        } // init check
+        else {
+            if (debug)
+                outs() <<"\n";
+        }
 
-          if (find_one)
-            goto end_check;
-        } // INV check
       } // for each cand
       outs () << "Status @ iter: " << iter << " @ clause " << clause_no << " found :" << found << "\n";
       outs () << "Generalizaion:" << num_generalizion << "\n";
@@ -783,9 +924,54 @@ end_check:
     outs() << "TotalSpec: " << num_specification << "\n";
 
     // finally print out what we learned (at least the one given)
-    cc.serializeInvars();
-    if (found > 0)
+    if (found > 0  && !force_cti_prune) {
+      cc.serializeInvars();
       outs() << "proved\n";
+      return;
+    }
+
+    if (found == 0 && !cti_prune) {
+      outs() << "unknown\n";
+      return;
+    }
+
+    outs()<<" Found CTIs # "<<cti_manager.CTImap.size()<<" covering # "<<cti_manager.indfailcnt<< "candidates\n";
+
+    while (1){
+      ExprVector ctisToRemove;
+      for (auto& iter: cti_manager.CTImap){
+        if (cc.checkBlockCTI(iter.first)){
+          ctisToRemove.push_back(iter.first);
+          outs()<<"new CTI blocked\n";
+        }
+      }
+      if (ctisToRemove.empty()) break; // fail to change anything
+
+      for (auto && model : ctisToRemove) {
+        if (cc.checkInductiveness(conjoin(cti_manager.CTImap.at(model), efac))){
+          cti_manager.CTImap.erase(model);
+          outs()<<"new cands added\n";
+          if (cc.checkSafety()){
+            outs()<<"proved\n";
+            outs().flush();
+            cc.serializeInvars();
+            return;
+          }
+        } else {
+          auto cands = cti_manager.CTImap.at(model);
+          cti_manager.CTImap.erase(model);
+          if(!no_add_cand_after_cti)
+            for (auto && cand : cands) {
+              if (!cc.checkInductiveness(cand))
+                cti_manager.InsertCTIFailedCand(cand);
+            }
+        }
+      } // for each of ctisToRemove
+    } // the cti block loop
+
+    outs() << "unknown\n";
+    // the end
+
   } // function simpleCheck
 } // namespace ufo
 
