@@ -90,7 +90,7 @@ namespace ufo
       for (auto pos = ctr.begin(); pos != ctr.end() ; ++pos) {
         const auto & s_name = *pos;
         back[s_name].push_back(
-          std::make_tuple(s_name, bitslice, complemented));
+          std::make_tuple(s_name, 0, false));
         _vars_.insert(s_name);
 
       }
@@ -104,7 +104,11 @@ namespace ufo
           unsigned bitslice = std::get<1>(l);
           bool complemented = std::get<2>(l);
           auto pos = vars.find(name);
-          assert(pos != vars.end());
+          if (pos == vars.end()) {
+            outs() << "clause_to_expression: Vars: " << name << " not found.\n";
+            continue;
+          }
+          // assert(pos != vars.end());
           int n = complemented ? 0 : 1;
           auto ltexp = 
             mk<EQ>(bv::extract(bitslice,bitslice,pos->second), bv::bvnum(n, 1, pos->second->efac()) );
@@ -354,7 +358,8 @@ namespace ufo
       const set<string> & no_const_enumerate_vars,
       vector<ExprVector>& lol, bool shift_extract, bool use_add, CandChecker & cc, bool cross_bw,
       const cross_bw_hints_t & cross_bw_hints, bool force_cut_bit,
-      bool bvnot
+      bool bvnot,
+      bool cross_var_eq
       ){
     for (int lidx = 0; lidx < vars.size() ; ++ lidx ) {
       ExprVector preds;
@@ -417,50 +422,52 @@ namespace ufo
       } // only enumerate numbers based on cw_bound
 
       // X = Y
-      auto lhs_string = cc.printExpr(v);
-      bw = bv::width(v->first()->arg(1));
-      for (int ridx = lidx + 1; ridx < vars.size(); ++ ridx) {
-        Expr rhs = vars[ridx];
-        if ( cc.printExpr(rhs) == lhs_string )
-          continue;
-        unsigned rbw = bv::width(rhs->first()->arg(1));
-        if (bw == rbw) {
-            if(bvnot)
-              preds.push_back(mk<EQ>(v, mk<BNOT>(rhs)));
-            preds.push_back(mk<EQ>(v, rhs));
-        }
-        else if (cross_bw) {
-          if (bw > rbw) {
-            if (shift_extract) {
-              if (!cross_bw_hints.empty() && cross_bw_hints.find(bw_bound) != cross_bw_hints.end()) {
-                for (unsigned l : cross_bw_hints.at(bw_bound))
-                  if (l <= bw - rbw)
-                    evs.push_back(bv::extract(bw_bound-1 + l,l, v));
-              } else {
-                for (unsigned l = 0; l <= bw - rbw; ++l )
-                  preds.push_back(mk<EQ>(bv::extract(rbw-1 + l,l, v), rhs));
-              }
-            } else // end of shift extract
-              preds.push_back(mk<EQ>(bv::extract(rbw-1, 0, v), rhs));
+      if (cross_var_eq) {
+        auto lhs_string = cc.printExpr(v);
+        bw = bv::width(v->first()->arg(1));
+        for (int ridx = lidx + 1; ridx < vars.size(); ++ ridx) {
+          Expr rhs = vars[ridx];
+          if ( cc.printExpr(rhs) == lhs_string )
+            continue;
+          unsigned rbw = bv::width(rhs->first()->arg(1));
+          if (bw == rbw) {
+              if(bvnot)
+                preds.push_back(mk<EQ>(v, mk<BNOT>(rhs)));
+              preds.push_back(mk<EQ>(v, rhs));
           }
-          else if (bw < rbw) {
-            if (shift_extract) {
-              if (!cross_bw_hints.empty() && cross_bw_hints.find(bw_bound) != cross_bw_hints.end()) {
-                for (unsigned l : cross_bw_hints.at(bw_bound))
-                  if (l <= rbw - bw)
-                    evs.push_back(bv::extract(bw_bound-1 + l,l, v));
-              } else {
-                for (unsigned l = 0; l <= rbw - bw; ++l )
-                  preds.push_back(mk<EQ>(v, bv::extract(bw-1 + l, l, rhs)));
-              }
-            } else
-            preds.push_back(mk<EQ>(v, bv::extract(bw-1, 0, rhs)));
-          }
-        } // cross_bw
-      } // for ridx ...
+          else if (cross_bw) {
+            if (bw > rbw) {
+              if (shift_extract) {
+                if (!cross_bw_hints.empty() && cross_bw_hints.find(bw_bound) != cross_bw_hints.end()) {
+                  for (unsigned l : cross_bw_hints.at(bw_bound))
+                    if (l <= bw - rbw)
+                      evs.push_back(bv::extract(bw_bound-1 + l,l, v));
+                } else {
+                  for (unsigned l = 0; l <= bw - rbw; ++l )
+                    preds.push_back(mk<EQ>(bv::extract(rbw-1 + l,l, v), rhs));
+                }
+              } else // end of shift extract
+                preds.push_back(mk<EQ>(bv::extract(rbw-1, 0, v), rhs));
+            }
+            else if (bw < rbw) {
+              if (shift_extract) {
+                if (!cross_bw_hints.empty() && cross_bw_hints.find(bw_bound) != cross_bw_hints.end()) {
+                  for (unsigned l : cross_bw_hints.at(bw_bound))
+                    if (l <= rbw - bw)
+                      evs.push_back(bv::extract(bw_bound-1 + l,l, v));
+                } else {
+                  for (unsigned l = 0; l <= rbw - bw; ++l )
+                    preds.push_back(mk<EQ>(v, bv::extract(bw-1 + l, l, rhs)));
+                }
+              } else
+              preds.push_back(mk<EQ>(v, bv::extract(bw-1, 0, rhs)));
+            }
+          } // cross_bw
+        } // for ridx ...
+      } // cross_var_eq
       // X = Y1 ADD Y2
       if (use_add) {
-        for (int i = lidx + 1; i < vars.size(); i++){
+        for (int i = 0; i < vars.size(); i++){
           unsigned rbw1 = bv::width(vars[i]->first()->arg(1));
           for (int j = i + 1; j < vars.size(); j++){
             
@@ -548,6 +555,34 @@ namespace ufo
       enumSelectFromListImpl(list, 0, i, selection, output, op);
   }
 
+ //------------------------------------------ ENUM idxs ------------------------------------------ //
+
+  void enumIdxSelectFromLoLImpl(const vector<int> & listOfIdxs, int start, unsigned k, vector<int>& list_selection,
+    std::vector<std::vector<int>> & combination_of_idxs, const std::set<int> & skip_lol_idxs)
+  {
+    if (k == 0){
+      combination_of_idxs.push_back(std::vector<int>());
+      for (auto idx : list_selection)
+        combination_of_idxs.back().push_back( listOfIdxs.at(idx) );
+      //enumSelectFromLoLImplPart2(lol, 0, list_selection, selection, output, op);
+      return;
+    }
+    for (int i = start; i <= ( (signed long long)(listOfIdxs.size()) - k ); ++i) {
+      if (skip_lol_idxs.find(i) != skip_lol_idxs.end())
+        continue;
+      list_selection.push_back(i);
+      enumIdxSelectFromLoLImpl(listOfIdxs, i+1, k-1, list_selection, combination_of_idxs, skip_lol_idxs);
+      list_selection.pop_back();
+    }
+  }
+  
+  void enumIdxSelectKFromListofList(const vector<int>& listOfIdxs, unsigned k,
+    std::vector<std::vector<int>> & combination_of_idxs, const std::set<int> & skip_lol_idxs)
+  {
+    vector<int> list_selection;
+    for (int i = 1; i <= k; i++)
+      enumIdxSelectFromLoLImpl(listOfIdxs, 0, i, list_selection, combination_of_idxs, skip_lol_idxs);
+  }
   // ------------------------------------ END OF GRAMMAR PART ----------------------------------------- //
 
 class CTI_manager {
@@ -580,6 +615,8 @@ class CTI_manager {
 }; // class CTI_manager
 
 struct CDParameters{
+    unsigned bw_bound;
+    unsigned cw_bound;
     bool shift_ranges;
     bool use_add_sub;
     bool cross_bw;
@@ -588,69 +625,96 @@ struct CDParameters{
     std::set<std::string>  no_enum_num_name;
     cross_bw_hints_t bit_select_hints;
     bool use_bv_not;
+    bool cross_var_eq;
+
+    void Print (raw_ostream & os) const {
+      os  << "Max bitwidth considered: " << bw_bound << "\n"
+          << "Max bitwidth of constant: " << cw_bound << "\n"
+          << "Shift extraction: "  <<  shift_ranges  << "\n"
+          << "Add/sub: "  <<  use_add_sub  << "\n"
+          << "bvnot: "  <<  use_bv_not  << "\n"
+          << "EQ/NEQ across bitwidth: "  <<  cross_bw  << "\n"
+          << "Force bitselection hints on every var: " << force_bitselect_hint_on_every_var << "\n"
+          ;
+    }
 };
 
 
-  inline void simpleCheck(const char * chcfile, unsigned bw_bound, unsigned cw_bound,
+  inline void simpleCheck(const char * chcfile, 
     int ANTE_Size, int CONSQ_Size,
-    const std::string &clauses_fn, bool skip_original, bool skip_const_check, bool shift_ranges,
-    bool use_add_sub, bool cross_bw, bool skip_stat_check, bool gen_spec_only,
-    bool force_bitselect_hint_on_every_var,
+    const std::string &clauses_fn, bool skip_original, bool skip_const_check,
+    bool skip_stat_check, bool gen_spec_only,
     int check_cand_max,
-    const std::map<std::string, std::set<unsigned>>  & var_s_const,
-    const std::vector<std::string> & forced_states,
     // hints
-    const std::set<std::string>  & no_enum_num_name,
-    const cross_bw_hints_t & bit_select_hints,
     bool cti_prune,
     bool force_cti_prune,
     bool find_one,
     bool find_on_one_clause,
+    bool cti_till_stable,
     bool no_merge_cti,
     bool no_add_cand_after_cti,
-    bool use_bv_not,
+    bool repeated_search,
+
+    const CDParameters & CParam,
+    const CDParameters & DParam,
 
     const std::set<std::string> & CSvar,
     const std::set<std::string> & COvar,
     const std::set<std::string> & DIvar,
     const std::set<std::string> & DOvar,
+    const std::vector<std::set<std::string>> & Groupings,
 
+    bool debug_print_lemma,
     bool debug)
   {
 
     if (force_cti_prune)
       cti_prune = true;
 
-    outs () << "Max bitwidth considered: " << bw_bound << "\n"
-            << "Max bitwidth of constant: " << cw_bound << "\n"
+    outs () << "=========== GLOBAL CONFIG =============\n"
             << "Find one and stop: " << find_one << "\n"
             << "Find one clause and stop: " << find_on_one_clause << "\n"
+            << "CTI till stable: " << cti_till_stable << "\n"
             << "(" << ANTE_Size << ") ==> (" << CONSQ_Size << ")"  << "\n"
             << "Skip original cnf: " <<  skip_original  << "\n"
             << "Skip const check: "  <<  skip_const_check  << "\n"
-            << "Shift extraction: "  <<  shift_ranges  << "\n"
-            << "Add/sub: "  <<  use_add_sub  << "\n"
-            << "bvnot: "  <<  use_bv_not  << "\n"
-            << "EQ/NEQ across bitwidth: "  <<  cross_bw  << "\n"
             << "CTI Prune: "  <<  cti_prune <<  (force_cti_prune ? " (forced)" : "")  << "\n"
             << "No merge cti: "  <<  no_merge_cti  << "\n"
             << "Not adding cand after cti: "  <<  no_add_cand_after_cti  << "\n"
-            << "Force bitselection hints on every var: " << force_bitselect_hint_on_every_var << "\n"
+            << "2nd chance: "  <<  repeated_search  << "\n"
             ;
+    outs () << "----------- CONTROL CONFIG -----------\n";
+    CParam.Print(outs());
+    outs () << "----------- DATA CONFIG --------------\n";
+    DParam.Print(outs());
 
     // let's load clauses
     InvariantInCnf cnf;
 
     if (!clauses_fn.empty()) {
       cnf.LoadFromFile(clauses_fn); // will print err msg
-      if (cnf._cnf_.empty())
+      if (cnf._cnf_.empty()) {
+        outs () << "Error reading " << clauses_fn << "\n";
         return; // read error
+      }
     } else {
+      if (CSvar.empty()) {
+        outs () << "Empty cnf and empty CSvar\n";
+        return; // read error
+      }
       cnf.FromVnameContainer(CSvar);
       cnf.FromVnameContainer(COvar);
       cnf.FromVnameContainer(DIvar);
       cnf.FromVnameContainer(DOvar);
     }
+
+    outs () << "----------- GRAMMAR --------------\n";
+    outs () << "CSvar.size = " << CSvar.size() << "\n"
+            << "COvar.size = " << COvar.size() << "\n"
+            << "DIvar.size = " << DIvar.size() << "\n"
+            << "DOvar.size = " << DOvar.size() << "\n"
+            << "Grouping.size = " << Groupings.size() << "\n";
+    outs () << "=========== END CONFIG =============\n";
 
     ExprFactory efac;
     EZ3 z3(efac);
@@ -746,18 +810,6 @@ struct CDParameters{
         vars_in_this_clause.push_back( named_vars[ var_name.first ] );
         varnames.push_back(var_name.first);
       }
-
-      // forced states
-      for (auto && s : forced_states) {
-        if (named_vars.find(s) == named_vars.end()) {
-          outs () << "forced state : " << s << " does not exist.\n";
-          continue;
-        }
-        if(std::find(varnames.begin(), varnames.end(), s) == varnames.end()) {
-          varnames.push_back(s);
-          vars_in_this_clause.push_back( named_vars[ s ]  );
-        }
-      }
       
       int this_clause_ANTE_Size, this_clause_CONSQ_Size;
       if (vars_in_this_clause.size() > 1) {
@@ -769,6 +821,8 @@ struct CDParameters{
       }
       if (ANTE_Size != 0)
         this_clause_ANTE_Size = min(this_clause_ANTE_Size, ANTE_Size);
+
+      this_clause_CONSQ_Size = vars_in_this_clause.size() - this_clause_ANTE_Size;
       if (CONSQ_Size != 0)
         this_clause_CONSQ_Size = min(this_clause_CONSQ_Size, CONSQ_Size);
 
@@ -785,11 +839,14 @@ struct CDParameters{
           LocalInputIndInv = mk<NEG>(combineListExpr(local_cls_list, OP_DISJ));
       } // 
 
-
       // -------------------------- CANDIDATE GENERATION STAGE -------------------------------- //
 
       // filter names according to the grammar
       if (!CSvar.empty()) {
+        ExprVector vars_ante;
+        vector<string> varnames_ante;
+        ExprVector vars_conseq;
+        vector<string> varnames_conseq;
         assert (vars_in_this_clause.size() == varnames.size());
         for (size_t idx = 0 ; idx < varnames.size() ; ++ idx){
           const auto & vn = varnames.at(idx);
@@ -797,21 +854,150 @@ struct CDParameters{
             vars_ante.push_back(vars_in_this_clause.at(idx));
             varnames_ante.push_back(varnames.at(idx));
           }
+          if (COvar.find(vn) != COvar.end() ||
+              DIvar.find(vn) != DIvar.end() ||
+              DOvar.find(vn) != DOvar.end()
+              ) {
+            vars_conseq.push_back(vars_in_this_clause.at(idx));
+            varnames_conseq.push_back(varnames.at(idx));
+          }
         }
+        // will have two sets of preds
+
+        vector<ExprVector> CSpredList; // {cs1: [cs1=0, cs1=1 , cs1=2 ...], cs2: [cs2=0, cs2=1 ...]}
+        vector<ExprVector> CODIDOpredList;
+
+        assert (vars_ante.size() == varnames_ante.size() &&
+                vars_conseq.size() ==  varnames_conseq.size()
+          );
+
+        enumDataPredForEachVar(vars_ante,  varnames_ante, 
+          CParam.bw_bound, CParam.cw_bound, 
+          CParam.var_s_const, CParam.no_enum_num_name, 
+          CSpredList, 
+          CParam.shift_ranges, CParam.use_add_sub, cc, 
+          CParam.cross_bw, CParam.bit_select_hints, false, CParam.use_bv_not,
+          CParam.cross_var_eq );
+        
+        enumDataPredForEachVar(vars_conseq,  varnames_conseq, 
+          DParam.bw_bound, DParam.cw_bound, 
+          DParam.var_s_const, DParam.no_enum_num_name, 
+          CODIDOpredList, 
+          DParam.shift_ranges, DParam.use_add_sub, cc, 
+          DParam.cross_bw, DParam.bit_select_hints, false, DParam.use_bv_not,
+          DParam.cross_var_eq );
+        
+
+        outs () << "CSpred set size: " << CSpredList.size() << "\n";
+        outs () << "CODIDOpredList set size: " << CODIDOpredList.size() << "\n";
+
+        std::vector<std::set<int>> per_ante_selection_idxs; 
+        ExprVector Ante;
+
+        enumSelectKFromListofList(CSpredList, this_clause_ANTE_Size, Ante, OP_CONJ, per_ante_selection_idxs, {} ); // --> get a list of selection
+        outs () << "Ante set size: " << Ante.size() << "\n";
+
+        size_t ante_idx = 0;
+        size_t current_cand_incr_count = 0;
+        for (Expr a : Ante) {
+          assert (ante_idx < per_ante_selection_idxs.size());
+
+          if (check_cand_max != 0 && current_cand_incr_count > check_cand_max) {
+            outs () << "Skipped, " << current_cand_incr_count << " exceed cand max.\n";
+            break;
+          }
+
+          if (skip_const_check || !cc.isSimplifyToConst(a)) {
+            current_cand_incr_count ++;
+            cands.push_back(a);
+          }
+
+          const std::set<int> & this_ante_select =  per_ante_selection_idxs.at(ante_idx);
+          std::set<int> conseq_should_avoid;
+          for (auto idx : this_ante_select) {
+            const auto & vn = varnames_ante.at(idx);
+            auto conseq_idx = 
+              std::find(varnames_conseq.begin() , varnames_conseq.end(), vn);
+            if ( conseq_idx != varnames_conseq.end() ){
+              conseq_should_avoid.insert( conseq_idx - varnames_conseq.begin() );
+            }
+          } // translate avoid set
+
+
+        // -------------------------- MAP GROUPS to idxs -------------------------------- //
+        // not the group can be larger than those appear in the varnames
+
+        std::vector<std::vector<int>> GroupingsListofIdxs;
+        for (auto && group : Groupings) {
+          std::vector<int> idxs;
+          for (auto && vname : group) {
+            auto pos = std::find(varnames_conseq.begin(), varnames_conseq.end(), vname);
+            if (pos != varnames_conseq.end())
+              idxs.push_back(pos - varnames_conseq.begin());
+          } // for each var in the group
+          if (!idxs.empty())
+            GroupingsListofIdxs.push_back(idxs);
+        } // for groupings
+
+        // -------------------------- END of MAP GROUPS to idxs -------------------------------- //
+
+          std::vector<std::set<int>> no_use;
+          ExprVector Conseq;
+          // select from grouping
+          if (GroupingsListofIdxs.empty())
+            enumSelectKFromListofList(CODIDOpredList, this_clause_CONSQ_Size, Conseq, OP_DISJ, no_use ,  conseq_should_avoid );
+          else {
+            // to conseq 
+            std::vector<std::vector<int>> combination_of_idxs;
+            for (auto && group : GroupingsListofIdxs) {
+              int K = min(group.size(), (size_t)(this_clause_CONSQ_Size) );
+              if (K <= 1)
+                continue;
+              vector<int> list_selection;
+              enumIdxSelectFromLoLImpl(group,0, K, list_selection, combination_of_idxs, conseq_should_avoid); 
+              // select exactly K elements
+            }
+            for (auto && listOfVarIdx : combination_of_idxs) {
+              vector<int> list_selection;
+              ExprVector selection; // no use
+              enumSelectFromLoLImplPart2(CODIDOpredList, 0, listOfVarIdx, selection, Conseq, OP_DISJ, no_use);
+            }
+            if (this_clause_CONSQ_Size >= 1)
+              enumSelectKFromListofList(CODIDOpredList, 1, Conseq, OP_DISJ, no_use ,  conseq_should_avoid );
+          }
+
+          for (Expr b: Conseq) {
+            auto cand = mk<IMPL>(a, b);
+            if (skip_const_check || !cc.isSimplifyToConst(cand)) {
+              current_cand_incr_count ++;
+              cands.push_back(cand);
+            }
+          } // for conseq
+          ante_idx ++;
+        } // for each Ante
+
+
       } else { // enumerate the whole
         ExprVector Ante;
         vector<ExprVector> CSpredList; // {cs1: [cs1=0, cs1=1 , cs1=2 ...], cs2: [cs2=0, cs2=1 ...]}
 
         //enumConstPredForEachVar(vars_in_this_clause, bw_bound, CSpredList, shift_ranges);
-        enumDataPredForEachVar(vars_in_this_clause,  varnames, bw_bound, cw_bound, var_s_const, no_enum_num_name, 
+        enumDataPredForEachVar(vars_in_this_clause,  varnames, 
+          DParam.bw_bound, DParam.cw_bound, 
+          DParam.var_s_const, DParam.no_enum_num_name, 
           CSpredList, 
-          shift_ranges, false /*use_add_sub*/, cc, cross_bw, bit_select_hints, false, use_bv_not );
+          DParam.shift_ranges, DParam.use_add_sub, cc, 
+          DParam.cross_bw, DParam.bit_select_hints, false, DParam.use_bv_not,
+          DParam.cross_var_eq );
       
-        if (force_bitselect_hint_on_every_var) {
-          for (auto && bitwidth_lsb_pair : bit_select_hints)
-            enumDataPredForEachVar(vars_in_this_clause, varnames, bitwidth_lsb_pair.first, cw_bound, var_s_const, no_enum_num_name, 
+        if (DParam.force_bitselect_hint_on_every_var) {
+          for (auto && bitwidth_lsb_pair : DParam.bit_select_hints)
+            enumDataPredForEachVar(vars_in_this_clause, varnames, bitwidth_lsb_pair.first, 
+              DParam.cw_bound, DParam.var_s_const, DParam.no_enum_num_name, 
               CSpredList, 
-              shift_ranges, use_add_sub, cc, cross_bw, bit_select_hints, true, use_bv_not );
+              DParam.shift_ranges, DParam.use_add_sub, cc, DParam.cross_bw, 
+              DParam.bit_select_hints, true, DParam.use_bv_not,
+              DParam.cross_var_eq );
         } // force_bitselect_hint_on_every_var
 
         outs () << "Base selection set size: " << CSpredList.size() << "\n";
@@ -855,59 +1041,73 @@ struct CDParameters{
       outs() << "Cands : " << cands.size() << "\n";
       outs() .flush();
 
-      for (auto & cand : cands)
-      {
-        iter++;
-        if (debug)
-          outs() <<"Testing Candidate: "<<cc.printExpr(cand) ;
+      unsigned old_learned_lemmas = cc.getLearnedLemmansSize();
+      unsigned new_learned_lemmas;
+      bool first_round = true;
 
-        bool is_specialization, is_generalization;
-        if (gen_spec_only) {
-            Expr new_cnf = LocalInputIndInv ? mk<AND> (cand, LocalInputIndInv) : cand;
-            is_specialization = cc.isAimpliesB( new_cnf , InputIndInv);
-            is_generalization = cc.isAimpliesB( InputIndInv, new_cnf );
-            if (!is_specialization && !is_generalization)
-              continue; // skip
-        }
+      do{
+        for (auto & cand : cands)
+        {
+          iter++;
+          if (debug)
+            outs() <<"Testing Candidate: "<<cc.printExpr(cand) ;
 
-        if (cc.checkInitiation(cand) ) {
-
-          if (cc.checkInductiveness(cand) ) {
-            if (cc.checkSafety())
-            {
-              if (debug)
-                outs() <<" @@@@ safe\n";
-              found ++;
-              if (!skip_stat_check) {
-                Expr new_cnf = LocalInputIndInv ? mk<AND> (cand, LocalInputIndInv) : cand;
-
-                if ( ( gen_spec_only &&  is_generalization ) || cc.isAimpliesB( InputIndInv, new_cnf ) )
-                  num_generalizion ++;
-                if ( ( gen_spec_only &&  is_specialization ) || cc.isAimpliesB( new_cnf , InputIndInv) )
-                  num_specification ++;
-              }
-
-              if (find_one)
-                goto end_check;
-            } // safety check
-            else {
-              if (debug)
-                outs() <<" +++ ind\n";
-            }
-          } // ind check check
-          else {
-            if (cti_prune)
-              cti_manager.InsertCTIFailedCand(cand);
-            if (debug)
-                outs() <<" -- CTI\n";
+          bool is_specialization, is_generalization;
+          if (gen_spec_only) {
+              Expr new_cnf = LocalInputIndInv ? mk<AND> (cand, LocalInputIndInv) : cand;
+              is_specialization = cc.isAimpliesB( new_cnf , InputIndInv);
+              is_generalization = cc.isAimpliesB( InputIndInv, new_cnf );
+              if (!is_specialization && !is_generalization)
+                continue; // skip
           }
-        } // init check
-        else {
-            if (debug)
-                outs() <<"\n";
-        }
 
-      } // for each cand
+          if (cc.checkInitiation(cand) ) {
+
+            if (cc.checkInductiveness(cand) ) {
+              if (cc.checkSafety())
+              {
+                if (debug)
+                  outs() <<" @@@@ safe\n";
+                found ++;
+                if (!skip_stat_check) {
+                  Expr new_cnf = LocalInputIndInv ? mk<AND> (cand, LocalInputIndInv) : cand;
+
+                  if ( ( gen_spec_only &&  is_generalization ) || cc.isAimpliesB( InputIndInv, new_cnf ) )
+                    num_generalizion ++;
+                  if ( ( gen_spec_only &&  is_specialization ) || cc.isAimpliesB( new_cnf , InputIndInv) )
+                    num_specification ++;
+                }
+
+                if (find_one)
+                  goto end_check;
+              } // safety check
+              else {
+                if (debug)
+                  outs() <<" +++ ind\n";
+              }
+            } // ind check check
+            else {
+              if (cti_prune && first_round)
+                cti_manager.InsertCTIFailedCand(cand);
+              if (debug)
+                  outs() <<" -- CTI\n";
+            }
+          } // init check
+          else {
+              if (debug)
+                  outs() <<"\n";
+          }
+        } // for each cand
+        new_learned_lemmas = cc.getLearnedLemmansSize();
+        if (new_learned_lemmas == old_learned_lemmas)
+          break;
+        if (!repeated_search)
+         break;
+        old_learned_lemmas = new_learned_lemmas;
+        first_round = false;
+        outs () << "--- R --- Learned lemmas : " << new_learned_lemmas << "\n";
+      }while(true);
+
       outs () << "Status @ iter: " << iter << " @ clause " << clause_no << " found :" << found << "\n";
       outs () << "Generalizaion:" << num_generalizion << "\n";
       outs () << "Specialization:" << num_specification << "\n";
@@ -931,6 +1131,8 @@ end_check:
     }
 
     if (found == 0 && !cti_prune) {
+      if (debug_print_lemma)
+        cc.serializeInvars();
       outs() << "unknown\n";
       return;
     }
@@ -952,10 +1154,13 @@ end_check:
           cti_manager.CTImap.erase(model);
           outs()<<"new cands added\n";
           if (cc.checkSafety()){
-            outs()<<"proved\n";
-            outs().flush();
-            cc.serializeInvars();
-            return;
+            found ++;
+            if (!cti_till_stable) {
+              outs()<<"proved\n";
+              outs().flush();
+              cc.serializeInvars();
+              return;
+            }
           }
         } else {
           auto cands = cti_manager.CTImap.at(model);
@@ -969,7 +1174,16 @@ end_check:
       } // for each of ctisToRemove
     } // the cti block loop
 
-    outs() << "unknown\n";
+    if (found > 0) {
+      outs()<<"proved\n";
+      outs().flush();
+      cc.serializeInvars();
+      return;
+    } else {
+      if (debug_print_lemma)
+        cc.serializeInvars();
+      outs() << "unknown\n";
+    }
     // the end
 
   } // function simpleCheck
